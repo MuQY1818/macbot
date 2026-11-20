@@ -32,6 +32,7 @@ dependencies = [
 [project.optional-dependencies]
 orbbec = ["pyorbbecsdk2"]
 pi = ["lerobot[pi]==0.7.0"]
+sim = ["mujoco==3.3.7"]
 dev = ["pytest"]
 
 [project.urls]

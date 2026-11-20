@@ -24,7 +24,7 @@
         <div class="btn-row">
           <button class="go" onclick="cmd('start')"><span data-i18n="start">Start</span> <kbd>S</kbd></button>
           <button class="stop" onclick="cmd('pause')"><span data-i18n="hold">Pause</span> <kbd>␣</kbd></button>
-          <button onclick="cmd('home')"><span data-i18n="home">Home</span> <kbd>H</kbd></button>
+          <button onclick="cmd('home')"><span id="home-label" data-i18n="home">Home</span> <kbd>H</kbd></button>
           <span class="spacer"></span>
           <button class="primary" onclick="cmd('save_ok')"><span data-i18n="succ">Success</span> <kbd>Y</kbd></button>
           <button onclick="cmd('save_fail')"><span data-i18n="failb">Failure</span> <kbd>N</kbd></button>
@@ -78,9 +78,13 @@ function build(s) {
 function render(s) {
   S = s;
   if (!built) build(s);
+  $("quit").dataset.i18n = s.sim ? "quit_sim" : "quit";
+  $("quit").textContent = t($("quit").dataset.i18n);
+  $("home-label").dataset.i18n = s.sim ? "reset_scene" : "home";
+  $("home-label").textContent = t($("home-label").dataset.i18n);
   const cls = { running: "run", paused: "warn", homing: "idle" }[s.mode] || "idle";
   $("badge").className = "badge " + cls;
-  $("badge").textContent = t(s.mode) + (s.fake ? ` · ${t("simulated")}` : "");
+  $("badge").textContent = t(s.mode) + (s.sim || s.fake ? ` · ${t("simulated")}` : "");
   $("views").classList.toggle("go", s.mode === "running");
   $("timer").textContent = s.rec_s ? `${fmtTime(s.rec_s)}` : "";
   $("msg").textContent = L(s.msg);
@@ -92,8 +96,9 @@ function render(s) {
     tile("run_time", s.rec_s, "s") + tile("speed", `×${s.speed}`) + tile("next", `#${String(s.next).padStart(3, "0")}`);
   for (const c of s.cam_names) {
     const a = s.cam_age[c];
-    camTag($("tag-" + c), c, a, s.stall_s);
-    $("age-" + c).textContent = a == null ? "" : `${Math.round(a * 1000)} ms`;
+    const still = s.sim && s.mode === "paused" && a != null;
+    camTag($("tag-" + c), c, still ? 0 : a, s.stall_s);
+    $("age-" + c).textContent = still ? t("render_hold") : (a == null ? "" : `${Math.round(a * 1000)} ms`);
   }
   renderJoints($("joints"), s.names, s.q, s.cmd, s.limits);
   if (s.mode === "running") { HQ.push(s.q); HC.push(s.cmd); if (HQ.length > HIST) { HQ.shift(); HC.shift(); } }

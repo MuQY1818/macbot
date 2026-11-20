@@ -1,0 +1,28 @@
+# SO-101 tabletop simulation. Install with `pip install -e '.[sim]'`.
+# The pinned EnvHub scene downloads and executes Python code on first use.
+task:
+  name: so101_tabletop_sim
+  instruction: "put the cubes into the box"
+
+robot:
+  type: sim
+  env:
+    type: envhub
+    hub_path: lerobot/so101-tabletop-mujoco@4684f500b94d07194f2c860314c4e27cb9349e8c
+    trust_remote_code: true
+    make_env_kwargs:
+      observation_width: 320
+      observation_height: 240
+  limits:
+    gripper: [0, 100]
+
+cameras:
+  front: {type: robot, save_size: [320, 240]}
+  wrist: {type: robot, save_size: [320, 240]}
+
+record:
+  fps: 30
+teleop:
+  hz: 30
+run:
+  hz: 30

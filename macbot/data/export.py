@@ -41,6 +41,8 @@ def binarize(g, close_above: float, open_below: float) -> np.ndarray:
 def robot_type(meta: dict) -> str:
     """LeRobot robot type recorded in the dataset: the follower type for generic LeRobot arms."""
     r = meta.get("robot") or {}
+    if r.get("robot_type"):
+        return r["robot_type"]
     if r.get("kind") == "lerobot":
         return r["follower"]["type"]
     return "rebot_b601_follower"
@@ -89,8 +91,12 @@ def run(cfg: Config, args):
     m0 = keep[0][1]
     fps, cams = int(m0["fps"]), list(m0["cameras"])
     for p, m in keep[1:]:
-        if int(m["fps"]) != fps or any(m["cameras"].get(c, {}).get("size") != m0["cameras"][c]["size"] for c in cams):
-            sys.exit(f"{p.name}: fps or image size differs from the first episode; they cannot share a dataset")
+        if int(m["fps"]) != fps or {c: v["size"] for c, v in m["cameras"].items()} != {
+                c: v["size"] for c, v in m0["cameras"].items()}:
+            sys.exit(f"{p.name}: fps, cameras or image size differs from the first episode")
+        if (robot_type(m) != robot_type(m0) or bool(m.get("fake")) != bool(m0.get("fake"))
+                or (m.get("robot") or {}).get("semantics") != (m0.get("robot") or {}).get("semantics")):
+            sys.exit(f"{p.name}: robot or observation semantics differ from the first episode")
     with np.load(keep[0][0]) as d:
         shape = {c: next(frames(d, c)).shape for c in cams}
 
@@ -115,11 +121,13 @@ def run(cfg: Config, args):
     for p, m in keep:
         with np.load(p) as d:
             q, a = d["qpos"].astype(np.float32), d["action"].astype(np.float32)
+            if q.shape != a.shape or q.shape != (len(q), dim):
+                sys.exit(f"{p.name}: expected matching state and action arrays with {dim} joints")
             if binary:
                 a[:, gi] = binarize(a[:, gi], args.close_above, args.open_below)
             streams = [frames(d, c) for c in cams]
-            for i, imgs in enumerate(zip(*streams)):
-                ds.add_frame({"observation.state": q[i], "action": a[i], "task": m["instruction"],
+            for qi, ai, *imgs in zip(q, a, *streams, strict=True):
+                ds.add_frame({"observation.state": qi, "action": ai, "task": m["instruction"],
                               **{f"observation.images.{c}": im for c, im in zip(cams, imgs)}})
         ds.save_episode()
         total += len(q)

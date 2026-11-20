@@ -3,7 +3,7 @@
 #   lerobot-calibrate --robot.type=so101_follower --robot.port=<port> --robot.id=my_follower
 #   lerobot-calibrate --teleop.type=so101_leader --teleop.port=<port> --teleop.id=my_leader
 #   macbot --config so101.yaml collect
-# Find the ports with `lerobot-find-port` (they look like /dev/tty.usbmodem5A460814411).
+# Find the ports with `lerobot-find-port`. Use the same port and ID for calibration and collection.
 
 task:
   name: pick_cube

@@ -1,13 +1,14 @@
 """Per-episode tracking and timing report of recorded data.
 
 For every episode: the lag (frames) that best aligns command and measurement, p95 and max tracking error
-of the six arm joints at that lag, the median offset while the leader is still (a calibration drift
+of the arm joints at that lag, the median offset while the leader is still (a calibration drift
 shows up here), the gripper range, the worst frame interval and the repeated camera frames.
 ``--split N`` prints medians before and after episode N, for example to compare data recorded before
 and after a repair.
 """
 from __future__ import annotations
 
+import json
 import sys
 
 import numpy as np
@@ -16,15 +17,16 @@ from ..config import Config
 from ..system import expand
 
 
-def episode_stats(d, fps: float, cams) -> dict:
-    import json
+def episode_stats(d, fps: float | None = None, cams=None) -> dict:
     meta = json.loads(str(d["meta"]))
+    fps = fps if fps is not None else float(meta["fps"])
+    cams = cams if cams is not None else meta["cameras"]
     q, a = d["qpos"].astype(float), d["action"].astype(float)
     names = meta.get("joint_names") or [f"joint_{i}" for i in range(q.shape[1])]
     g = names.index(meta["gripper"]) if meta.get("gripper") in names else (names.index("gripper") if "gripper" in names else None)
-    arm = [i for i in range(q.shape[1]) if i != g]
+    arm = [i for i in range(q.shape[1]) if i != g] or list(range(q.shape[1]))
     best = None
-    for lag in range(8):
+    for lag in range(min(8, len(q))):
         err = np.abs(a[:len(a) - lag][:, arm] - q[lag:][:, arm])
         m = np.percentile(err, 95, axis=0).mean()
         if best is None or m < best[0]:
@@ -36,7 +38,7 @@ def episode_stats(d, fps: float, cams) -> dict:
     dt = np.diff(wt) if len(wt) > 1 else np.zeros(1)
     return {"n": len(q), "lag": lag, "p95": np.percentile(err, 95, axis=0), "max": err.max(0),
             "still": np.median(off, 0) if len(off) else np.full(len(arm), np.nan),
-            "vmax": np.abs(np.diff(q[:, arm], axis=0)).max(0) * fps,
+            "vmax": np.abs(np.diff(q[:, arm], axis=0)).max(0, initial=0) * fps,
             "gmin": q[:, g].min() if g is not None else np.nan, "gmax": q[:, g].max() if g is not None else np.nan, "dt_max": dt.max(), "dt_late": int((dt > 1.5 / fps).sum()),
             "repeat": {c: int(d[f"{c}_repeat"].sum()) for c in cams if f"{c}_repeat" in d.files},
             "nan": int(np.isnan(q).sum() + np.isnan(a).sum())}
@@ -47,14 +49,13 @@ def run(cfg: Config, args):
     files = sorted(data.glob("episode_*.npz"))
     if not files:
         sys.exit(f"no episode_*.npz in {data}")
-    fps, cams = float(cfg["record"]["fps"]), list(cfg["cameras"])
     np.set_printoptions(precision=1, suppress=True, linewidth=200)
     rows = []
     print("ep   frames lag  p95 tracking error per arm joint     offset while still               gripper range    dt max  late  repeats")
     for f in files:
         idx = int(f.stem.split("_")[-1])
         with np.load(f) as d:
-            r = episode_stats(d, fps, cams)
+            r = episode_stats(d)
         r["idx"] = idx
         rows.append(r)
         rep = "/".join(str(v) for v in r["repeat"].values())

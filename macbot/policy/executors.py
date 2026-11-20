@@ -5,7 +5,7 @@ control loop:
 
     ex.start()                    start background threads (if any)
     ex.reset(active)              drop all chunks; active=True starts inferring from the current observation
-    ex.target(now) -> (a, id)     joint target (7,) for wall time ``now``, or (None, id) if nothing yet
+    ex.target(now) -> (a, id)     joint target for wall time ``now``, or (None, id) if nothing yet
     ex.err                        set to a message if inference failed (the loop pauses)
 
 Executors receive ``observe() -> (images, q)`` and ``log(t_chunk, infer_ms, **extra)``; time runs at
@@ -29,6 +29,8 @@ import numpy as np
 
 
 def _interp(ch: np.ndarray, f: float) -> np.ndarray:
+    if len(ch) == 1:
+        return ch[0]
     f = min(max(f, 0.0), len(ch) - 1.0)
     i = min(int(f), len(ch) - 2)
     w = f - i

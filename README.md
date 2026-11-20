@@ -67,8 +67,17 @@ Measured on a MacBook Pro (M5 Pro, 48 GB), PyTorch MPS:
 | Wrist camera | Orbbec Gemini 2 | color stream through `pyorbbecsdk2` |
 | Computer | MacBook Pro, Apple silicon | 32 GB+ memory recommended for π0.5 |
 
-Other arms that LeRobot supports can be added in `macbot/robot/`; the consoles only need `connect`,
-`get_observation`, `send_action` and `disconnect`.
+### Supported robots
+
+| Profile | Arms | Validation |
+|---|---|---|
+| `rebot_b601` | reBot B601-RS + Arm 102 | Reference setup tested on hardware; ACT regression also tested with `--fake`. |
+| `lerobot` | SO-100/101, Koch, OMX, OpenArm, YAM and other LeRobot 0.7 followers with joint position actions | SO-101 collection and export tested with `--fake`. Other arms use upstream drivers and have not been hardware tested with macbot. |
+| `sim` | SO-101 tabletop in MuJoCo | Collection, ACT inference and rollout replay tested in simulation on Apple silicon. |
+
+Run `macbot robots` to list registered types. Start with [the SO-101 config](configs/so101.yaml)
+or [the simulator config](configs/so101_sim.yaml). See [setup](docs/setup.md) for driver installation
+and a UVC-only workflow without `sudo`.
 
 ## Quick start
 
@@ -82,7 +91,8 @@ macbot collect --fake                  # the collection console with a simulated
 ```
 
 Open <http://127.0.0.1:8766>. Press **S** to record, **Enter** to save, **←** to discard.
-For the real robot, install the PCAN driver and set your camera IDs first: see [docs/setup.md](https://github.com/MuQY1818/macbot/blob/main/docs/setup.md).
+For MuJoCo, use `pip install -e '.[sim]'` in the source checkout, then
+`macbot --config configs/so101_sim.yaml collect`. For hardware, follow [setup](docs/setup.md).
 
 ## Workflow
 

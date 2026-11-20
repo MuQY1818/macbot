@@ -122,7 +122,7 @@ def test_fake_arm_follows_config():
     from macbot.robot.fake import fake_for
     r = fake_for({"type": "rebot_b601"})
     assert r.joints == JOINTS and r.gripper == "gripper" and r.gripper_index == 6
-    r = fake_for({"type": "lerobot", "follower": {"type": "no_such_arm"}, "limits": {"gripper": [0, 50]}})
+    r = fake_for({"type": "lerobot", "follower": {"type": "so101_follower"}, "limits": {"gripper": [0, 50]}})
     assert len(r.joints) == 6 and r.limits["gripper"] == (0, 50)
     r.connect(leader=True)
     q = r.read()

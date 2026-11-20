@@ -17,6 +17,7 @@ import re
 import sys
 import threading
 import time
+from contextlib import ExitStack
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
@@ -29,7 +30,7 @@ from ..i18n import tr
 from ..system import ensure_dir, expand, give_back, start_log
 from .executors import AsyncChunk, Ensemble, SyncChunk
 from .gripper import BinaryGripper, find_gripper_config
-from .models import load_policy, prep_image
+from .models import check_joint_dimensions, load_policy, prep_image
 
 CAM_STALL_S = 0.5
 
@@ -37,6 +38,7 @@ CAM_STALL_S = 0.5
 class State:
     def __init__(self, cfg: Config, out: Path, args):
         self.cfg, self.out, self.args = cfg, out, args
+        self.sim = not args.fake and cfg["robot"].get("type") == "sim"
         self.cam_names = list(cfg["cameras"])
         self.lock = threading.Lock()
         self.mode = "paused"            # paused | running | homing
@@ -79,7 +81,7 @@ class State:
                     "cam_names": self.cam_names, "cam_age": ages,
                     "cam_size": {c: self.cfg["cameras"][c]["save_size"] for c in self.cam_names}, "stall_s": CAM_STALL_S, "chunks": self.chunks,
                     "infer_ms": round(float(np.median(self.infer_ms[-20:])), 1) if self.infer_ms else None,
-                    "executor": self.executor, "speed": self.args.speed, "fake": self.args.fake,
+                    "executor": self.executor, "speed": self.args.speed, "fake": self.args.fake, "sim": self.sim,
                     "policy": "/".join(Path(self.args.policy).parts[-2:]), "task": self.cfg.task,
                     "rec_s": round(len(r["t"]) / self.cfg["record"]["fps"], 1) if r else 0,
                     "saved": self.saved[-15:], "next": self.next_idx()}
@@ -149,8 +151,8 @@ def run(cfg: Config, args):
     args.speed = args.speed if args.speed is not None else rc["speed"]
     if not 0.1 <= args.speed <= 1.0:
         sys.exit("--speed must be between 0.1 and 1.0")
-    if args.autostart and not args.fake:
-        sys.exit("--autostart only works with --fake")
+    if args.autostart and not (args.fake or cfg["robot"].get("type") == "sim"):
+        sys.exit("--autostart only works with --fake or robot.type: sim")
     args.policy = expand(args.policy)
     gcfg = find_gripper_config(args.policy, args.gripper)
     gripper = BinaryGripper(gcfg, args.grip_debounce) if gcfg else None
@@ -159,16 +161,25 @@ def run(cfg: Config, args):
     out = ensure_dir(cfg.rollout_dir(cfg.task + ("_fake" if args.fake else "")))
     st = State(cfg, out, args)
     port = args.port or rc["port"]
-    srv = ThreadingHTTPServer(("127.0.0.1", port), make_handler(st))
-    srv.daemon_threads = True
+    with ThreadingHTTPServer(("127.0.0.1", port), make_handler(st)) as srv, ExitStack() as cleanup:
+        srv.daemon_threads = True
+        _control(st, srv, port, fps, gripper, cleanup)
 
+
+def _control(st, srv, port, fps, gripper, cleanup):
+    cfg, args, rc = st.cfg, st.args, st.cfg["run"]
     from ..robot import open_robot
     robot = open_robot(cfg["robot"], fake=args.fake)
+    started = False
+    cleanup.callback(lambda: robot.shutdown(moved=started))
     names, n_j = robot.joints, len(robot.joints)
     with st.lock:
         st.joints, st.gripper = names, robot.gripper
         st.q = st.cmd = [0.0] * n_j
     gi = robot.gripper_index
+    check_joint_dimensions(args.policy, names)
+    if st.sim:
+        robot.check_rate(rc["hz"], "run.hz")
     if gripper is not None and gi is None:
         sys.exit("gripper.json found but the robot has no joint named gripper; use --gripper raw")
     print(f"loading policy {args.policy} on {args.device}", flush=True)
@@ -181,6 +192,8 @@ def run(cfg: Config, args):
     if args.mode == "rtc" and not pol.supports_rtc:
         sys.exit("--mode rtc needs pi0.5")
     sizes = {c: tuple(cfg["cameras"][c]["save_size"]) for c in st.cam_names}
+    if pol.shapes is not None and set(pol.shapes) != set(st.cam_names):
+        sys.exit(f"policy cameras {sorted(pol.shapes)} do not match config cameras {sorted(st.cam_names)}")
     for c in (st.cam_names if pol.shapes is not None else []):
         want = (3, sizes[c][1], sizes[c][0])
         if pol.shapes.get(c) != want:
@@ -202,13 +215,22 @@ def run(cfg: Config, args):
         pol(dummy, [0.0] * n_j, leftover=lo, delay=8)
         print(f"rtc warm-up: {(time.perf_counter() - t) * 1e3:.0f} ms per guided inference", flush=True)
 
-    st.cams = open_cameras(cfg["cameras"], fps, args.fake)
+    st.cams = open_cameras(cfg["cameras"], fps, args.fake, robot)
     cams = st.cams
+    for cam in cams.values():
+        cleanup.callback(cam.close)
+    robot.connect()
+    st.robot_info = robot.info()
+    st.limits = {n: list(v) for n, v in robot.limits.items()}
+    home = robot.home_pose()
+    cmd = robot.read()                                    # start from the measured pose
+    st.q, st.cmd = list(cmd), list(cmd)
 
     def observe():
-        imgs = {c: prep_image(cams[c].latest()[0], sizes[c], jq)[0] for c in st.cam_names}
         with st.lock:
-            return imgs, list(st.q)
+            q = list(st.q)
+            frames = {c: cams[c].latest()[0] for c in st.cam_names}
+        return {c: prep_image(frames[c], sizes[c], jq)[0] for c in st.cam_names}, q
 
     rate = fps * args.speed
     stop = lambda: st.quit  # noqa: E731
@@ -221,13 +243,9 @@ def run(cfg: Config, args):
     ex.start()
     st.executor = ex.describe()
     threading.Thread(target=srv.serve_forever, daemon=True).start()
-    print(f"executor: {st.executor}\nweb page: http://127.0.0.1:{port}   rollouts: {out}", flush=True)
+    cleanup.callback(srv.shutdown)
+    print(f"executor: {st.executor}\nweb page: http://127.0.0.1:{port}   rollouts: {st.out}", flush=True)
 
-    robot.connect()
-    st.robot_info = robot.info()
-    st.limits = {n: list(v) for n, v in robot.limits.items()}
-    home = robot.home_pose()
-    started = False
     hz = rc["hz"]
     dt = 1.0 / hz
     vmax = rc["max_vel"] * args.speed * dt               # max arm joint step per control cycle (robot units)
@@ -239,7 +257,6 @@ def run(cfg: Config, args):
                 st.mode = mode
 
     try:
-        cmd = robot.read()                                # start from the measured pose (no jump)
         started = True
         chunk_id, gp_last = -1, float("nan")
         next_rec = time.time()
@@ -256,7 +273,22 @@ def run(cfg: Config, args):
                 want, st.want = st.want, None
             if want == "quit":
                 break
-            stalled = [c for c in st.cam_names if now - cams[c].latest()[1] > CAM_STALL_S]
+            if st.sim and want in ("start", "home"):
+                if st.rec is None:
+                    robot.reset_scene()
+                    cmd = robot.read()
+                    with st.lock:
+                        st.q, st.cmd = list(cmd), list(cmd)
+                    now = time.time()
+                    if want == "home":
+                        say("Simulation reset.", "仿真场景已重置。", "paused")
+                        want = None
+                elif robot.ended or want == "home":
+                    say("Save or discard this trial before resetting the simulation.",
+                        "请先保存或丢弃这次试验，再重置仿真场景。", "paused")
+                    want = None
+            stalled = [c for c in st.cam_names if
+                       (cams[c].latest()[0] is None if st.sim else now - cams[c].latest()[1] > CAM_STALL_S)]
             if want == "start":
                 if stalled:
                     say(f"No frames from {', '.join(stalled)}; cannot start.", f"{'、'.join(stalled)} 相机没有画面，不能开始。")
@@ -264,6 +296,7 @@ def run(cfg: Config, args):
                     say("Policy running. Space pauses.", "策略运行中。空格暂停。", "running")
                     with st.lock:
                         if st.rec is None:
+                            chunk_id, gp_last, next_rec = -1, float("nan"), now
                             st.rec = {"q": [], "cmd": [], "t": [], "chunk": [], "chunk_t": [], "infer_ms": [], "gp": [],
                                       "t0": now, **{f"{c}_jpg": [] for c in st.cam_names}}
                     ex.reset(True)                        # every start re-plans from the current observation
@@ -290,11 +323,15 @@ def run(cfg: Config, args):
                 say(f"Inference failed, paused: {ex.err}", f"推理出错，已暂停：{ex.err}", "paused")
                 print(f"inference error: {ex.err}", flush=True)
                 ex.err, mode = None, "paused"
-            if mode != "running" and getattr(ex, "active", True):
-                ex.reset(False)
+            if mode == "running" and st.sim and robot.ended:
+                say("Simulation episode ended. Save or discard the trial.",
+                    "仿真回合已结束。请保存或丢弃这次试验。", "paused")
+                mode = "paused"
             if mode == "running" and stalled:
                 say(f"Camera stalled ({', '.join(stalled)}), paused.", f"相机断流（{'、'.join(stalled)}），已自动暂停。", "paused")
                 mode = "paused"
+            if mode != "running" and getattr(ex, "active", True):
+                ex.reset(False)
 
             q = robot.read()
             with st.lock:
@@ -316,11 +353,21 @@ def run(cfg: Config, args):
             for j, n in enumerate(names):                 # velocity limit (arm joints) + joint limits
                 step = (300.0 * args.speed * dt if mode == "homing" else 1e9) if j == gi else vmax
                 cmd[j] = robot.clamp(n, cmd[j] + max(-step, min(step, target[j] - cmd[j])))
-            sent_v = robot.send(cmd, q)
             with st.lock:
-                st.cmd = sent_v
                 rec = st.rec if st.mode == "running" else None
-            if rec is not None and now >= next_rec:       # record at fps
+            sample = rec is not None and now >= next_rec
+            if sample:
+                frames = {c: cams[c].latest()[0] for c in st.cam_names}
+            if st.sim:
+                with st.lock:
+                    sent_v = robot.send(cmd, q) if mode == "running" else list(cmd)
+                    st.q = robot.read()
+                    st.cmd = sent_v
+            else:
+                sent_v = robot.send(cmd, q)
+                with st.lock:
+                    st.cmd = sent_v
+            if sample:                                    # record at fps
                 next_rec = max(next_rec + 1 / fps, now)
                 rec["q"].append(q)
                 rec["cmd"].append(sent_v)
@@ -328,16 +375,12 @@ def run(cfg: Config, args):
                 rec["chunk"].append(chunk_id)
                 rec["gp"].append(gp_last)
                 for c in st.cam_names:
-                    rec[f"{c}_jpg"].append(prep_image(cams[c].latest()[0], sizes[c], jq)[1])
+                    rec[f"{c}_jpg"].append(prep_image(frames[c], sizes[c], jq)[1])
             time.sleep(max(0.0, dt - (time.perf_counter() - tick)))
     except KeyboardInterrupt:
         pass
     finally:
         st.quit = True
-        try:
-            robot.shutdown(moved=started)
-        finally:
-            for c in cams.values():
-                c.close()
-            srv.shutdown()
-            print("done", flush=True)
+        if isinstance(ex, threading.Thread):
+            ex.join(timeout=2)
+        print("done", flush=True)

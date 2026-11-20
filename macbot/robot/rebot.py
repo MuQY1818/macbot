@@ -257,7 +257,8 @@ class RebotArm(Robot):
 
     def shutdown(self, moved: bool = True):
         try:
-            if self.leader is not None:
+            if self.leader is not None and self.leader.is_connected:
                 self.leader.disconnect()
         finally:
-            safe_disconnect(self.follower, go_zero=moved)
+            if self.follower.is_connected:
+                safe_disconnect(self.follower, go_zero=moved)

@@ -9,7 +9,7 @@ task:
 data_root: ~/macbot-data                    # raw/, datasets/, rollouts/, logs/ live here
 
 robot:
-  type: rebot_b601                          # rebot_b601 (reference setup) or lerobot (any LeRobot arm, see configs/so101.yaml)
+  type: rebot_b601                          # rebot_b601, lerobot (configs/so101.yaml), or sim (configs/so101_sim.yaml)
   can_channel: can0                         # PCAN-USB through PCBUSB on macOS
   follower_id: follower1                    # LeRobot calibration ids (files under ~/.cache/huggingface/lerobot/calibration/)
   leader_id: rebot_arm_102_leader

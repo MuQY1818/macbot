@@ -59,7 +59,15 @@
 | 腕部相机 | Orbbec Gemini 2 | 彩色流，经 `pyorbbecsdk2` 读取 |
 | 电脑 | Apple 芯片的 MacBook Pro | 跑 π0.5 建议 32 GB 以上内存 |
 
-LeRobot 支持的其他机械臂可以加到 `macbot/robot/`。控制台只需要 `connect`、`get_observation`、`send_action`、`disconnect` 四个接口。
+### 支持的机械臂
+
+| 配置 | 机械臂 | 验证情况 |
+|---|---|---|
+| `rebot_b601` | reBot B601-RS + Arm 102 | 参考配置已在真机验证；ACT 回归也通过了 `--fake` 验证。 |
+| `lerobot` | SO-100/101、Koch、OMX、OpenArm、YAM，以及 LeRobot 0.7 中接受关节位置指令的其他从臂 | SO-101 采集和导出已用 `--fake` 验证。其他机械臂使用上游驱动，尚未在 macbot 中验证真机。 |
+| `sim` | MuJoCo 中的 SO-101 桌面场景 | 已在 Apple 芯片 Mac 上验证仿真采集、ACT 推理和试验回放。 |
+
+`macbot robots` 列出已注册的类型。可从 [SO-101 配置](configs/so101.yaml) 或[仿真配置](configs/so101_sim.yaml) 开始。驱动安装和仅使用 UVC 相机时的免 `sudo` 流程见[安装指南](docs/setup_zh.md)。
 
 ## 快速开始
 
@@ -73,7 +81,7 @@ macbot collect --fake                  # 用模拟机械臂和相机打开采集
 ```
 
 打开 <http://127.0.0.1:8766>。按 **S** 录制，**回车** 保存，**←** 丢弃。
-连真机之前，先装 PCAN 驱动、填好相机 ID，见 [docs/setup_zh.md](https://github.com/MuQY1818/macbot/blob/main/docs/setup_zh.md)。
+使用 MuJoCo 时，在源码目录执行 `pip install -e '.[sim]'`，再运行 `macbot --config configs/so101_sim.yaml collect`。连接真机请参照[安装指南](docs/setup_zh.md)。
 
 ## 工作流程
 

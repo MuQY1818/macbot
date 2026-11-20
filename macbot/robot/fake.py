@@ -69,33 +69,44 @@ class _Leader:
 class FakeArm(Robot):
     kind = "fake"
 
-    def __init__(self, joints, limits):
+    def __init__(self, joints, limits, robot_type):
         super().__init__()
         self.joints = list(joints)
-        self.gripper = "gripper" if "gripper" in joints else None
+        grips = [n for n in joints if "gripper" in n]
+        self.gripper = grips[0] if len(grips) == 1 else None
         self.limits = dict(limits)
+        self.robot_type = robot_type
         self.follower, self.leader = _Follower(self.joints, self.limits), _Leader(self.joints, self.limits)
 
     def info(self):
-        return {"kind": self.kind, "joints": self.joints}
+        return {"kind": self.kind, "joints": self.joints, "robot_type": self.robot_type}
 
     def shutdown(self, moved: bool = True):
         pass
 
 
 def fake_for(rcfg: dict) -> FakeArm:
-    """A simulated arm with the same joints as the configured robot. For LeRobot types the real device
-    class is built (not connected) to read its joints; if its driver is missing, SO-100/101 joints are used."""
-    if rcfg.get("type", "rebot_b601") == "rebot_b601":
-        return FakeArm(list(REBOT_LIMITS), REBOT_LIMITS)
-    joints = SO_JOINTS
-    try:
-        from .lerobot_generic import joint_names, make_follower
-        joints = joint_names(make_follower(dict(rcfg["follower"], port=rcfg["follower"].get("port") or "/dev/null")))
-    except BaseException as e:                     # noqa: BLE001  (driver missing, bad config: still simulate)
-        print(f"fake: could not build {rcfg.get('follower', {}).get('type')} ({e}); using SO-101 joints", flush=True)
+    """Use joint layouts without importing or constructing device drivers."""
+    kind = rcfg.get("type", "rebot_b601")
+    if kind == "rebot_b601":
+        return FakeArm(list(REBOT_LIMITS), REBOT_LIMITS, "rebot_b601_follower")
+    spec = rcfg.get("follower", {})
+    typ = spec.get("type") if kind == "lerobot" else "so_follower"
+    joints = rcfg.get("joints")
+    if joints is None:
+        if typ in {"so100_follower", "so101_follower", "so_follower", "koch_follower", "omx_follower"}:
+            joints = SO_JOINTS
+        elif typ == "openarm_follower":
+            joints = list(spec.get("motor_config") or [*(f"joint_{i}" for i in range(1, 8)), "gripper"])
+        elif typ == "yam_follower":
+            joints = [*(f"joint_{i}" for i in range(1, 7)), "gripper"]
+        else:
+            raise SystemExit(f"--fake needs robot.joints for follower type {typ!r}")
+    if not isinstance(joints, list) or not joints or not all(isinstance(n, str) and n for n in joints) or len(set(joints)) != len(joints):
+        raise SystemExit("robot.joints must list unique, nonempty joint names")
+    joints = sorted(joints, key=lambda n: "gripper" in n)
     limits = {n: (-150.0, 150.0) for n in joints}
     if "gripper" in joints:
         limits["gripper"] = (0.0, 100.0)
     limits.update({n: tuple(v) for n, v in (rcfg.get("limits") or {}).items() if n in joints})
-    return FakeArm(joints, limits)
+    return FakeArm(joints, limits, typ or "fake")

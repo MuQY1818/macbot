@@ -2,6 +2,7 @@
 
     type: rebot_b601     reBot B601-RS + Arm 102 with feedforward and two-stage zeroing (reference setup)
     type: lerobot        any follower / leader LeRobot provides (SO-100/101, Koch, OMX, OpenArm, YAM, ...)
+    type: sim            a local LeRobot environment with absolute joint position control
 
 ``fake=True`` returns a simulated arm with the same joints, so every console runs without hardware.
 """
@@ -23,7 +24,10 @@ def open_robot(rcfg: dict, fake: bool = False, leader: bool = False) -> Robot:
     if typ == "lerobot":
         from .lerobot_generic import LeRobotArm
         return LeRobotArm(rcfg, leader)
-    raise SystemExit(f"unknown robot.type {typ!r}: use rebot_b601 or lerobot")
+    if typ == "sim":
+        from .sim import SimArm
+        return SimArm(rcfg)
+    raise SystemExit(f"unknown robot.type {typ!r}: use rebot_b601, lerobot, or sim")
 
 
 __all__ = ["Robot", "open_robot"]

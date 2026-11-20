@@ -12,8 +12,8 @@
     macbot video ROLLOUT          export a rollout as a side-by-side MP4
     macbot bench --policy DIR     time policy inference on this Mac
 
-Robot commands need ``sudo -E`` on macOS (the Orbbec SDK requires root). Everything that does not
-touch the hardware runs as a normal user, and ``--fake`` simulates robot and cameras.
+On macOS the Orbbec SDK requires ``sudo -E``. Simulation, fake mode and UVC-only setups run
+without sudo when the robot driver permits it.
 """
 from __future__ import annotations
 
@@ -45,6 +45,8 @@ def cmd_cameras(args):
 def cmd_joints(args):
     cfg = _cfg(args)
     rcfg = cfg["robot"]
+    if rcfg.get("type") == "sim":
+        raise SystemExit("use collect or run to see simulated joints")
     if rcfg.get("type", "rebot_b601") == "rebot_b601":
         _preload(cfg)
         from .robot.rebot import JOINTS, make_leader, read_joints_passive
@@ -60,13 +62,17 @@ def cmd_joints(args):
         return
     # Generic LeRobot arms: only the leader is read. Connecting a follower enables its torque, and
     # disconnecting it again would let the arm drop, so it is not touched here.
-    from .robot.lerobot_generic import joint_names, make_leader
+    from .robot.lerobot_generic import joint_names, make_leader, require_calibration
     if not rcfg.get("leader"):
         raise SystemExit("robot.leader is not set")
     leader = make_leader(rcfg["leader"])
-    leader.connect(calibrate=False)
-    act = leader.get_action()
-    leader.disconnect()
+    require_calibration(leader)
+    try:
+        leader.connect(calibrate=False)
+        act = leader.get_action()
+    finally:
+        if leader.is_connected:
+            leader.disconnect()
     for n in joint_names(leader):
         print(f"{n:16s} {act[f'{n}.pos']:8.1f}")
 
@@ -74,10 +80,10 @@ def cmd_joints(args):
 def cmd_robots(args):
     from .robot.lerobot_generic import known_types
     robots, teleops = known_types()
-    print("robot.type: rebot_b601 (reference profile), or lerobot with these follower / leader types:\n")
-    print("followers:", ", ".join(robots))
+    print("robot.type: rebot_b601 (reference profile), sim (local simulation), or lerobot:\n")
+    print("registered follower types:", ", ".join(r for r in robots if r != "sim"))
     print("leaders:  ", ", ".join(teleops))
-    print("\nTypes whose driver is not installed are missing; e.g. pip install 'lerobot[feetech]' for SO-100/101.")
+    print("\nInstall the driver extra for your robot; e.g. pip install 'lerobot[feetech]==0.7.0' for SO-100/101.")
 
 
 def _preload(cfg):
@@ -180,7 +186,7 @@ def main(argv=None):
     p.add_argument("--device", default="mps")
     p.add_argument("--port", type=int)
     p.add_argument("--fake", action="store_true", help="simulate robot and cameras (policy runs for real)")
-    p.add_argument("--autostart", type=float, default=0, help="with --fake: run this many seconds, save, quit")
+    p.add_argument("--autostart", type=float, default=0, help="in fake or sim mode: run this many seconds, save, quit")
     p.set_defaults(fn=cmd_run)
 
     p = sub.add_parser("replay", help="browse recorded rollouts")
