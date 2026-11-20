@@ -29,6 +29,11 @@ All notable changes to macbot will be documented here. This project follows
   checks for generic arms and local dependency checks for the bundled simulator.
 - Added PyPI package metadata and a release workflow for Trusted Publishing.
 
+### Fixed
+
+- `macbot bench` uses the checkpoint's state dimension so it can benchmark policies for arms
+  with fewer or more than seven joints.
+
 ## [0.1.0] - 2026-11-19
 
 ### Added

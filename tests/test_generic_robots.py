@@ -10,6 +10,7 @@ from macbot.cameras import camera_info, open_cameras
 from macbot.cli import main
 from macbot.data.export import robot_type
 from macbot.data.health import episode_stats
+from macbot.policy import bench
 from macbot.robot import lerobot_generic, open_robot, sim
 from macbot.robot.fake import SO_JOINTS
 
@@ -135,3 +136,17 @@ def test_six_joint_episode_export(six_joint_episode, tmp_path):
         assert info["features"][key]["shape"] == [6]
         assert info["features"][key]["names"] == [f"{n}.pos" for n in SO_JOINTS]
     assert info["features"]["observation.images.top"]["shape"] == [12, 16, 3]
+
+
+def test_bench_uses_checkpoint_state_dimension(monkeypatch, tmp_path, capsys):
+    class Policy:
+        kind = "act"
+        H = 10
+
+        def __call__(self, images, state):
+            assert state == [0.0] * 6
+
+    (tmp_path / "config.json").write_text(json.dumps({"input_features": {"observation.state": {"shape": [6]}}}))
+    monkeypatch.setattr(bench, "load_policy", lambda *_: Policy())
+    assert main(["bench", "--policy", str(tmp_path), "--device", "cpu", "-n", "2"]) is None
+    assert "act on cpu, chunk 10: median" in capsys.readouterr().out
