@@ -40,7 +40,7 @@ macbot --config configs/so101.yaml health --data ~/macbot-data/raw/pick_cube_fak
 在采集页面按 **S** 开始，按 **回车** 保存。要验证模拟器，先运行
 `python -m pip install -e ".[dev,sim]"`，再运行 `macbot --config configs/so101_sim.yaml collect`，
 不加 `--fake`。固定版本的场景会在首次使用时下载并执行 Python 代码；参见
-[仿真安装](docs/setup_zh.md#本地-mujoco-模拟器)和[工作流程](docs/guide_zh.md#仿真)。
+[仿真安装](docs/setup_zh.md#本地-mujoco-仿真)和[工作流程](docs/guide_zh.md#物理仿真)。
 跑策略时使用与关节布局和相机匹配的检查点；`run --fake` 仍会运行真实策略。
 
 ## 扩展 macbot
