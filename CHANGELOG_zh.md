@@ -11,6 +11,8 @@ macbot 的主要变更记录在这里。本项目遵循
 
 ### 新增
 
+- 暂停后可在运行页回放本次和以往会话保存的试验，查看同步相机、关节曲线和每块推理耗时。
+  编辑的结果和备注也会显示在 `replay` 和 `health` 中。
 - `macbot init` 引导识别 USB 机械臂、预览并分配相机、完成 LeRobot 手动校准和检查。
   生成的用户配置可由 `collect` 和 `run` 自动读取。已知设备角色时可用 `init --yes`。
 - 使用 LeRobot 保存的处理器加载兼容的 checkpoint。`macbot policies` 可查实测覆盖范围，

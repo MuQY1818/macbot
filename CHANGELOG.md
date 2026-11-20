@@ -11,6 +11,8 @@ All notable changes to macbot will be documented here. This project follows
 
 ### Added
 
+- Review saved trials from current and earlier sessions in the paused run console, with synchronized
+  cameras, joint traces and per-chunk timing. Result and note edits are shared with `replay` and `health`.
 - `macbot init` guides USB arm selection, live camera assignment and manual LeRobot calibration.
   It checks a per-user profile that `collect` and `run` can find automatically. `init --yes`
   supports setups whose roles are already known.
