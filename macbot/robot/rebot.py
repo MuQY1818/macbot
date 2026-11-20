@@ -169,20 +169,37 @@ def make_follower(rcfg: dict):
     return robot
 
 
+LEADER_FRESH_S = 0.15
+
+
+def fresh_leader_angles(good: dict, ids: dict, samples: dict, now: float, max_age: float = LEADER_FRESH_S):
+    """Leader angles for takeover, or None when any joint has no fresh reading within ``max_age`` seconds.
+
+    Upstream get_action falls back to cached angles on errors, and the bus returns a cached angle for a servo
+    that missed one cycle. Single misses are common (one of seven servos in about a third of reads on the
+    reBot 102), so requiring all seven in every read dropped most of a takeover. ``good`` keeps each joint's
+    last reliable reading between calls.
+    """
+    for n, i in ids.items():
+        sample = samples.get(i)
+        if sample is not None and sample.reliable:
+            good[n] = (now, sample.angle_deg)
+    if all(n in good and now - good[n][0] <= max_age for n in ids):
+        return {n: good[n][1] for n in ids}
+    return None
+
+
 def make_leader(port: str | None = None, leader_id: str = "rebot_arm_102_leader", *, fresh=False):
     from lerobot.teleoperators.rebot_102_leader.config_rebot_102_leader import RebotArm102LeaderTeleopConfig
     from lerobot.teleoperators.rebot_102_leader.rebot_102_leader import RebotArm102Leader
 
     class FreshLeader(RebotArm102Leader):
         def _read_raw_positions(self):
-            # Upstream get_action falls back to cached angles on errors; the bus can also
-            # return a cached angle for just one joint. Neither is valid for takeover.
             ids = self.config.joint_ids
-            samples = self.bus.sync_monitor(list(ids.values()))
-            self.fresh = all(samples[i] is not None and samples[i].reliable for i in ids.values())
-            if not self.fresh:
-                return self._last_raw_positions
-            return {n: samples[i].angle_deg for n, i in ids.items()}
+            angles = fresh_leader_angles(self.__dict__.setdefault("_good", {}), ids,
+                                         self.bus.sync_monitor(list(ids.values())), time.monotonic())
+            self.fresh = angles is not None
+            return angles if self.fresh else self._last_raw_positions
 
         def get_action(self):
             self.fresh = False
