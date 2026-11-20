@@ -24,7 +24,4 @@ accelerate launch --num_processes="$NG" --mixed_precision=bf16 "${MULTI[@]}" "$H
   --rename_map='{"observation.images.top": "observation.images.base_0_rgb", "observation.images.wrist": "observation.images.left_wrist_0_rgb"}' \
   --batch_size="${BS:-32}" --steps="$STEPS" --save_freq="${SAVE:-1000}" --log_freq=25 --num_workers=8 --seed=1000 \
   --output_dir="runs/$NAME" --job_name="$NAME" "$@"
-if [ -f "$DATASET/meta/camera_framing.json" ]; then
-  find "runs/$NAME/checkpoints" -type d -name pretrained_model \
-    -exec cp "$DATASET/meta/camera_framing.json" '{}/camera_framing.json' \;
-fi
+python "$HERE/copy_camera_framing.py" --output_dir="runs/$NAME" "$@"

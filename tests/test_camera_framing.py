@@ -6,6 +6,7 @@ import pytest
 from macbot.cameras.framing import FRAMING_FILE, dataset_framing, framing, training_framing
 from macbot.cli import main
 from macbot.config import load
+from train.copy_camera_framing import copy_framing
 
 
 def test_dataset_framing_preserves_known_legacy_values_and_rejects_mixed_modes():
@@ -50,3 +51,19 @@ def test_run_checks_dataset_or_checkpoint_framing_before_opening_robot(tmp_path,
     (metadata / FRAMING_FILE).unlink()
     main(cmd)
     assert capsys.readouterr().out.count("No training camera framing recorded; current framing:") == 1
+
+
+def test_checkpoint_copy_uses_its_recorded_dataset(tmp_path):
+    run = tmp_path / "run"
+    for step, crop in [("100", None), ("200", [0, 0, 320, 240])]:
+        dataset = tmp_path / f"dataset-{step}" / "meta"
+        dataset.mkdir(parents=True)
+        (dataset / FRAMING_FILE).write_text(json.dumps({"top": {"crop": crop}}))
+        path = run / "checkpoints" / step / "pretrained_model"
+        path.mkdir(parents=True)
+        (path / "train_config.json").write_text(json.dumps({"dataset": {"root": str(dataset.parent)}}))
+    copy_framing(run)
+    for step, crop in [("100", None), ("200", [0, 0, 320, 240])]:
+        path = run / "checkpoints" / step / "pretrained_model"
+        assert training_framing(path, tmp_path) == {"top": {"crop": crop}}
+        assert (path / FRAMING_FILE).is_file()
