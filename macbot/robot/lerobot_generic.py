@@ -2,8 +2,8 @@
 
     robot:
       type: lerobot
-    follower: {type: so101_follower, port: /dev/tty.usbmodemFOLLOWER, id: follower}
-    leader:   {type: so101_leader,   port: /dev/tty.usbmodemLEADER, id: leader}
+      follower: {type: so101_follower, port: /dev/tty.usbmodemFOLLOWER, id: follower}
+      leader:   {type: so101_leader,   port: /dev/tty.usbmodemLEADER, id: leader}
       limits: {shoulder_pan: [-110, 110], gripper: [0, 100]}     # optional, robot units
 
 Every key under ``follower`` / ``leader`` is passed to the LeRobot config class, so anything
