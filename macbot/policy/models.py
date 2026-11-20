@@ -149,8 +149,36 @@ class PI05:
         return (a, raw_np) if return_raw else a
 
 
-def load_policy(path: Path, device: str, task: str, steps: int | None = None):
+def policy_backend(cfg, args):
+    backend = getattr(args, "backend", None) or cfg.get("policy", {}).get("backend", "torch")
+    if backend not in ("torch", "mlx"):
+        sys.exit("policy.backend must be torch or mlx")
+    return backend
+
+
+def load_policy(path: Path, device: str, task: str, steps: int | None = None, *,
+                backend: str = "torch", mlx_bits: int | None = None, mlx_quantize: str = "prefix"):
     typ = json.loads((Path(path) / "config.json").read_text()).get("type", "act")
+    if backend == "mlx":
+        if typ != "pi05":
+            sys.exit("The MLX backend requires a stock pi0.5 checkpoint")
+        if device != "mps":
+            sys.exit("The MLX backend runs on the Apple GPU; use --device mps")
+        try:
+            import mlx.core as mx
+
+            from .mlx_pi05 import PI05MLX
+        except ModuleNotFoundError as exc:
+            if exc.name and exc.name.startswith("mlx"):
+                sys.exit("Install the optional MLX backend with: pip install 'macbot[mlx]'")
+            raise
+        return PI05MLX(
+            Path(path), task, steps, bits=mlx_bits, quantize=mlx_quantize, trim=True, precompute_adarms=True,
+            dtype=mx.float16 if mlx_bits is None else mx.bfloat16, pack_linears=mlx_bits is None,
+            fused_rope=mlx_bits is None,
+        )
+    if backend != "torch":
+        raise ValueError(f"Unsupported policy backend: {backend}")
     if typ == "pi05":
         return PI05(path, device, task, steps)
     if typ == "act":
@@ -158,12 +186,41 @@ def load_policy(path: Path, device: str, task: str, steps: int | None = None):
     sys.exit(f"unsupported policy type {typ} (ACT and pi0.5 are supported)")
 
 
+def raw_state_shape(path: Path, cfg: dict) -> list[int] | None:
+    """Resolve the raw input width when PI05 metadata describes the padded model state."""
+    key = "observation.state"
+    shape = ((cfg.get("input_features") or {}).get(key) or {}).get("shape")
+    if cfg.get("type") != "pi05" or not shape or shape != [cfg.get("max_state_dim")]:
+        return shape
+    processor = path / "policy_preprocessor.json"
+    if not processor.is_file():
+        return shape
+    for step in json.loads(processor.read_text()).get("steps", []):
+        filename = step.get("state_file")
+        if step.get("registry_name") != "normalizer_processor" or not filename:
+            continue
+        stats = path / Path(filename).name
+        if not stats.is_file():
+            continue
+        from safetensors import safe_open
+
+        with safe_open(str(stats), framework="np") as weights:
+            widths = {tuple(weights.get_slice(name).get_shape()) for name in weights.keys()
+                      if name.startswith(key + ".") and name != key + ".count"}
+        if len(widths) == 1:
+            dims = next(iter(widths))
+            if len(dims) == 1 and 0 < dims[0] <= shape[0]:
+                return list(dims)
+    return shape
+
+
 def check_joint_dimensions(path: Path, joints):
     """Check checkpoint metadata before loading weights or normalizing an observation."""
     cfg = json.loads((path / "config.json").read_text())
     for section, key, label in (("input_features", "observation.state", "state"),
                                 ("output_features", "action", "action")):
-        shape = ((cfg.get(section) or {}).get(key) or {}).get("shape")
+        shape = (raw_state_shape(path, cfg) if label == "state"
+                 else ((cfg.get(section) or {}).get(key) or {}).get("shape"))
         if shape is not None and shape != [len(joints)]:
             sys.exit(f"policy {label} dimension mismatch: checkpoint expects shape {shape}, "
                      f"but the robot has {len(joints)} joints ({', '.join(joints)})")

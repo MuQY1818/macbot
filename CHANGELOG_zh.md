@@ -8,6 +8,25 @@ macbot 的主要变更记录在这里。本项目遵循
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-20
+
+### 新增
+
+- π0.5 的可选 MLX 后端（`--backend mlx` 或 `policy.backend: mlx`，安装 `macbot[mlx]`）。直接加载
+  LeRobot 的 pi05 checkpoint，fp16 运行，带编译、文本补齐裁剪、AdaRMS 预计算、融合 RoPE 和投影合并：
+  M5 Pro 上每个 50 步动作块约 165 ms，PyTorch MPS 约 270 ms；动作与 bf16 参照的误差平均 0.08°、
+  p99 0.42°，远小于换随机种子造成的差异。带引导的 RTC 仍走 PyTorch；用 MLX 时 `--mode auto` 选异步分块。
+- `macbot bench --profile` 对两种后端都给出同步计时的分阶段耗时（视觉、前缀、每一步去噪），
+  `--steps` 可设更短的去噪步数。
+- `tools/accel/`：离线保真度评测工具，从采集的数据里抽固定观测集，用相同噪声对比任意配置，
+  报告延迟和动作误差，并以换种子的差异为标尺。
+- 推理基准文档（`docs/acceleration.md`、`docs/acceleration_zh.md`）。
+
+### 修复
+
+- π0.5 checkpoint 存的是补齐到 32 维的状态；启动时的维度检查改为从归一化参数读取真实维度，
+  `macbot run` 重新可以加载 π0.5。
+
 ## [0.2.0] - 2026-11-19
 
 ### 新增
@@ -43,6 +62,7 @@ macbot 的主要变更记录在这里。本项目遵循
   以及试验回放、MP4 导出和推理测速。
 - 设备诊断、安装和使用指南，以及英文与简体中文控制台。
 
-[Unreleased]: https://github.com/MuQY1818/macbot/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/MuQY1818/macbot/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/MuQY1818/macbot/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/MuQY1818/macbot/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/MuQY1818/macbot/releases/tag/v0.1.0

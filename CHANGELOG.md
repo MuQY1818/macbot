@@ -8,6 +8,28 @@ All notable changes to macbot will be documented here. This project follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-20
+
+### Added
+
+- An optional MLX backend for π0.5 (`--backend mlx` or `policy.backend: mlx`, install
+  `macbot[mlx]`). It loads LeRobot pi05 checkpoints directly and runs in fp16 with compiled
+  execution, trimmed text padding, precomputed AdaRMS, fused RoPE and packed projections:
+  about 165 ms per 50-step chunk on an M5 Pro against about 270 ms for PyTorch MPS, with actions
+  within 0.08° mean / 0.42° p99 of the bf16 reference (well under the seed-to-seed spread).
+  Guided RTC still uses PyTorch; `--mode auto` picks asynchronous chunks with MLX.
+- `macbot bench --profile` prints a synchronized per-stage breakdown (vision, prefix, each
+  denoising step) for both backends, and `--steps` for shorter flow schedules.
+- `tools/accel/`: an offline fidelity harness that builds a fixed observation set from recorded
+  episodes, compares any configuration with matched noise, and reports latency and action error
+  against the seed-to-seed spread.
+- Inference benchmark docs (`docs/acceleration.md`, `docs/acceleration_zh.md`).
+
+### Fixed
+
+- π0.5 checkpoints store a padded 32-wide state; the startup dimension check now reads the real
+  state width from the normalizer, so `macbot run` accepts them again.
+
 ## [0.2.0] - 2026-11-19
 
 ### Added
@@ -48,6 +70,7 @@ All notable changes to macbot will be documented here. This project follows
   chunks and Real-Time Chunking, plus rollout replay, MP4 export and inference benchmarks.
 - Equipment diagnostics, setup and usage guides, and English and Simplified Chinese consoles.
 
-[Unreleased]: https://github.com/MuQY1818/macbot/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/MuQY1818/macbot/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/MuQY1818/macbot/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/MuQY1818/macbot/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/MuQY1818/macbot/releases/tag/v0.1.0

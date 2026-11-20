@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "macbot"
-version = "0.2.0"
+version = "0.3.0"
 description = "Real-robot learning on a MacBook: teleoperate, record, export to LeRobot and run ACT / pi0.5 on Apple silicon."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -32,6 +32,7 @@ dependencies = [
 [project.optional-dependencies]
 orbbec = ["pyorbbecsdk2"]
 pi = ["lerobot[pi]==0.7.0"]
+mlx = ["lerobot[pi]==0.7.0", "mlx>=0.32.4; sys_platform == 'darwin' and platform_machine == 'arm64'"]
 sim = ["mujoco==3.3.7"]
 dev = ["pytest", "pyflakes", "ruff==0.14.14", "build", "pre-commit"]
 

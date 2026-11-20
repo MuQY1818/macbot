@@ -30,7 +30,7 @@ from ..i18n import tr
 from ..system import ensure_dir, expand, give_back, start_log
 from .executors import AsyncChunk, Ensemble, SyncChunk
 from .gripper import BinaryGripper, find_gripper_config
-from .models import check_joint_dimensions, load_policy, prep_image
+from .models import check_joint_dimensions, load_policy, policy_backend, prep_image
 
 CAM_STALL_S = 0.5
 
@@ -183,12 +183,21 @@ def _control(st, srv, port, fps, gripper, cleanup):
     if gripper is not None and gi is None:
         sys.exit("gripper.json found but the robot has no joint named gripper; use --gripper raw")
     print(f"loading policy {args.policy} on {args.device}", flush=True)
-    pol = load_policy(args.policy, args.device, cfg["task"]["instruction"], args.steps)
+    backend = policy_backend(cfg, args)
+    if backend == "mlx" and args.mode == "rtc":
+        print("Guided RTC requires PyTorch; using the torch backend.", flush=True)
+        backend = "torch"
+    if backend == "mlx":
+        pol = load_policy(args.policy, args.device, cfg["task"]["instruction"], args.steps, backend="mlx",
+                          mlx_bits=args.mlx_bits, mlx_quantize=args.mlx_quantize)
+    else:
+        pol = load_policy(args.policy, args.device, cfg["task"]["instruction"], args.steps)
     if pol.kind == "pi05" and not args.no_compile:
         pol.enable_compile()
-        print("pi0.5: torch.compile on, the first inference compiles (~25 s)...", flush=True)
+        compiler = "mx.compile" if backend == "mlx" else "torch.compile"
+        print(f"pi0.5: {compiler} on; the first inference compiles.", flush=True)
     if args.mode == "auto":
-        args.mode = "rtc" if pol.kind == "pi05" else "ensemble"
+        args.mode = "async" if backend == "mlx" else "rtc" if pol.kind == "pi05" else "ensemble"
     if args.mode == "rtc" and not pol.supports_rtc:
         sys.exit("--mode rtc needs pi0.5")
     sizes = {c: tuple(cfg["cameras"][c]["save_size"]) for c in st.cam_names}

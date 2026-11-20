@@ -150,3 +150,34 @@ def test_bench_uses_checkpoint_state_dimension(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(bench, "load_policy", lambda *_: Policy())
     assert main(["bench", "--policy", str(tmp_path), "--device", "cpu", "-n", "2"]) is None
     assert "act on cpu, chunk 10: median" in capsys.readouterr().out
+
+
+def test_pi05_bench_uses_raw_normalizer_dimension(monkeypatch, tmp_path):
+    safetensors = pytest.importorskip("safetensors.numpy")
+
+    class Policy:
+        kind = "pi05"
+        H = 50
+
+        def __call__(self, images, state):
+            assert state == [0.0] * 7
+
+    (tmp_path / "config.json").write_text(json.dumps({
+        "type": "pi05", "max_state_dim": 32,
+        "input_features": {"observation.state": {"shape": [32]}},
+        "output_features": {"action": {"shape": [7]}},
+    }))
+    (tmp_path / "policy_preprocessor.json").write_text(json.dumps({
+        "steps": [{"registry_name": "normalizer_processor", "state_file": "stats.safetensors"}],
+    }))
+    safetensors.save_file({
+        "observation.state.q01": np.zeros(7, np.float32),
+        "observation.state.count": np.array([1000]),
+    }, str(tmp_path / "stats.safetensors"))
+    monkeypatch.setattr(bench, "load_policy", lambda *_: Policy())
+    assert main(["bench", "--policy", str(tmp_path), "--no-compile", "-n", "2"]) is None
+    from macbot.policy.models import check_joint_dimensions
+
+    check_joint_dimensions(tmp_path, ["joint"] * 7)
+    with pytest.raises(SystemExit, match="state dimension mismatch"):
+        check_joint_dimensions(tmp_path, ["joint"] * 8)
