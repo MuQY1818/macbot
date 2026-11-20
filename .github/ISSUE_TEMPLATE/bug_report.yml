@@ -1,0 +1,52 @@
+name: Bug report
+description: Report a reproducible problem in macbot.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Issues are public. Remove personal information, credentials, and local paths from anything you attach.
+        Report vulnerabilities privately using the repository's security policy.
+  - type: input
+    id: version
+    attributes:
+      label: macbot version or commit
+    validations:
+      required: true
+  - type: input
+    id: host
+    attributes:
+      label: macOS version and chip
+      placeholder: "macOS 26.1, Apple M4 (or specify another platform)"
+    validations:
+      required: true
+  - type: input
+    id: robot
+    attributes:
+      label: Robot type and mode
+      placeholder: "rebot_b601, lerobot / so101_follower, sim, or --fake"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Command and reproduction steps
+      description: Include the command, relevant YAML fields, and what you expected to happen.
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: macbot doctor output
+      description: Use the same config as the failing command. If doctor will not start, paste its error.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: What happened and relevant log output
+      description: Include the first error and the relevant traceback or log lines.
+      render: text
+    validations:
+      required: true
