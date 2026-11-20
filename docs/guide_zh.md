@@ -180,6 +180,8 @@ sudo -E $(which python) -m macbot.cli run --policy ~/policies/cubes_pi05/004000 
 
 所有执行方式都会在策略步之间插值，供 60 Hz 控制环使用。
 
+`async` 和 `rtc` 默认在上一次推理结束后立刻再推理，所以每个块只执行几步。`--query-every K` 改为每 `K` 个策略步推理一次，对应 RTC 论文的执行步长。`rtc` 对推理期间执行的动作给权重 1，之后的权重在 `--rtc-horizon` 处衰减到 0；`--rtc-schedule exp` 用 RTC 论文的指数衰减，默认是线性。与论文一致的设置（块长 50）是 `--query-every 15 --rtc-horizon 35 --rtc-schedule exp`。
+
 - **速度：** `--speed` 按比例缩放时间。0.5 倍速时，30 fps 的策略按每秒 15 步执行。
 - **安全限制：** 臂关节速度不超过 `run.max_vel × speed` 度每秒，并始终在关节限位之内。**回起始姿态**按 `run.home_vel` 移动（默认最远的关节每秒 25 度，不受
   `speed` 影响），起步有短暂加速，各臂关节同时到位。
@@ -296,5 +298,3 @@ macbot --config configs/so101_sim.yaml replay
 ```
 
 按 **S** 重置场景并录制脚本主臂的动作。这些数据用于测试流程，脚本不会完成任务。保存后可以在采集控制台回放。运行策略时，checkpoint 的状态和动作必须是同顺序、同单位的六维关节值，相机名称和尺寸也要匹配（示例中 `front` 和 `wrist` 均为 320×240）。**开始**会为新试验重置场景，**暂停**会冻结场景；保存或丢弃当前试验后可点击**重置场景**。仿真也支持 `--autostart 秒数`。仿真与真机数据请存放在不同的任务目录。
-
-`async` 和 `rtc` 默认在上一次推理结束后立刻再推理，所以每个块只执行几步。`--query-every K` 改为每 `K` 个策略步推理一次，对应 RTC 论文的执行步长。`rtc` 对推理期间执行的动作给权重 1，之后的权重在 `--rtc-horizon` 处衰减到 0；`--rtc-schedule exp` 用 RTC 论文的指数衰减，默认是线性。与论文一致的设置（块长 50）是 `--query-every 15 --rtc-horizon 35 --rtc-schedule exp`。
