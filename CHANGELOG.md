@@ -19,6 +19,8 @@ All notable changes to macbot will be documented here. This project follows
 
 ### Changed
 
+- Setup can preserve existing camera framing and calibration. Exports and trials record framing, and
+  policy runs reject a known mismatch before connecting.
 - Local consoles try nearby ports when a default is busy and print the bound URL. Explicit ports stay fixed.
 - The base install now includes LeRobot's `feetech` and `dynamixel` extras and `pyserial` for
   serial arm discovery and support.

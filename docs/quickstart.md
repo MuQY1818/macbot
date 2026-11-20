@@ -56,6 +56,12 @@ Follow the kit's assembly and motor ID setup first. See [robot support](robots.m
 The default profile is `~/.config/macbot/config.yaml`; `macbot --config other.yaml collect` still uses that
 explicit file. To try the console without hardware, run `macbot collect --fake`.
 
+Policies must run with the camera framing they were trained with: the same capture mode, crop, and saved
+image size for each role. When migrating, use `macbot init --from existing.yaml` and keep **Keep framing from
+the existing config** selected. Exports store `meta/camera_framing.json`; the training scripts copy it into
+checkpoints. `macbot run` stops before connecting to the robot if known framing differs, unless you explicitly
+pass `--allow-framing-mismatch`. With older checkpoints that lack this information, verify the framing printed at startup.
+
 The consoles default to ports 8765 (init), 8766 (collect), 8767 (run), and 8768 (replay). A busy default
 falls back to the next available port, up to nine ports higher. To fix the port, pass `--port` or set
 `init.port`, `teleop.port`, `run.port`, or `replay.port` in YAML. An explicit port must be available.

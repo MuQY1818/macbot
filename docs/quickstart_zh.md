@@ -47,6 +47,12 @@ USB 适配器，机械臂型号仍需确认。请先按套件说明完成组装�
 默认配置保存在 `~/.config/macbot/config.yaml`；显式传入 `macbot --config other.yaml collect` 时优先
 使用指定文件。没有硬件时可以运行 `macbot collect --fake` 试用采集台。
 
+运行策略时必须沿用训练时的相机取景：各角色的采集模式、裁剪范围和保存尺寸都应一致。迁移旧配置时用
+`macbot init --from existing.yaml`，保持选中**保留现有配置的取景**。导出会写入
+`meta/camera_framing.json`，训练脚本会把它放进 checkpoint。若已记录的取景不一致，`macbot run`
+会在连接机械臂前停止，除非显式传入 `--allow-framing-mismatch`。旧 checkpoint 缺少取景信息时，
+请核对启动时打印的当前取景。
+
 `init`、`collect`、`run`、`replay` 的默认端口分别是 8765、8766、8767、8768。默认端口被占用时，
 会向上尝试最多九个端口。要固定端口，请传入 `--port` 或在 YAML 中设置 `init.port`、`teleop.port`、
 `run.port`、`replay.port`；显式指定的端口必须可用。
