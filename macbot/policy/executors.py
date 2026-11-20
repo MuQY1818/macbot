@@ -6,6 +6,7 @@ control loop:
     ex.start()                    start background threads (if any)
     ex.reset(active)              drop all chunks; active=True starts inferring from the current observation
     ex.target(now) -> (a, id)     joint target for wall time ``now``, or (None, id) if nothing yet
+    ex.peek(now) -> a | None      the planned target at a later time, without side effects (no inference)
     ex.err                        set to a message if inference failed (the loop pauses)
 
 Executors receive ``observe() -> (images, q)`` and ``log(t_chunk, infer_ms, **extra)``; time runs at
@@ -55,6 +56,10 @@ class Executor:
     def target(self, now: float):
         raise NotImplementedError
 
+    def peek(self, now: float):
+        """Planned target at wall time ``now`` (usually in the future) from the chunks already inferred."""
+        return None
+
     def describe(self) -> str:
         return self.name
 
@@ -84,6 +89,9 @@ class SyncChunk(Executor):
             self.t0, self.id, f = time.time(), self.id + 1, 0.0
             self.log(self.t0, ms)
         return _interp(self.chunk, f), self.id
+
+    def peek(self, now):
+        return None if self.chunk is None else _interp(self.chunk, (now - self.t0) * self.rate)
 
     def describe(self):
         return f"chunk (K={self.k}, synchronous)"
@@ -118,6 +126,9 @@ class Step(Executor):
         self.log(time.time(), (time.perf_counter() - start) * 1e3)
         return self.action, self.id
 
+    def peek(self, now):
+        return self.action                                    # one action at a time: nothing planned ahead
+
     def describe(self):
         return "step (LeRobot select_action)"
 
@@ -143,13 +154,20 @@ class Ensemble(Executor, threading.Thread):
             live = [((now - t) * self.rate, ch) for t, ch in self.buf]
             self.buf = [b for b, (f, ch) in zip(self.buf, live, strict=False) if f < len(ch) - 1]
             n = self.n
+        return self._blend(live), n - 1
+
+    def peek(self, now):
+        with self.lk:
+            live = [((now - t) * self.rate, ch) for t, ch in self.buf]
+        return self._blend(live)
+
+    def _blend(self, live):
         live = [(f, ch) for f, ch in live if 0 <= f < len(ch) - 1]
         if not live:
-            return None, n - 1
+            return None
         fs = np.array([f for f, _ in live])
         w = np.exp(self.m * (fs - fs.max()))                 # older chunks weigh more, as in ACT
-        a = sum(wi * _interp(ch, f) for wi, (f, ch) in zip(w, live, strict=False)) / w.sum()
-        return a, n - 1
+        return sum(wi * _interp(ch, f) for wi, (f, ch) in zip(w, live, strict=False)) / w.sum()
 
     def run(self):
         while not self.stop():
@@ -205,6 +223,11 @@ class AsyncChunk(Executor, threading.Thread):
         if cur is None:
             return None, self.n - 1
         return _interp(cur["act"], (now - cur["T0"]) * self.rate), cur["id"]
+
+    def peek(self, now):
+        with self.lk:
+            cur = self.cur
+        return None if cur is None else _interp(cur["act"], (now - cur["T0"]) * self.rate)
 
     def accept(self, new_act, new_raw, cur, t_req, t_done, T_aligned):
         """Return the wall time of step 0 of the new chunk, or None to keep executing ``cur``.

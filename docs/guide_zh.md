@@ -92,6 +92,10 @@ DATASET=~/data/cubes_to_box_bin ./train/train_act.sh cubes_act
 
 把 `checkpoints/<步数>/pretrained_model` 拷回 Mac。如果是二值夹爪数据集，把 `gripper.json` 放在它旁边（或上一两级目录）。
 
+二值标签要等主臂超过 `--close-above` 才变成「闭合」，这时手指已经合了大半。用它训练的策略也会这么晚才发出闭合，
+而真实夹爪还要走完整个行程（reBot 软夹爪约 0.5 s）。`run --grip-lead 0.35` 在当前动作块里策略计划 0.35 s
+后闭合时就提前闭合，张开不受影响。每次试验在 `gp` 旁边另存这个提前值 `gp_ahead`。
+
 ## 5. 跑策略
 
 ```bash

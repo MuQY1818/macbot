@@ -254,6 +254,8 @@ def main(argv=None):
     p.add_argument("--rtc-horizon", type=int, default=20, help="rtc: guided prefix length in policy steps")
     p.add_argument("--gripper", default="auto", help="auto (find gripper.json), raw, or a path to gripper.json")
     p.add_argument("--grip-debounce", type=float, default=0.6, help="binary gripper: seconds of 'open' before opening")
+    p.add_argument("--grip-lead", type=float, default=0.0,
+                   help="binary gripper: also close when the policy plans to close this many seconds ahead (try 0.35)")
     p.add_argument("--steps", type=int, help="pi0.5 denoising steps (default from checkpoint)")
     p.add_argument("--no-compile", action="store_true", help="pi0.5: skip backend compilation")
     p.add_argument("--allow-framing-mismatch", action="store_true", help="run despite a known camera framing mismatch")

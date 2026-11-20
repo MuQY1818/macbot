@@ -103,6 +103,12 @@ DATASET=~/data/cubes_to_box_bin ./train/train_act.sh cubes_act
 Copy `checkpoints/<step>/pretrained_model` back to the Mac. For a binary-gripper dataset, put
 `gripper.json` next to it (or one or two folders above it).
 
+The binary label switches to "closed" only when the leader passes `--close-above`, when the fingers are
+already mostly shut. A policy trained on it commands the close about that late, and the real gripper then
+still has its whole travel ahead (about 0.5 s on the reBot soft gripper). `run --grip-lead 0.35` also
+closes when the policy plans to close 0.35 s ahead in the current chunk. Opening is unchanged. Each trial
+records the look-ahead value as `gp_ahead` next to `gp`.
+
 ## 5. Run a policy
 
 ```bash

@@ -216,7 +216,7 @@ def save_rollout(st: State, rec: dict, result: str):
     fps = st.cfg["record"]["fps"]
     meta = {"task": st.cfg.task, "instruction": st.cfg["task"]["instruction"], "policy": str(a.policy),
             "executor": st.executor, "mode": a.mode, "k": a.k, "te_m": a.te_m, "rtc_beta": a.rtc_beta,
-            "grip_debounce": a.grip_debounce, "speed": a.speed, "max_vel": st.cfg["run"]["max_vel"], "result": result,
+            "grip_debounce": a.grip_debounce, "grip_lead": getattr(a, "grip_lead", 0.0), "speed": a.speed, "max_vel": st.cfg["run"]["max_vel"], "result": result,
             "fps": fps, "frames": len(rec["t"]), "joint_names": st.joints, "gripper": st.gripper, "robot": st.robot_info, "cameras": st.cam_names,
             "camera_framing": framing(st.cfg["cameras"], fps),
             "saved_at": time.strftime("%Y-%m-%d %H:%M:%S"), "fake": a.fake, "writer": "macbot"}
@@ -233,7 +233,7 @@ def save_rollout(st: State, rec: dict, result: str):
     np.savez(tmp, qpos=np.asarray(rec["q"], np.float32), cmd=np.asarray(rec["cmd"], np.float32),
              t=np.asarray(rec["t"], np.float64), chunk_id=np.asarray(rec["chunk"], np.int32),
              chunk_t=np.asarray(rec["chunk_t"], np.float64), infer_ms=np.asarray(rec["infer_ms"], np.float32),
-             gp=np.asarray(rec["gp"], np.float32), meta=json.dumps(meta, ensure_ascii=False), **ex, **arrs)
+             gp=np.asarray(rec["gp"], np.float32), gp_ahead=np.asarray(rec.get("gp_ahead", []), np.float32), meta=json.dumps(meta, ensure_ascii=False), **ex, **arrs)
     tmp.rename(p)
     give_back(p)
     return p.name, meta
@@ -309,6 +309,11 @@ def _run(cfg, args, srv, cleanup):
         sys.exit("--autostart only works with --fake or robot.type: sim")
     gcfg = find_gripper_config(args.policy, args.gripper)
     gripper = BinaryGripper(gcfg, args.grip_debounce) if gcfg else None
+    lead = float(getattr(args, "grip_lead", 0.0) or 0.0)
+    if not (math.isfinite(lead) and 0 <= lead <= 2):
+        sys.exit("--grip-lead must be between 0 and 2 seconds")
+    if lead and gripper is None:
+        print("--grip-lead applies to binary grippers only; ignored", flush=True)
 
     fps = int(cfg["record"]["fps"])
     out = ensure_dir(cfg.rollout_dir(cfg.task + ("_fake" if args.fake else "")))
@@ -456,6 +461,7 @@ def _control(st, srv, fps, gripper, cleanup):
         web.show(srv)
 
     vmax = rc["max_vel"] * args.speed * dt               # max arm joint step per control cycle (robot units)
+    grip_lead = float(getattr(args, "grip_lead", 0.0) or 0.0)   # seconds the close decision looks ahead
     grip_step = 300.0 * args.speed * dt                  # gripper step while following or homing
     home_vmax = rc.get("home_vel", 25.0) * dt             # homing is slow regardless of speed
     home_t0 = 0.0
@@ -474,7 +480,7 @@ def _control(st, srv, fps, gripper, cleanup):
 
     try:
         started = True
-        chunk_id, gp_last = -1, float("nan")
+        chunk_id, gp_last, gp_ahead = -1, float("nan"), float("nan")
         next_rec = time.time()
         auto = [(0.0, "start"), (args.autostart, "save_fail"), (args.autostart + 0.5, "quit")] if args.autostart else []
         auto_t0 = time.time()
@@ -511,8 +517,9 @@ def _control(st, srv, fps, gripper, cleanup):
                     say("Policy running. Space pauses.", "策略运行中。空格暂停。", "running")
                     with st.lock:
                         if st.rec is None:
-                            chunk_id, gp_last, next_rec = -1, float("nan"), now
+                            chunk_id, gp_last, gp_ahead, next_rec = -1, float("nan"), float("nan"), now
                             st.rec = {"q": [], "cmd": [], "t": [], "chunk": [], "chunk_t": [], "infer_ms": [], "gp": [],
+                                      "gp_ahead": [],
                                       "t0": now, "takeover": [], "leader": [], "takeover_count": 0,
                                       "takeover_seconds": 0.0, "hand_marks": [], **{f"{c}_jpg": [] for c in st.cam_names}}
                         if st.rec["takeover_count"] and gripper is not None:
@@ -520,7 +527,7 @@ def _control(st, srv, fps, gripper, cleanup):
                     restart_policy()
             elif want == "takeover" and st.takeover and st.mode == "running":
                 ex.reset(False)
-                gp_last, chunk_id = float("nan"), -1
+                gp_last, gp_ahead, chunk_id = float("nan"), float("nan"), -1
                 with st.lock:
                     st.rec["takeover_count"] += 1
                 say("Holding the follower. Align the leader to take control.",
@@ -585,7 +592,9 @@ def _control(st, srv, fps, gripper, cleanup):
                     if gi is not None:
                         gp_last = target[gi]
                         if gripper is not None:
-                            target[gi] = gripper(gp_last, now)
+                            ahead = ex.peek(now + grip_lead) if grip_lead > 0 else None
+                            gp_ahead = float(ahead[gi]) if ahead is not None else float("nan")
+                            target[gi] = gripper(gp_last, now, gp_ahead if ahead is not None else None)
             elif mode in TAKEOVER_MODES:
                 errors = ({n: a - x for n, a, x in zip(names, leader, q, strict=True) if n != robot.gripper}
                           if leader is not None else {})
@@ -655,6 +664,7 @@ def _control(st, srv, fps, gripper, cleanup):
                 rec["t"].append(now - rec["t0"])
                 rec["chunk"].append(chunk_id)
                 rec["gp"].append(gp_last)
+                rec["gp_ahead"].append(gp_ahead)
                 if st.takeover:
                     # While the follower is still catching up, the motion is not the operator's: label it 2 too.
                     rec["takeover"].append(TAKEOVER_MODES["aligning"] if catching else TAKEOVER_MODES.get(mode, 0))
