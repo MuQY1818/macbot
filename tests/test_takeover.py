@@ -8,7 +8,7 @@ import pytest
 
 from macbot import robot as robots
 from macbot.config import load
-from macbot.policy import runner
+from macbot.policy import executors, runner
 from macbot.policy.gripper import BinaryGripper, takeover_gripper_alignment
 from macbot.robot.fake import FakeArm
 
@@ -223,3 +223,83 @@ def test_takeover_catches_up_slowly_and_labels_human_frames_after(tmp_path, monk
     human = np.flatnonzero(labels == 1)
     assert len(human) and (labels[2:human[0]] == 2).all()   # catch-up frames are not labelled human
     assert (labels[human[0]:] == 1).all()
+
+
+@pytest.mark.parametrize("lead", [0.0, 0.25])
+def test_grip_lead_closes_earlier(tmp_path, monkeypatch, lead):
+    cfg = load()
+    cfg["record"]["fps"] = 60
+    cfg["robot"]["type"] = "rebot_b601"
+    cfg["cameras"] = {}
+    path = tmp_path / "policy"
+    path.mkdir()
+    (path / "config.json").write_text('{"type": "act"}')
+    args = SimpleNamespace(fake=True, takeover=False, speed=1.0, policy=path, mode="chunk", k=60, te_m=.01, te_hz=30,
+                           rtc_beta=10, grip_debounce=0, grip_lead=lead, steps=None, device="cpu", autostart=0)
+    st = runner.State(cfg, tmp_path, args)
+    commands = []
+
+    class Arm(FakeArm):
+        ended = False
+
+        def check_rate(self, hz, setting):
+            pass
+
+        def read(self):
+            return list(commands[-1]) if commands else [0.0, 0.0, -100.0]
+
+        def send(self, target, measured=None):
+            commands.append(list(target))
+            return list(target)
+
+        def shutdown(self, moved=True):
+            pass
+
+    class Policy:
+        H, kind, shapes = 60, "act", None
+
+        def __call__(self, images, q):
+            ch = np.zeros((self.H, 3))
+            ch[30:, 2] = 1.0                       # the policy plans to close at step 30
+            return ch
+
+    monkeypatch.setattr(robots, "open_robot", lambda *a, **kw: Arm(["a", "b", "gripper"], {}, "fake"))
+    monkeypatch.setattr(runner, "open_cameras", lambda *a: {})
+    monkeypatch.setattr(runner, "load_policy", lambda *a: Policy())
+    step = 0
+
+    def sleep(_seconds):
+        nonlocal step
+        step += 1
+
+    clock = SimpleNamespace(
+        time=lambda: 100 + step / 60 + step * 1e-8, perf_counter=time.perf_counter,
+        monotonic=lambda: step / 60, strftime=time.strftime, sleep=sleep,
+    )
+    monkeypatch.setattr(runner, "time", clock)
+    monkeypatch.setattr(executors, "time", clock)  # chunk timing must follow the simulated clock too
+    want = {0: "start", 100: "save_ok", 101: "quit"}
+    real_command = st.take_command
+
+    def tick():
+        if want.get(step):
+            st.request(want[step])
+        return real_command()
+
+    monkeypatch.setattr(st, "take_command", tick)
+    srv = SimpleNamespace(url="offline", serve_forever=lambda: None, shutdown=lambda: None)
+    with ExitStack() as stack:
+        runner._control(st, srv, cfg["record"]["fps"], BinaryGripper({"open_deg": -100, "close_deg": 0}, 0), stack)
+
+    with np.load(tmp_path / "rollout_000.npz") as d:
+        cmd, gp, ahead = d["cmd"][:, 2], d["gp"], d["gp_ahead"]
+        meta = json.loads(str(d["meta"]))
+    first_close = int(np.argmax(cmd > -100))       # the command starts moving toward closed
+    first_planned = int(np.argmax(gp > 0.6))
+    assert meta["grip_lead"] == lead
+    if lead:
+        assert first_planned - first_close == pytest.approx(lead * 60, abs=2)
+        assert np.isfinite(ahead).all()
+    else:
+        assert abs(first_close - first_planned) <= 1
+        assert np.isnan(ahead).all()

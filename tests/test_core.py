@@ -45,6 +45,15 @@ def test_binary_gripper_debounce():
     assert g(0.1, 0.95) == -150      # open after 0.55 s
 
 
+def test_binary_gripper_closes_on_lookahead_only():
+    g = BinaryGripper({"open_deg": -150, "close_deg": 0}, debounce=0.2)
+    assert g(0.1, 0.0, ahead=0.3) == -150
+    assert g(0.1, 0.1, ahead=0.9) == 0           # the policy plans to close: start now
+    assert g(0.1, 0.2, ahead=0.9) == 0
+    assert g(0.1, 0.45, ahead=0.9) == -150       # opening still follows the current value only
+    assert g(0.1, 0.5, ahead=None) == -150
+
+
 def _episode(n, fps=30, age=0.02):
     q = np.zeros((n, 7))
     return {"qpos": q, "late": np.zeros(n), "top_age": np.full(n, age), "top_repeat": np.zeros(n)}
@@ -92,6 +101,17 @@ def test_sync_chunk_replans_every_k():
     assert i == 1 and pol.calls == 2
 
 
+def test_sync_chunk_peek_looks_ahead_without_inferring():
+    pol = FakePolicy()
+    ex = SyncChunk(pol, _observe, rate=30, log=lambda *a, **k: None, k=5)
+    assert ex.peek(time.time()) is None
+    ex.target(time.time())
+    assert ex.peek(ex.t0 + 3 / 30)[0] == pytest.approx(103)
+    assert ex.peek(ex.t0 + 8 / 30)[0] == pytest.approx(108)   # beyond K: still the planned chunk
+    assert ex.peek(ex.t0 + 99)[0] == pytest.approx(119)       # clamped to the chunk end
+    assert pol.calls == 1
+
+
 @pytest.mark.parametrize("cls", [Ensemble, AsyncChunk])
 def test_threaded_executors_produce_targets(cls):
     stop = threading.Event()
@@ -106,6 +126,8 @@ def test_threaded_executors_produce_targets(cls):
             a, _ = ex.target(time.time())
             time.sleep(0.01)
         assert a is not None and a.shape == (len(JOINTS),)
+        ahead = ex.peek(time.time() + 0.1)
+        assert ahead is not None and ahead.shape == (len(JOINTS),)
         ex.reset(False)
         assert ex.target(time.time())[0] is None or cls is Ensemble
     finally:

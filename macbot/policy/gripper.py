@@ -4,6 +4,12 @@ Datasets exported with ``macbot export --gripper binary`` carry a ``gripper.json
 Hysteresis: close as soon as p > 0.6. Once closed, open only after p < 0.4 for ``debounce`` seconds, so a
 short spurious "open" does not drop the object. Keep ``debounce`` shorter than the shortest open phase in
 your demonstrations (for example, a quick release of the last object).
+
+Closing lead: demonstrations labelled from the leader with a "closed" threshold near the closed angle mark
+the close only when the fingers are mostly shut, so a policy trained on them commands the close about as
+late. The real gripper then still has its whole travel ahead. ``ahead`` is the close probability the
+policy plans a little later (``run --grip-lead``); the gripper closes when either value passes 0.6.
+Opening is unchanged.
 """
 from __future__ import annotations
 
@@ -18,10 +24,10 @@ class BinaryGripper:
         self.closed = False
         self._open_since = None
 
-    def __call__(self, p: float, t: float) -> float:
+    def __call__(self, p: float, t: float, ahead: float | None = None) -> float:
         if not self.closed:
             self._open_since = None
-            self.closed = p > 0.6
+            self.closed = p > 0.6 or (ahead is not None and ahead > 0.6)
         elif p < 0.4:
             if self._open_since is None:
                 self._open_since = t

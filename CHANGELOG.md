@@ -11,6 +11,9 @@ All notable changes to macbot will be documented here. This project follows
 
 ### Added
 
+- `run --grip-lead SECONDS` closes a binary gripper when the policy plans to close that far ahead in the current
+  chunk, which offsets the late close label of leader-thresholded demonstrations. Off by default. Executors gain
+  a side-effect-free `peek(now)`; trials record `gp_ahead`.
 - Opt-in leader takeover in `run`, with arm and gripper alignment, a gripper speed limit, recorded control states and hand-in-scene marks.
 - Replay shows calibrated grasp-miss flags, and reviews can exclude trials from summaries and exports.
 - `macbot export --rollouts` writes LeRobot v3 trials with frame labels and reviewed outcomes.
