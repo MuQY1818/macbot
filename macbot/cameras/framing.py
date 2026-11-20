@@ -36,6 +36,8 @@ def episode_framing(meta):
     if "camera_framing" in meta:
         return meta["camera_framing"]
     # Older raw episodes recorded the crop and stored size, but not the capture mode.
+    if not isinstance(meta["cameras"], dict):
+        return {}  # Older rollouts only saved camera names; never guess a crop.
     return {role: {"save_size": camera["size"], **({"crop": camera["crop"]} if "crop" in camera else {})}
             for role, camera in meta["cameras"].items()}
 

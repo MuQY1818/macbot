@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from .. import web
 from ..config import Config
+from ..data.grasp import settings
 from ..system import expand
 from .rollouts import Store, serve_rollouts
 
@@ -28,7 +29,7 @@ def run(cfg: Config, args):
     folder = expand(args.dir) if args.dir else cfg.rollout_dir()
     if not folder.is_dir():
         raise SystemExit(f"{folder} does not exist")
-    with web.bind_console(cfg, "replay", make_handler(Store(folder), cfg.task), args.port) as srv:
+    with web.bind_console(cfg, "replay", make_handler(Store(folder, grasp_cfg=settings(cfg)), cfg.task), args.port) as srv:
         print(f"rollouts: {folder}\nopen {srv.url}  (Ctrl-C to stop)", flush=True)
         if not getattr(args, "no_browser", True):
             web.show(srv)

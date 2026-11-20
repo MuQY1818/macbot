@@ -106,6 +106,8 @@ sudo -E $(which python) -m macbot.cli run --policy ~/policies/cubes_pi05/004000 
 | **空格** | 暂停（保持当前指令） |
 | **H** | 慢速回到起始姿态 |
 | **Y** / **N** | 把这次试验存为成功 / 失败 |
+| **T** | 手动接管 / 交还策略（需要启用 `--takeover`） |
+| **M** | 标记手进入画面的时刻，控制方式不变 |
 
 每次试验存到 `rollouts/<任务>/`，包含所有画面、指令和实测关节、每个块的开始时刻和推理耗时。
 
@@ -114,8 +116,29 @@ sudo -E $(which python) -m macbot.cli run --policy ~/policies/cubes_pi05/004000 
 各路相机和关节曲线，进度下方显示当前推理块及其耗时。点击 **回到实时画面** 返回相机预览。
 开始运行或回起始姿态会关闭回放；暂停后可以继续查看。
 
-在回放面板选择 **结果**，填写可选的单行 **备注**，然后点击 **保存**。修改记录在原文件旁的
-`rollout_XXX.review.json`，原始录制文件保持不变。复制已评审的试验时，请同时复制这两个文件。
+在回放面板选择 **结果**，填写可选的单行 **备注**；也可勾选 **排除此试验** 并填写原因，例如 GPU
+资源争用。点击 **保存**。排除后仍可回放，但不计入成功率、健康汇总和导出。修改记录在原文件旁的
+`rollout_XXX.review.json`，原始录制保持不变。复制已评审的试验时，请同时复制这两个文件。
+
+### 手动接管
+
+运行时加 `--takeover`，或在 YAML 中设置 `run.takeover: true`。程序会连接 `collect` 使用的已校准领臂。
+策略运行时按 **T** 或点击 **手动接管**，从臂保持当前指令。按页面显示的关节角度差手动移动领臂，
+所有臂关节都在 `run.takeover_align_deg`（默认 5°）以内，而且夹爪也对齐后才开始跟随。使用二值夹爪策略时，
+若从臂当前指令为闭合，领臂夹爪读数必须高于 `export.gripper_close_above`；若为张开，则必须低于
+`export.gripper_open_below`。读数介于两条阈值之间时，从臂继续保持。使用原始角度时，领臂夹爪与从臂夹爪
+指令的差值须在 `run.takeover_gripper_align_deg`（默认 15°）以内。对齐面板会提示还需调整哪些关节。
+
+跟随时继续应用策略的臂关节速度限制和限位，夹爪指令每秒最多变化 `300 × speed` 度，reBot 夹爪继续使用
+采集时的力限制。领臂读数失效时，从臂保持当前指令；读数恢复后需要重新对齐。
+
+再按 **T**，策略从当前观测重新规划。暂停会取消手动控制，按 **S** 可恢复策略。回起始姿态、保存和退出
+仍可用。`--fake` 和仿真使用脚本领臂，也要通过同一对齐检查。
+
+开启接管后，试验增加 `takeover`（`0` 策略、`1` 跟随、`2` 等待对齐并保持）和 `leader`（逐帧、逐关节读数，
+不可用时为 `NaN`）。元数据中的 `takeover_count` 记录请求次数，`takeover_seconds` 记录实际跟随秒数。
+试验尚未保存或丢弃时，按 **M** 或点击 **标记手进入画面** 会给 `hand_marks` 增加一个时间戳，即使未开启
+接管也可使用。回放在时间轴和曲线上标出对齐、跟随区间及手进入画面的时刻。
 
 ### 执行方式（`--mode`）
 
@@ -155,8 +178,36 @@ macbot video ~/macbot-data/rollouts/cubes_to_box/rollout_003.npz --height 720
 macbot health --data ~/macbot-data/rollouts/cubes_to_box
 ```
 
-独立回放和运行页共用同一个播放器与评审记录。`health --data` 指向试验目录时，
-报告会列出每条试验修改后的结果和备注。
+独立回放和运行页共用同一个播放器与评审记录。`health --data` 指向试验目录时，报告会列出每条试验评审后的
+结果、备注和空抓次数。回放会标出判为无物体的闭合起点。
+
+检测使用夹爪在收到闭合指令后、重新张开前的稳定读数，对照持物与空夹的校准值。跳过录制开始时已经闭合的
+区间，以及结尾没有再次张开的闭合。部分夹取或没有稳定下来的闭合记为无法判定。内置校准适用于二值指令
+端点约为 −120° 和 0° 的 reBot 真机软夹爪。其他配置可设置 `robot.grasp_miss: {held: ..., empty: ..., tolerance: ...}`，
+单位与关节读数相同；设为 `false` 可关闭检测。闭合、张开指令阈值若与导出配置不同，可在该配置中指定
+`close_above` 和 `open_below`。没有校准或两组容差区间重叠时，结果显示为未知。
+
+### 导出已评审的试验供微调
+
+```bash
+macbot export --rollouts --data ~/macbot-data/rollouts/cubes_to_box --out ~/data/cubes_rollouts
+macbot export --with-rollout-labels --data ~/macbot-data/raw/cubes_to_box --out ~/data/cubes_demos
+```
+
+试验导出沿用示范数据的 `observation.state`、`action`、相机键名、画面尺寸和构图元数据。臂关节动作取已保存
+的从臂指令。二值策略在 `gp ≥ 0.5` 时夹爪标为 `1`，否则为 `0`。人工接管帧用领臂读数和示范导出相同的
+`--close-above` / `--open-below` 滞回阈值（默认来自 `export` 配置）。保持帧和没有有效策略输出的帧使用
+保存的夹爪指令；输出原始角度的策略也用指令做滞回二值化。有 `gp` 时，标签反映策略意图；执行端的张开
+防抖可能让实际指令短暂不同。
+
+逐帧增加 `takeover`、`grasp_miss`（在判定为空抓的区间内）和 `hand_mark`（标记前后各 0.5 秒）。逐试验
+Parquet 元数据写入评审后的 `success`、`source="rollout"` 和空抓统计。帧标签为 0 代表未标出空抓；
+`grasp_miss_count=null` 表示没有可用校准。排除的试验会跳过，其余成功、失败和人工修正均可导出。
+
+示范导出加 `--with-rollout-labels`，可得到相同字段，帧标签填 0，`source="demonstration"`，`success=true`；
+常规示范导出不受影响。用 LeRobot 合并前检查帧率、机器人、关节顺序、相机键名、尺寸和
+`meta/camera_framing.json`。旧试验可能缺少构图字段，请确认采集设置后再合并。保留核对过的构图文件和
+`gripper.json`。优势值在训练机计算。
 
 `macbot bench --policy DIR` 用空白图像测这台 Mac 上的推理耗时。
 

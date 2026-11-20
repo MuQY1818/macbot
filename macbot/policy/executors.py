@@ -164,8 +164,10 @@ class Ensemble(Executor, threading.Thread):
                 t_obs = time.time()
                 chunk = self.pol(imgs, q)
             except Exception as e:
-                self.err = repr(e)
-                self.reset(False)
+                with self.lk:
+                    if gen == self.gen and self.active:
+                        self.err = repr(e)
+                        self.buf, self.active = [], False
                 continue
             ms = (time.perf_counter() - t0) * 1e3
             with self.lk:
@@ -234,8 +236,10 @@ class AsyncChunk(Executor, threading.Thread):
                 else:
                     a, raw = self.pol(imgs, q), None
             except Exception as e:
-                self.err = repr(e)
-                self.reset(False)
+                with self.lk:
+                    if gen == self.gen and self.active:
+                        self.err = repr(e)
+                        self.cur, self.active = None, False
                 continue
             t_done = time.time()
             self.lat = (self.lat + [t_done - t_req])[-20:]

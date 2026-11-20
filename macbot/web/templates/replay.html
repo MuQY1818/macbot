@@ -24,8 +24,9 @@
       <div id="replay-details" hidden>{{rollout_details}}</div>
       <div class="card">
         <h2 data-i18n="rollouts">rollouts</h2>
+        <p id="success-rate" class="hint" hidden></p>
         <div class="table-wrap"><table class="rollout-list">
-          <thead><tr><th>#</th><th data-i18n="result"></th><th data-i18n="length"></th><th></th></tr></thead>
+          <thead><tr><th>#</th><th data-i18n="result"></th><th data-i18n="grasp_misses"></th><th data-i18n="length"></th><th></th></tr></thead>
           <tbody id="list"></tbody>
         </table></div>
       </div>
@@ -36,23 +37,23 @@
 
 <script src="/static/replay.js"></script>
 <script>
-const list = new RolloutList($("list"), openRollout);
+const list = new RolloutList($("list"), openRollout, { rate: $("success-rate") });
 let statusKey;
 function showStatus(key) {
   statusKey = key;
   $("replay-status").hidden = !key;
   $("replay-status").textContent = key ? t(key) : "";
 }
-function badge(result) {
-  const ok = result === "success";
-  $("badge").className = "badge " + (ok ? "live" : "rec");
-  $("badge").textContent = t(ok ? "success" : "failure");
+function badge(meta) {
+  const ok = meta.result === "success";
+  $("badge").className = "badge " + (meta.exclude ? "idle" : ok ? "live" : "rec");
+  $("badge").textContent = t(meta.exclude ? "excluded" : ok ? "success" : "failure");
 }
 const viewer = new RolloutViewer({
   status: showStatus,
   change: open => {
     $("replay-details").hidden = !open;
-    if (open) badge(viewer.data.meta.result);
+    if (open) badge(viewer.data.meta);
   },
   result: (n, value) => { list.updateResult(n, value); badge(value); },
 });
@@ -66,7 +67,7 @@ window.onLang = () => {
   list.render();
   viewer.translate();
   showStatus(statusKey);
-  if (viewer.data) badge(viewer.data.meta.result);
+  if (viewer.data) badge(viewer.data.meta);
 };
 (async () => {
   try {

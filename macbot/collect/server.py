@@ -335,8 +335,9 @@ def _control(st, srv, T, open_browser=False):
         robot.connect(leader=True)
         st.ff = robot.info()
         a0, q0 = robot.read_leader(), robot.read()
+        errors = robot.alignment_errors(a0, q0)
         bad = [f"{n} leader {a:.0f} / follower {q:.0f}" for n, a, q in zip(names, a0, q0, strict=False)
-               if n != robot.gripper and abs(robot.clamp(n, a) - q) > T["align_max_deg"]]
+               if abs(errors.get(n, 0)) > T["align_max_deg"]]
         if bad and not (st.fake or st.sim):
             with st.lock:
                 st.msg = tr(f"Arms not aligned (more than {T['align_max_deg']}): " + "; ".join(bad) + ". Align and restart.",

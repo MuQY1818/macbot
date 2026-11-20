@@ -31,6 +31,15 @@ const I18N = {
     replay_loading: "Loading trial…", trial_note: "Note", review_saved: "Review saved.",
     review_failed: "Could not save this review.", playback_speed: "Playback speed",
     playback_position: "Playback position", chunk_at: n => `Chunk ${n}`, median_infer: "median inference",
+    takeover: "Take over", return_policy: "Return to policy", following: "Following leader", aligning: "Aligning arms",
+    leader_delta: "Leader − follower", align_target: n => `Within ±${n}°`, leader_missing: "Leader reading unavailable",
+    grip_open: "Open", grip_closed: "Closed", grip_between: "Between states",
+    grip_open_leader: "Open the leader gripper.", grip_close_leader: "Close the leader gripper.",
+    grip_match_leader: n => `Match the follower's gripper command (±${n}°).`,
+    mark_hand: "Mark hand in scene", hand_marked: n => `${n} hand marks`, hand_in_scene: "Hand in scene",
+    grasp_miss: "Grasp miss", grasp_misses: "Misses", grasp_unknown: "Unknown", grasp_uncertain: n => `${n} inconclusive closes`,
+    exclude_trial: "Exclude trial", exclude_reason: "Reason for exclusion", excluded: "Excluded",
+    reviewed_rate: (ok, n) => `${ok} / ${n} successful`,
   },
   zh: {
     quit: "结束并回零", collect: "采集", run: "跑策略", replay: "回放", instruction: "语言指令",
@@ -60,6 +69,15 @@ const I18N = {
     replay_loading: "正在加载试验…", trial_note: "备注", review_saved: "已保存试验评审。",
     review_failed: "无法保存试验评审。", playback_speed: "回放速度",
     playback_position: "回放位置", chunk_at: n => `第 ${n} 块`, median_infer: "推理耗时中位数",
+    takeover: "手动接管", return_policy: "交还策略", following: "跟随领臂", aligning: "等待对齐",
+    leader_delta: "领臂与从臂的角度差", align_target: n => `允许误差 ±${n}°`, leader_missing: "没有有效的领臂读数",
+    grip_open: "张开", grip_closed: "闭合", grip_between: "介于两者之间",
+    grip_open_leader: "请张开领臂夹爪。", grip_close_leader: "请闭合领臂夹爪。",
+    grip_match_leader: n => `请将领臂夹爪对齐到从臂夹爪指令（±${n}°）。`,
+    mark_hand: "标记手进入画面", hand_marked: n => `${n} 处手动干预标记`, hand_in_scene: "手进入画面",
+    grasp_miss: "空抓", grasp_misses: "空抓数", grasp_unknown: "未知", grasp_uncertain: n => `${n} 次闭合无法判定`,
+    exclude_trial: "排除此试验", exclude_reason: "排除原因", excluded: "已排除",
+    reviewed_rate: (ok, n) => `${n} 次试验中 ${ok} 次成功`,
   },
 };
 let LANG = (() => { try { return localStorage.getItem("macbot.lang") || ((navigator.language || "").toLowerCase().startsWith("zh") ? "zh" : "en"); } catch (e) { return "en"; } })();
@@ -143,9 +161,9 @@ function renderHP(el, frac) {
 }
 
 // Joint traces for one episode: solid = measured, dashed = command, each joint scaled on its own.
-function drawTraces(svg, legend, qpos, action, names, extra = "", fractions = null) {
+function drawTraces(svg, legend, qpos, action, names, extra = "", fractions = null, background = "") {
   const n = qpos.length, W = 1000, H = 190, x = i => (W * (fractions?.[i] ?? i / Math.max(n - 1, 1))).toFixed(1);
-  let s = "";
+  let s = background;
   for (let j = 0; j < names.length; j++) {
     const v = qpos.map(r => r[j]), a = action.map(r => r[j]);
     let lo = Infinity, hi = -Infinity;

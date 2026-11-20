@@ -150,8 +150,14 @@ def cmd_health(args):
 
 
 def cmd_run(args):
-    cfg = _cfg(args, resolve=None if args.fake else False)
+    cfg = _cfg(args)
     if not args.fake:
+        from .robot.usb import resolve_robot
+
+        try:
+            cfg["robot"] = resolve_robot(cfg["robot"], leader=args.takeover or cfg["run"]["takeover"])
+        except (OSError, ValueError, RuntimeError) as exc:
+            raise SystemExit(str(exc)) from exc
         _preload(cfg)
     from .policy.runner import run
     run(cfg, args)
@@ -217,7 +223,9 @@ def main(argv=None):
     p.set_defaults(fn=cmd_collect)
 
     p = sub.add_parser("export", help="recorded episodes -> LeRobot dataset")
-    p.add_argument("--data", help="episode folder (default <data_root>/raw/<task>)")
+    p.add_argument("--rollouts", action="store_true", help="export reviewed policy trials with binary gripper and frame labels")
+    p.add_argument("--with-rollout-labels", action="store_true", help="add matching label columns to a demonstration export for merging")
+    p.add_argument("--data", help="input folder (default raw/<task>, or rollouts/<task> with --rollouts)")
     p.add_argument("--out", help="dataset folder (default <data_root>/datasets/<task>[_bin])")
     p.add_argument("--repo-id")
     p.add_argument("--gripper", choices=["raw", "binary"], default="raw", help="gripper action: leader angle, or 0/1")
@@ -251,6 +259,7 @@ def main(argv=None):
     p.add_argument("--allow-framing-mismatch", action="store_true", help="run despite a known camera framing mismatch")
     _backend_args(p)
     p.add_argument("--speed", type=float, help="0.1-1.0, default from config")
+    p.add_argument("--takeover", action="store_true", help="connect a leader for manual takeover (T)")
     p.add_argument("--device", default="mps")
     p.add_argument("--port", type=int, help="policy console port (default: 8767 or run.port)")
     p.add_argument("--fake", action="store_true", help="simulate robot and cameras (policy runs for real)")

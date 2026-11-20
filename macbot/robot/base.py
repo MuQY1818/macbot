@@ -46,6 +46,11 @@ class Robot:
         lo, hi = self.limits.get(name, (-math.inf, math.inf))
         return min(hi, max(lo, v))
 
+    def alignment_errors(self, leader, follower):
+        """Signed differences from the reachable leader target, in follower joint order."""
+        return {n: self.clamp(n, a) - q for n, a, q in zip(self.joints, leader, follower, strict=True)
+                if n != self.gripper}
+
     def _vec(self, d: dict) -> list[float]:
         return [float(d[f"{n}.pos"]) for n in self.joints]
 
@@ -64,6 +69,9 @@ class Robot:
 
     def read_leader(self) -> list[float]:
         return self._vec(self.leader.get_action())
+
+    def read_leader_fresh(self) -> list[float]:
+        return self.read_leader()
 
     def send(self, target, measured=None) -> list[float]:
         sent = self.follower.send_action(self._dict(target))

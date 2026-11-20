@@ -9,6 +9,12 @@
     <label class="rollout-note"><span data-i18n="trial_note">Note</span>
       <input type="text" id="rnote" maxlength="400" autocomplete="off">
     </label>
+    <div class="rollout-exclusion">
+      <label class="rollout-check"><input type="checkbox" id="rexclude"><span data-i18n="exclude_trial">Exclude trial</span></label>
+      <label id="rreason-field" hidden><span data-i18n="exclude_reason">Reason for exclusion</span>
+        <input type="text" id="rreason" maxlength="400" autocomplete="off">
+      </label>
+    </div>
     <button id="rsave" type="submit" data-i18n="save">Save</button>
     <span id="rreview-msg" class="hint" role="status"></span>
   </form>
