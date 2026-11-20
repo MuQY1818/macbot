@@ -45,7 +45,7 @@ def test_init_passes_actual_url_to_browser_without_opening_it(busy_port, monkeyp
         opened.append(url)
         raise KeyboardInterrupt
 
-    monkeypatch.setattr(init_wizard.webbrowser, "open", capture)
+    monkeypatch.setattr(init_wizard.web, "open_browser", capture)
     setup = SimpleNamespace(path=tmp_path / "config.yaml", refresh=lambda: None)
     assert init_wizard.serve(setup) is None
     url, = opened
@@ -72,3 +72,27 @@ def test_fallback_skips_the_other_consoles_defaults(busy_port):
     cfg["replay"]["port"] = busy_port + 2
     with web.bind_console(cfg, "teleop", web.Handler) as server:
         assert server.server_port not in {busy_port, busy_port + 1, busy_port + 2}
+
+
+def test_open_browser_hands_url_to_the_sudo_user(monkeypatch):
+    import macbot.web as web
+
+    calls = []
+    monkeypatch.delenv("MACBOT_NO_BROWSER")
+    monkeypatch.setattr(web.sys, "platform", "darwin")
+    monkeypatch.setattr(web.os, "geteuid", lambda: 0)
+    monkeypatch.setenv("SUDO_UID", "501")
+    monkeypatch.setenv("SUDO_USER", "alice")
+    monkeypatch.setattr(web.subprocess, "Popen", lambda cmd, **kw: calls.append(cmd))
+    monkeypatch.setattr(web.webbrowser, "open", lambda url: calls.append(["webbrowser", url]))
+    assert web.open_browser("http://127.0.0.1:8769")
+    assert calls == [["launchctl", "asuser", "501", "sudo", "-u", "alice", "/usr/bin/open", "http://127.0.0.1:8769"]]
+
+    calls.clear()
+    monkeypatch.setattr(web.os, "geteuid", lambda: 501)
+    web.open_browser("http://127.0.0.1:8766")
+    assert calls == [["webbrowser", "http://127.0.0.1:8766"]]
+
+    calls.clear()
+    monkeypatch.setenv("MACBOT_NO_BROWSER", "1")
+    assert not web.open_browser("http://127.0.0.1:8766") and calls == []

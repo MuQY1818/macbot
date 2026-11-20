@@ -6,7 +6,6 @@ import re
 import secrets
 import threading
 import time
-import webbrowser
 from dataclasses import asdict
 
 import cv2
@@ -168,7 +167,7 @@ def serve(setup, port=None, open_browser=True):
         print(f"Setup: {url}", flush=True)
         try:
             if open_browser:
-                webbrowser.open(url)
+                web.open_browser(url)
             state.launch.wait()
         except KeyboardInterrupt:
             pass

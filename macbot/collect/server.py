@@ -302,7 +302,7 @@ def make_handler(st: State):
     return H
 
 
-def run(cfg: Config, fake: bool = False, port: int | None = None, out=None, *, listen_fd=None):
+def run(cfg: Config, fake: bool = False, port: int | None = None, out=None, *, listen_fd=None, open_browser=False):
     listener = (web.bind_console(cfg, "teleop", web.Handler, port) if listen_fd is None
                 else web.ConsoleServer.from_listener(listen_fd, web.Handler))
     with listener as srv:
@@ -310,10 +310,11 @@ def run(cfg: Config, fake: bool = False, port: int | None = None, out=None, *, l
         out = ensure_dir(expand(out) if out else cfg.raw_dir(cfg.task + "_fake" if fake else cfg.task))
         st = State(cfg, out, fake)
         srv.RequestHandlerClass = make_handler(st)
-        _control(st, srv, cfg["teleop"])
+        # From init, the setup page already links to this console.
+        _control(st, srv, cfg["teleop"], open_browser=open_browser and listen_fd is None)
 
 
-def _control(st, srv, T):
+def _control(st, srv, T, open_browser=False):
     from ..robot import open_robot
     robot = open_robot(st.cfg["robot"], fake=st.fake, leader=True)
     names = robot.joints
@@ -328,6 +329,8 @@ def _control(st, srv, T):
         threading.Thread(target=srv.serve_forever, daemon=True).start()
         serving = True
         print(f"web page: {srv.url}   data: {st.out}", flush=True)
+        if open_browser:
+            web.open_browser(srv.url)
         Recorder(st)
         robot.connect(leader=True)
         st.ff = robot.info()

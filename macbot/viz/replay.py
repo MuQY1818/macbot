@@ -30,6 +30,8 @@ def run(cfg: Config, args):
         raise SystemExit(f"{folder} does not exist")
     with web.bind_console(cfg, "replay", make_handler(Store(folder), cfg.task), args.port) as srv:
         print(f"rollouts: {folder}\nopen {srv.url}  (Ctrl-C to stop)", flush=True)
+        if not getattr(args, "no_browser", True):
+            web.open_browser(srv.url)
         try:
             srv.serve_forever()
         except KeyboardInterrupt:

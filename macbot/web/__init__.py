@@ -4,9 +4,13 @@ from __future__ import annotations
 import errno
 import json
 import mimetypes
+import os
 import re
 import socket
+import subprocess
+import sys
 import time
+import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -21,6 +25,25 @@ BRAND = ('<a class="brand" href="/"><img class="logo-light" src="/static/logo.sv
          '<img class="logo-dark" src="/static/logo-dark.svg" alt="macbot"></a>')
 HOST = "127.0.0.1"
 PORT_ATTEMPTS = 10
+
+
+def open_browser(url: str) -> bool:
+    """Open a console in the user's default browser, also when macbot runs under sudo.
+
+    Set MACBOT_NO_BROWSER=1 to only print URLs (tests, scripts, remote sessions).
+    """
+    if os.environ.get("MACBOT_NO_BROWSER"):
+        return False
+    uid, user = os.environ.get("SUDO_UID"), os.environ.get("SUDO_USER")
+    try:
+        if sys.platform == "darwin" and os.geteuid() == 0 and uid and user:
+            # A root process opens pages in no browser or in root's; hand the URL to the user who ran sudo.
+            subprocess.Popen(["launchctl", "asuser", uid, "sudo", "-u", user, "/usr/bin/open", url],
+                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return True
+        return webbrowser.open(url)
+    except (OSError, webbrowser.Error):
+        return False
 
 
 class ConsoleServer(ThreadingHTTPServer):
