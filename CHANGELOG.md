@@ -11,6 +11,9 @@ All notable changes to macbot will be documented here. This project follows
 
 ### Added
 
+- `run` and `collect` record follower motor feedback and show temperatures in the joint panel. The default
+  watchdog holds the measured pose on a motor fault, high temperature or sustained arm tracking error, and
+  archives the interruption separately. `health` reports motor maxima and watchdog events.
 - `run --grip-lead SECONDS` closes a binary gripper when the policy plans to close that far ahead in the current
   chunk, which offsets the late close label of leader-thresholded demonstrations. Off by default. Executors gain
   a side-effect-free `peek(now)`; trials record `gp_ahead`.

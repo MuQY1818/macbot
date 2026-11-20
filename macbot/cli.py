@@ -238,7 +238,7 @@ def main(argv=None):
     p.add_argument("--overwrite", action="store_true")
     p.set_defaults(fn=cmd_export)
 
-    p = sub.add_parser("health", help="tracking and timing report of episodes or policy trials")
+    p = sub.add_parser("health", help="tracking, timing and motor health of episodes or policy trials")
     p.add_argument("--data", help="episode or rollout folder (default <data_root>/raw/<task>)")
     p.add_argument("--split", type=int, help="compare episodes before / from this index (e.g. after a repair)")
     p.set_defaults(fn=cmd_health)

@@ -7,6 +7,7 @@ The consoles never talk to LeRobot classes directly. They use a ``Robot``:
     r.limits            {name: (lo, hi)} in robot units, or {} if unknown
     r.connect(leader)   connect the follower (and the leader for teleoperation)
     r.read()            measured follower joints, list in ``joints`` order
+    r.motor_telemetry() cached feedback for the last read, tuple in ``joints`` order
     r.read_leader()     leader joints, same order
     r.send(target, q)   send a joint target; returns what was actually commanded
     r.home_pose()       where "home" goes: zero for reBot, the pose at connect time otherwise
@@ -20,6 +21,8 @@ from __future__ import annotations
 
 import math
 import time
+
+from .telemetry import UNKNOWN
 
 
 class Robot:
@@ -66,6 +69,13 @@ class Robot:
 
     def read(self) -> list[float]:
         return self._vec(self.follower.get_observation())
+
+    def motor_telemetry(self):
+        return (UNKNOWN,) * len(self.joints)
+
+    def hold(self, pose, measured):
+        """Send a fixed pose captured from feedback when the watchdog tripped."""
+        return self.send(pose, measured)
 
     def read_leader(self) -> list[float]:
         return self._vec(self.leader.get_action())

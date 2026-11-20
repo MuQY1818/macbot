@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 from .base import Robot
+from .telemetry import MotorSample
 
 
 def open_robot(rcfg: dict, fake: bool = False, leader: bool = False, *, fresh_leader=False) -> Robot:
@@ -30,4 +31,4 @@ def open_robot(rcfg: dict, fake: bool = False, leader: bool = False, *, fresh_le
     raise SystemExit(f"unknown robot.type {typ!r}: use rebot_b601, lerobot, or sim")
 
 
-__all__ = ["Robot", "open_robot"]
+__all__ = ["MotorSample", "Robot", "open_robot"]

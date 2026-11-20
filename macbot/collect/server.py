@@ -28,7 +28,9 @@ from .. import web
 from ..cameras import camera_info, open_cameras
 from ..cameras.framing import framing
 from ..config import Config
+from ..data.motor_health import diagnostic_path, motor_arrays, record_motor_meta
 from ..i18n import text, tr
+from ..safety import MotorWatch, timed_events
 from ..system import ensure_dir, expand, give_back, start_log
 from .checks import check_episode
 
@@ -43,13 +45,14 @@ class State:
         self.cam_names = list(cfg["cameras"])
         self.fps = int(cfg["record"]["fps"])
         self.lock = threading.Lock()
-        self.phase = "idle"                 # idle | recording
+        self.phase = "idle"                 # idle | recording | stopped
         self.t0 = 0.0
         self.instruction = cfg["task"]["instruction"]
         self.msg = tr("Loading simulation...", "正在加载仿真…") if self.sim else tr(
             "Align the arms. Teleoperation starts after the alignment check.", "请对齐两条臂。对齐检查通过才开始遥操作。")
         self.joints, self.gripper = [], None
         self.q, self.cmd = [], []
+        self.motors = ()
         self.limits, self.ready, self.quit = {}, False, False
         self.buf = None
         self.saving = 0
@@ -57,7 +60,13 @@ class State:
         self.cam_info = camera_info(cfg["cameras"])
         self.summaries = {}                 # file name -> (mtime, summary)
         self.cams = {}
+        self.watch = MotorWatch(cfg["safety"])
         self.refresh()
+
+    def new_buffer(self):
+        keys = ["qpos", "action", "wall", "late", "motor", "watchdog_events"]
+        keys += [f"{k}_{s}" for k in self.cam_names for s in ("jpg", "age", "repeat")]
+        return {k: [] for k in keys}
 
     def files(self):
         return sorted(self.out.glob("episode_*.npz"))
@@ -107,7 +116,7 @@ class State:
                     "target": self.cfg["task"]["target_episodes"], "count": len(eps), "saving": self.saving,
                     "q": self.q, "cmd": self.cmd, "names": self.joints, "limits": self.limits, "episodes": eps,
                     "fps": self.fps, "cams": self.cam_info, "cam_names": self.cam_names, "out": str(self.out),
-                    "cam_age": ages, "stall_s": CAM_STALL_S}
+                    "cam_age": ages, "stall_s": CAM_STALL_S, "motor_health": self.watch.status()}
 
     def command(self, c, *, scene_ready=False):
         a = c.get("action")
@@ -118,6 +127,9 @@ class State:
                     self.instruction = text
                     self.msg = tr(f"Instruction set: {text}", f"指令改为：{text}")
             elif a == "start" and self.phase == "idle":
+                if blocked := self.watch.blocked():
+                    self.msg = blocked
+                    return
                 if not self.ready:
                     self.msg = tr("Teleoperation has not started yet.", "遥操作还没启动。")
                     return
@@ -129,8 +141,7 @@ class State:
                     self.msg = tr(f"No frames from {', '.join(bad)} (cable loose?). Fix it and restart.",
                                    f"{'、'.join(bad)} 相机没有画面（线松了？），插好后重启采集程序。")
                     return
-                keys = ["qpos", "action", "wall", "late"] + [f"{k}_{s}" for k in self.cam_names for s in ("jpg", "age", "repeat")]
-                self.buf = {k: [] for k in keys}
+                self.buf = self.new_buffer()
                 self.phase, self.t0 = "recording", time.time()
                 self.msg = tr("Recording. Enter saves, left arrow discards.", "录制中。回车保存，← 丢弃。")
             elif a == "discard" and self.phase == "recording":
@@ -155,50 +166,68 @@ class State:
                     self.msg = tr(f"Episode {p.stem[-3:]} moved to deleted/.", f"第 {p.stem[-3:]} 条已移到 deleted/。")
             elif a == "quit":
                 self.quit = True
-                self.msg = (tr("Closing simulation.", "正在关闭仿真。") if self.sim else
-                            tr("Shutting down: the follower returns home, then disables.", "正在结束：从臂慢速回到起始位后失能。"))
+                if self.sim:
+                    self.msg = tr("Closing simulation.", "正在关闭仿真。")
+                elif self.watch.trip is None:
+                    self.msg = tr("Shutting down: the follower returns home, then disables.",
+                                  "正在结束：从臂慢速回到起始位后失能。")
 
-    def _save(self, idx, buf, instruction):
+    def _save(self, idx, buf, instruction, *, diagnostic=False):
         try:
-            arr = {k: np.asarray(v) for k, v in buf.items() if not k.endswith("_jpg")}
+            arr = {k: np.asarray(v) for k, v in buf.items() if not k.endswith("_jpg")
+                   and k not in ("motor", "watchdog_events", "motor_at_trip")}
             rc = self.cfg["record"]
-            chk = check_episode(arr, self.cam_names, self.fps, self.cfg["checks"], rc["min_episode_s"],
-                                joints=self.joints, gripper=self.gripper)
+            chk = ({"ok": False, "errors": [self.watch.blocked()], "warnings": []} if diagnostic else
+                   check_episode(arr, self.cam_names, self.fps, self.cfg["checks"], rc["min_episode_s"],
+                                 joints=self.joints, gripper=self.gripper))
             n = len(buf["qpos"])
             meta = {"task": self.cfg.task, "instruction": instruction, "fps": self.fps, "frames": n,
                     "duration_s": round(n / self.fps, 2), "joint_names": self.joints, "gripper": self.gripper,
                     "units": "robot (degrees for most arm joints)",
                     "state": "follower measured position", "action": "command sent to follower (gripper: leader value)",
                     "cameras": self.cam_info, "camera_framing": framing(self.cfg["cameras"], self.fps),
-                    "robot": self.ff, "fake": self.fake,
+                    "robot": self.ff, "fake": self.fake, "safety": self.cfg["safety"],
                     "saved_at": time.strftime("%Y-%m-%d %H:%M:%S"), "check": chk, "writer": "macbot"}
-            extra = {}
+            record_motor_meta(buf, meta)
+            if diagnostic:
+                meta["result"] = "watchdog"
+            extra = motor_arrays(buf["motor"], len(self.joints))
             for k in self.cam_names:
-                extra[f"{k}_jpeg"] = np.concatenate(buf[f"{k}_jpg"])
+                extra[f"{k}_jpeg"] = np.concatenate(buf[f"{k}_jpg"]) if n else np.empty(0, np.uint8)
                 extra[f"{k}_offsets"] = np.cumsum([0] + [len(b) for b in buf[f"{k}_jpg"]]).astype(np.int64)
                 extra[f"{k}_age"] = arr[f"{k}_age"].astype(np.float32)
                 extra[f"{k}_repeat"] = arr[f"{k}_repeat"].astype(bool)
-            path = self.out / f"episode_{idx:03d}.npz"
+            path = diagnostic_path(self.out, "episode") if diagnostic else self.out / f"episode_{idx:03d}.npz"
             tmp = path.with_suffix(".tmp.npz")
-            np.savez(tmp, qpos=arr["qpos"].astype(np.float32), action=arr["action"].astype(np.float32),
+            shape = (n, len(self.joints))
+            np.savez(tmp, qpos=arr["qpos"].astype(np.float32).reshape(shape), action=arr["action"].astype(np.float32).reshape(shape),
                      timestamp=np.arange(n) / self.fps, wall_time=arr["wall"],
                      meta=np.array(json.dumps(meta, ensure_ascii=False)), **extra)
             tmp.rename(path)
             give_back(path)
+            if diagnostic:
+                print(f"watchdog diagnostic saved: {path}", flush=True)
+                return
             items = chk["errors"] + chk["warnings"]
             en, zh = "; ".join(text(x, "en") for x in items), "；".join(text(x, "zh") for x in items)
             with self.lock:
-                self.saving -= 1
                 self.refresh()
                 k = len(self.summaries)
-                self.msg = tr(f"Saved episode {idx:03d} ({n / self.fps:.1f} s)" + (f", check: {en}" if en else ", checks passed")
-                              + f". {k} in total. Reset the scene and press S.",
-                              f"已保存第 {idx:03d} 条（{n / self.fps:.1f} 秒）" + (f"，注意：{zh}" if zh else "，检查通过")
-                              + f"。共 {k} 条。复位场景后按 S 录下一条。")
+                if self.watch.trip is None:
+                    self.msg = tr(f"Saved episode {idx:03d} ({n / self.fps:.1f} s)" + (f", check: {en}" if en else ", checks passed")
+                                  + f". {k} in total. Reset the scene and press S.",
+                                  f"已保存第 {idx:03d} 条（{n / self.fps:.1f} 秒）" + (f"，注意：{zh}" if zh else "，检查通过")
+                                  + f"。共 {k} 条。复位场景后按 S 录下一条。")
         except Exception as e:
+            if diagnostic:
+                print(f"saving watchdog diagnostic failed: {e}", flush=True)
             with self.lock:
-                self.saving -= 1
-                self.msg = tr(f"Saving episode {idx:03d} failed: {e}", f"保存第 {idx:03d} 条失败：{e}")
+                if self.watch.trip is None:
+                    self.msg = tr(f"Saving episode {idx:03d} failed: {e}", f"保存第 {idx:03d} 条失败：{e}")
+        finally:
+            if not diagnostic:
+                with self.lock:
+                    self.saving -= 1
 
 
 class Recorder:
@@ -228,9 +257,9 @@ class Recorder:
                 with st.lock:
                     if st.buf is not buf:
                         break
-                    q, cmd = list(st.q), list(st.cmd)
+                    q, cmd, motors = list(st.q), list(st.cmd), st.motors
                 now = time.time()
-                row = {"qpos": q, "action": cmd, "wall": now - t0, "late": (now - target) > dt}
+                row = {"qpos": q, "action": cmd, "wall": now - t0, "late": (now - target) > dt, "motor": motors}
                 bad = [c for c in st.cam_names if now - st.cams[c].latest()[1] > CAM_STALL_S]
                 if bad:
                     with st.lock:
@@ -320,8 +349,10 @@ def _control(st, srv, T, open_browser=False):
     names = robot.joints
     with st.lock:
         st.joints, st.gripper = names, robot.gripper
+        st.watch.set_joints(names, robot.gripper)
         st.q = st.cmd = [0.0] * len(names)
     started = serving = False
+    diagnostic_writer = None
     try:
         if st.sim:
             robot.check_rate(T["hz"], "teleop.hz")
@@ -335,6 +366,8 @@ def _control(st, srv, T, open_browser=False):
         robot.connect(leader=True)
         st.ff = robot.info()
         a0, q0 = robot.read_leader(), robot.read()
+        cmd, home = q0, robot.home_pose()
+        motors = robot.motor_telemetry()
         errors = robot.alignment_errors(a0, q0)
         bad = [f"{n} leader {a:.0f} / follower {q:.0f}" for n, a, q in zip(names, a0, q0, strict=False)
                if abs(errors.get(n, 0)) > T["align_max_deg"]]
@@ -347,8 +380,8 @@ def _control(st, srv, T, open_browser=False):
             raise SystemExit(2)
         with st.lock:
             st.q = st.cmd = q0
+            st.watch.samples = st.motors = motors
             st.limits = {n: list(robot.limits[n]) for n in names if n in robot.limits}
-            st.ready = True
             st.msg = tr(f"Teleoperation running. Set up the scene and press S. {len(st.summaries)} episodes so far.",
                         f"遥操作已启动。摆好场景后按 S 开始录制。已有 {len(st.summaries)} 条。")
         started = True
@@ -363,8 +396,11 @@ def _control(st, srv, T, open_browser=False):
                 if reset:
                     robot.reset_scene()
                     q0, t_start = robot.read(), time.perf_counter()
+                    cmd = q0
                     with st.lock:
                         st.q = st.cmd = q0
+                        st.motors = robot.motor_telemetry()
+                        st.watch.reset_motion()
                     st.command({"action": "start"}, scene_ready=True)
                     tick = t_start
                 if robot.ended:
@@ -372,13 +408,42 @@ def _control(st, srv, T, open_browser=False):
                     st.command({"action": "save"})
                     time.sleep(1 / hz)
                     continue
-            act = robot.read_leader()
-            r = min(1.0, (tick - t_start) / soft) if soft else 1.0
-            act = [q * (1 - r) + a * r for q, a in zip(q0, act, strict=False)]
             q = robot.read()
-            cmd = robot.send(act, q)
+            motors = robot.motor_telemetry()
+            now = time.time()
+            trip_buffer = None
             with st.lock:
-                st.q, st.cmd = q, cmd
+                was_tripped = st.watch.trip is not None
+                # The leader can hold a fixed target between episodes or while recording.
+                events = st.watch.update(time.perf_counter(), q, cmd, motors, holding=True, home=home)
+                if events and st.buf is not None:
+                    st.buf["watchdog_events"].extend(timed_events(events, now, st.t0))
+                if st.watch.trip and not was_tripped:
+                    trip_buffer = st.buf
+                    if trip_buffer is None:
+                        trip_buffer = st.new_buffer()
+                        trip_buffer["watchdog_events"] = timed_events(events, now, now)
+                    trip_buffer["motor_at_trip"] = motors
+                    st.phase, st.buf = "stopped", None
+                    st.msg = st.watch.blocked()
+                # Don't accept Start until the first sample has gone through the watchdog.
+                st.ready = st.watch.trip is None
+            if st.watch.trip:
+                try:
+                    cmd = robot.hold(st.watch.pose, q) if not st.sim else list(st.watch.pose)
+                finally:
+                    if trip_buffer is not None:
+                        print(st.msg["en"], flush=True)
+                        diagnostic_writer = threading.Thread(target=st._save, args=(None, trip_buffer, st.instruction),
+                                                             kwargs={"diagnostic": True}, daemon=True)
+                        diagnostic_writer.start()
+            else:
+                act = robot.read_leader()
+                r = min(1.0, (tick - t_start) / soft) if soft else 1.0
+                act = [x * (1 - r) + a * r for x, a in zip(q0, act, strict=False)]
+                cmd = robot.send(act, q)
+            with st.lock:
+                st.q, st.cmd, st.motors = q, cmd, motors
             time.sleep(max(0.0, 1 / hz - (time.perf_counter() - tick)))
     except KeyboardInterrupt:
         pass
@@ -392,6 +457,8 @@ def _control(st, srv, T, open_browser=False):
             t = time.time()
             while st.saving and time.time() - t < 10:      # wait for background saves
                 time.sleep(0.1)
+            if diagnostic_writer is not None:
+                diagnostic_writer.join()
             if serving:
                 srv.shutdown()
             print("done", flush=True)
