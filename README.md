@@ -94,7 +94,7 @@ macbot collect
 
 Use Python 3.12+ on Apple silicon and install the Xcode Command Line Tools for UVC cameras.
 Confirm the arms and camera roles in the setup page, then follow its calibration prompts.
-Open <http://127.0.0.1:8766>. Press **S** to record, **Enter** to save, **←** to discard.
+Open the collection URL printed in Terminal. Press **S** to record, **Enter** to save, **←** to discard.
 See the [quickstart](docs/quickstart.md) for a fresh Mac, a hardware-free trial, and reBot and Orbbec setup.
 
 ## Workflow

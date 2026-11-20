@@ -47,13 +47,18 @@ Follow the kit's assembly and motor ID setup first. See [robot support](robots.m
    macbot collect
    ```
 
-   Open <http://127.0.0.1:8766> and wait for the teleoperation status. Move the leader to verify tracking.
+   Open the collection link in the wizard or the URL printed in Terminal, and wait for the teleoperation
+   status. Move the leader to verify tracking.
    Press **S**, demonstrate the task for at least two seconds, and press **Enter** to save (**←** discards).
    The first episode appears in the console and under `~/macbot-data/raw/cubes_to_box/`. Use the console's
    quit control before disconnecting the arms.
 
 The default profile is `~/.config/macbot/config.yaml`; `macbot --config other.yaml collect` still uses that
 explicit file. To try the console without hardware, run `macbot collect --fake`.
+
+The consoles default to ports 8765 (init), 8766 (collect), 8767 (run), and 8768 (replay). A busy default
+falls back to the next available port, up to nine ports higher. To fix the port, pass `--port` or set
+`init.port`, `teleop.port`, `run.port`, or `replay.port` in YAML. An explicit port must be available.
 
 For an existing calibrated setup, `macbot init --yes` reuses the saved roles and runs doctor. For a fresh serial
 pair, scripts can confirm the setup with `--family so101 --leader-serial … --follower-serial …`; one external

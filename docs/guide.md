@@ -20,7 +20,7 @@ The commands with `sudo` use the reference Orbbec camera. For generic arms with 
 sudo -E $(which python) -m macbot.cli --config my.yaml collect
 ```
 
-The page opens at <http://127.0.0.1:8766>.
+Open the URL printed in Terminal (port 8766 when available).
 
 | Key | Action |
 |---|---|
@@ -109,7 +109,7 @@ Copy `checkpoints/<step>/pretrained_model` back to the Mac. For a binary-gripper
 sudo -E $(which python) -m macbot.cli run --policy ~/policies/cubes_pi05/004000 --speed 0.3
 ```
 
-The page at <http://127.0.0.1:8767> starts **paused**.
+Open the URL printed in Terminal (port 8767 when available). The page starts **paused**.
 
 | Key | Action |
 |---|---|
@@ -155,7 +155,7 @@ chunk. Subclass it to try new switching rules without touching the control loop.
 ## 6. Review
 
 ```bash
-macbot replay                                   # http://127.0.0.1:8768
+macbot replay                                   # open the URL printed in Terminal
 macbot video ~/macbot-data/rollouts/cubes_to_box/rollout_003.npz --height 720
 ```
 

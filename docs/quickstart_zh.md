@@ -40,12 +40,16 @@ USB 适配器，机械臂型号仍需确认。请先按套件说明完成组装�
    macbot collect
    ```
 
-   打开 <http://127.0.0.1:8766>，等页面显示遥操作已启动，再移动主臂确认跟随。按 **S**，示范至少两秒，
+   打开向导里的采集链接或终端显示的地址，等页面显示遥操作已启动，再移动主臂确认跟随。按 **S**，示范至少两秒，
    按**回车**保存（**←** 丢弃）。第一条数据会显示在控制台，并保存到 `~/macbot-data/raw/cubes_to_box/`。
    拔掉机械臂前，请先用控制台的退出按钮结束采集。
 
 默认配置保存在 `~/.config/macbot/config.yaml`；显式传入 `macbot --config other.yaml collect` 时优先
 使用指定文件。没有硬件时可以运行 `macbot collect --fake` 试用采集台。
+
+`init`、`collect`、`run`、`replay` 的默认端口分别是 8765、8766、8767、8768。默认端口被占用时，
+会向上尝试最多九个端口。要固定端口，请传入 `--port` 或在 YAML 中设置 `init.port`、`teleop.port`、
+`run.port`、`replay.port`；显式指定的端口必须可用。
 
 已经校准且有配置时，`macbot init --yes` 会复用保存的角色并运行检查。新串口套件可以通过
 `--family so101 --leader-serial … --follower-serial …` 确认型号和主从臂；只有一台外置相机时分配为

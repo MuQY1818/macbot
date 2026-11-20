@@ -19,6 +19,7 @@ All notable changes to macbot will be documented here. This project follows
 
 ### Changed
 
+- Local consoles try nearby ports when a default is busy and print the bound URL. Explicit ports stay fixed.
 - The base install now includes LeRobot's `feetech` and `dynamixel` extras and `pyserial` for
   serial arm discovery and support.
 - README: a pixel-art workflow scene replaces the console screenshot at the top, and the tagline and
