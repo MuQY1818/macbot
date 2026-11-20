@@ -10,13 +10,19 @@ from macbot.policy.models import use_generic
 from tools.tiny_policies import build
 
 
-@pytest.fixture(scope="module", params=["act", "diffusion", "vqbet", "tdmpc"])
+@pytest.fixture(scope="module", params=[
+    "act", "diffusion", "vqbet", "tdmpc", "smolvla", "gaussian_actor", "multi_task_dit",
+])
 def tiny_policy(request, tmp_path_factory):
     torch = pytest.importorskip("torch")
     pytest.importorskip("lerobot.policies")
     kind = request.param
-    if kind == "diffusion":
+    if kind in {"diffusion", "multi_task_dit"}:
         pytest.importorskip("diffusers")
+    if kind in {"smolvla", "multi_task_dit"}:
+        pytest.importorskip("transformers")
+    if kind == "smolvla":
+        pytest.importorskip("num2words")
     path = tmp_path_factory.mktemp(kind)
     prior_threads = torch.get_num_threads()
     torch.set_num_threads(2)
@@ -29,11 +35,11 @@ def tiny_policy(request, tmp_path_factory):
 
 def test_generic_checkpoint_and_fake_run(tiny_policy, tmp_path, capsys):
     kind, path = tiny_policy
-    camera_names = ("top", "wrist") if kind in {"act", "diffusion"} else ("top",)
+    camera_names = ("top",) if kind in {"vqbet", "tdmpc"} else ("top", "wrist")
     cameras = {name: [64, 64] for name in camera_names}
     camera_map = {"top": "observation.image"} if kind == "tdmpc" else {}
     adapter = GenericPolicy(path, "cpu", "pick up the cube", cameras=cameras, camera_map=camera_map, joint_count=6)
-    assert adapter.stepwise == (kind != "act")
+    assert adapter.stepwise == (kind not in {"act", "smolvla"})
     out = adapter({name: np.zeros((64, 64, 3), np.uint8) for name in cameras}, [0.0] * 6)
     assert out.shape == (1 if adapter.stepwise else 3, 6)
     assert np.isfinite(out).all()
@@ -53,6 +59,9 @@ def test_generic_checkpoint_and_fake_run(tiny_policy, tmp_path, capsys):
     with np.load(rollout) as r:
         assert len(r["infer_ms"]) > 0 and r["cmd"].shape[1] == 6
         assert json.loads(str(r["meta"]))["mode"] == ("step" if adapter.stepwise else "chunk")
+    if kind == "smolvla":
+        with pytest.raises(ValueError, match="needs a language instruction"):
+            GenericPolicy(path, "cpu", "", cameras=cameras)
 
 
 def test_step_holds_actions_and_resets_history():

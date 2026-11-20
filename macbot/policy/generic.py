@@ -117,14 +117,18 @@ class GenericPolicy:
         self.width, self.has_state, self.cameras = _features(path, metadata, cameras, camera_map or {}, joint_count)
         pre_overrides, steps = _processor_overrides(path, "pre", device)
         post_overrides, _ = _processor_overrides(path, "post", "cpu")
-        self.language = any(
-            step.get("registry_name") in {"tokenizer_processor", "smolvla_new_line_processor"}
-            or step.get("class", "").endswith(".TokenizerProcessorStep")
+        self.task_keys = {
+            step.get("config", {}).get("task_key", "task")
             for step in steps
-        ) or (metadata.get("input_features") or {}).get("task", {}).get("type") == "LANGUAGE"
-        if self.language and not task.strip():
+            if step.get("registry_name") in {"tokenizer_processor", "multi_task_dit_task_tokenizer"}
+            or step.get("class", "").endswith(".TokenizerProcessorStep")
+        }
+        language = self.task_keys or (metadata.get("input_features") or {}).get("task", {}).get("type") == "LANGUAGE"
+        if language and not task.strip():
             raise ValueError("Checkpoint needs a language instruction; set task.instruction in the config")
 
+        if not any(path.glob("model*.safetensors")) and not (path / "adapter_model.safetensors").is_file():
+            raise ValueError("No model safetensors found; export the trained weights alongside config.json")
         config = PreTrainedConfig.from_pretrained(path, cli_overrides=["--device", device])
         # Let PyTorch place the weights and apply the checkpoint's own precision/model rules.
         self.pol = get_policy_class(self.kind).from_pretrained(path, config=config).to(device).eval()
@@ -149,7 +153,7 @@ class GenericPolicy:
 
     def _observation(self, imgs, q):
         torch = self.torch
-        obs = {"task": [self.task]}
+        obs = {key: [self.task] for key in self.task_keys | {"task"}}
         if self.has_state:
             obs[STATE] = torch.tensor(q, dtype=torch.float32).unsqueeze(0)
         for key, name in self.cameras.items():

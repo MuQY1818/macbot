@@ -23,6 +23,7 @@ Executors receive ``observe() -> (images, q)`` and ``log(t_chunk, infer_ms, **ex
 """
 from __future__ import annotations
 
+import math
 import threading
 import time
 
@@ -109,7 +110,10 @@ class Step(Executor):
         except Exception as exc:
             self.err, self.action = repr(exc), None
             return None, self.id
-        self.next_tick = now + 1.0 / self.rate  # Do not replay missed ticks after a slow inference.
+        # Keep the phase of the policy clock, skipping missed ticks after a slow inference.
+        period = 1.0 / self.rate
+        deadline = self.next_tick or now
+        self.next_tick = deadline + (math.floor((now - deadline) / period) + 1) * period
         self.id += 1
         self.log(time.time(), (time.perf_counter() - start) * 1e3)
         return self.action, self.id

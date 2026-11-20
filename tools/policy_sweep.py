@@ -19,7 +19,7 @@ from macbot.policy.generic import GenericPolicy
 def comparable_randomness(stack, torch, seed):
     """Use the same CPU normal draws and categorical sampler on both devices for the error pass."""
     generator = torch.Generator().manual_seed(seed)
-    randn, multinomial = torch.randn, torch.multinomial
+    randn, normal_dist, multinomial = torch.randn, torch.normal, torch.multinomial
 
     def normal(*size, **kwargs):
         device = kwargs.pop("device", None)
@@ -29,12 +29,25 @@ def comparable_randomness(stack, torch, seed):
     def normal_like(value):
         return normal(value.shape, dtype=value.dtype, device=value.device)
 
+    def normal_sample(*args, **kwargs):
+        # The flow policies use the scalar mean/std overload instead of torch.randn.
+        if "size" not in kwargs:
+            return normal_dist(*args, **kwargs)
+        device = kwargs.pop("device", None)
+        return normal_dist(*args, **kwargs, device="cpu", generator=generator).to(device)
+
     def categorical(probs, *args, **kwargs):
         kwargs["generator"] = generator
         return multinomial(probs.float().cpu(), *args, **kwargs).to(probs.device)
 
+    def normal_inplace(value, mean=0.0, std=1.0, **_):
+        sample = normal_dist(mean=mean, std=std, size=value.shape, dtype=value.dtype, generator=generator)
+        return value.copy_(sample)
+
     stack.enter_context(patch.object(torch, "randn", normal))
     stack.enter_context(patch.object(torch, "randn_like", normal_like))
+    stack.enter_context(patch.object(torch, "normal", normal_sample))
+    stack.enter_context(patch.object(torch.Tensor, "normal_", normal_inplace))
     stack.enter_context(patch.object(torch, "multinomial", categorical))
 
 
@@ -45,6 +58,7 @@ def main():
     parser.add_argument("--device", choices=["cpu", "mps"], required=True)
     parser.add_argument("--out", required=True, type=Path)
     parser.add_argument("--warmup", type=int, default=5)
+    parser.add_argument("--compare-only", action="store_true", help="save paired actions without timing")
     parser.add_argument("-n", type=int, default=30)
     args = parser.parse_args()
     cfg = load(args.config)
@@ -66,15 +80,16 @@ def main():
         for _ in range(max(args.warmup, args.n))
     ]
 
-    print("Warming up", flush=True)
-    for imgs, q in observations[:args.warmup]:
-        p(imgs, q)
-    p.reset()
     samples = []
-    for imgs, q in observations[:args.n]:
-        t = perf_counter()
-        p(imgs, q)
-        samples.append((perf_counter() - t) * 1e3)
+    if not args.compare_only:
+        print("Warming up", flush=True)
+        for imgs, q in observations[:args.warmup]:
+            p(imgs, q)
+        p.reset()
+        for imgs, q in observations[:args.n]:
+            t = perf_counter()
+            p(imgs, q)
+            samples.append((perf_counter() - t) * 1e3)
     rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     rss = rss if sys.platform == "darwin" else rss * 1024
     p.reset()
@@ -84,6 +99,8 @@ def main():
         comparable_randomness(stack, torch, 444)
         output = [p(imgs, q) for imgs, q in observations[:args.n]]
     np.save(args.out, np.stack(output))
+    if args.compare_only:
+        return
     print(json.dumps({
         "policy": p.kind, "device": args.device, "execution": "step" if p.stepwise else f"chunk {p.H}",
         "calls": args.n, "warmup": args.warmup, "median_ms": float(np.median(samples)),
