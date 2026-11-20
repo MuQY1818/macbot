@@ -210,7 +210,7 @@ document.addEventListener("keydown", e => {
 });
 window.onLang = () => { if (S) render(S); viewer.translate(); };
 async function poll() {
-  try { render(await (await fetch("/api/status")).json()); }
+  try { render(await pollStatus()); }
   catch (e) { enableReplay(false); $("badge").className = "badge idle"; $("badge").textContent = t("disconnected"); }
   setTimeout(poll, 200);
 }

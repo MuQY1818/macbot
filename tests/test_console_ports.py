@@ -96,3 +96,29 @@ def test_open_browser_hands_url_to_the_sudo_user(monkeypatch):
     calls.clear()
     monkeypatch.setenv("MACBOT_NO_BROWSER", "1")
     assert not web.open_browser("http://127.0.0.1:8766") and calls == []
+
+
+def test_console_reuses_a_page_left_open(monkeypatch):
+    import socket as socketlib
+
+    import macbot.web as web
+
+    opened = []
+    monkeypatch.setattr(web, "open_browser", lambda url: opened.append(url))
+    with web.ConsoleServer(("127.0.0.1", 0), web.Handler) as server:
+        web.show(server, wait=0.05).join()
+        assert opened == [server.url]  # nobody connected: open a tab
+
+    class Status(web.Handler):
+        def do_GET(self):
+            self.json({"state": "idle"})
+
+    opened.clear()
+    with web.ConsoleServer(("127.0.0.1", 0), Status) as server:
+        client, conn = socketlib.socketpair()
+        with client:
+            client.sendall(b"GET /api/status HTTP/1.0\r\n\r\n")
+            server.process_request(conn, ("127.0.0.1", 1))  # an old page's poll reaches the new console
+            assert web.show(server, wait=1).join() is None and opened == []
+            reply = client.recv(4096)
+        assert f"X-Macbot-Boot: {web.BOOT}".encode() in reply

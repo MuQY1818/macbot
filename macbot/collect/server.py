@@ -330,7 +330,7 @@ def _control(st, srv, T, open_browser=False):
         serving = True
         print(f"web page: {srv.url}   data: {st.out}", flush=True)
         if open_browser:
-            web.open_browser(srv.url)
+            web.show(srv)
         Recorder(st)
         robot.connect(leader=True)
         st.ff = robot.info()

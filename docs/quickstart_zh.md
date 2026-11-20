@@ -53,8 +53,8 @@ USB 适配器，机械臂型号仍需确认。请先按套件说明完成组装�
 会在连接机械臂前停止，除非显式传入 `--allow-framing-mismatch`。旧 checkpoint 缺少取景信息时，
 请核对启动时打印的当前取景。
 
-各控制台会在默认浏览器中自动打开，用 `sudo` 运行时也一样。只想打印地址时传入 `--no-browser`，或设置
-`MACBOT_NO_BROWSER=1`。
+各控制台会在默认浏览器中自动打开，用 `sudo` 运行时也一样。上一次留下的控制台页面会自动刷新，不再新开标签页，
+所以多次 `macbot run` 共用一个标签页。只想打印地址时传入 `--no-browser`，或设置 `MACBOT_NO_BROWSER=1`。
 
 `init`、`collect`、`run`、`replay` 的默认端口分别是 8765、8766、8767、8768。默认端口被占用时，
 会向上尝试最多九个端口。要固定端口，请传入 `--port` 或在 YAML 中设置 `init.port`、`teleop.port`、
