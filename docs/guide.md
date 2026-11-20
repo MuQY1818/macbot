@@ -121,6 +121,16 @@ Open the URL printed in Terminal (port 8767 when available). The page starts **p
 Each trial is saved to `rollouts/<task>/` with all frames, the command and measured joints, chunk start
 times and inference times.
 
+While paused, click a row under **Saved trials** to replay it on the run page. The list starts with
+the five newest trials from this task, including previous sessions; **Show all** opens the full list.
+Scrub or play the synchronized cameras and joint traces. The position readout shows the current chunk
+and its inference time. Use **Back to live** to return to the cameras. Starting or homing closes
+the player; pause again to review another trial.
+
+Change the trial's **Result**, enter an optional one-line **Note**, then click **Save** in the replay
+panel. Edits live in `rollout_XXX.review.json` beside the recording. Keep the two files together when
+copying a reviewed trial. The original recording is unchanged.
+
 ### Execution schemes (`--mode`)
 
 | Mode | What it does | Default for |
@@ -157,7 +167,11 @@ chunk. Subclass it to try new switching rules without touching the control loop.
 ```bash
 macbot replay                                   # open the URL printed in Terminal
 macbot video ~/macbot-data/rollouts/cubes_to_box/rollout_003.npz --height 720
+macbot health --data ~/macbot-data/rollouts/cubes_to_box
 ```
+
+Standalone replay uses the same player and annotations as the run console. When `health --data`
+points to a rollout folder, each trial's report includes its reviewed result and note.
 
 `macbot bench --policy DIR` times inference on this Mac with blank images.
 

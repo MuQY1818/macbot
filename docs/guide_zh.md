@@ -109,6 +109,14 @@ sudo -E $(which python) -m macbot.cli run --policy ~/policies/cubes_pi05/004000 
 
 每次试验存到 `rollouts/<任务>/`，包含所有画面、指令和实测关节、每个块的开始时刻和推理耗时。
 
+暂停后，点击 **已保存的试验** 中的任意一行，就能在运行页回放。列表按保存时间倒序显示最近
+5 条，包含这个任务以往的试验；点击 **显示全部** 查看其余记录。拖动进度条或播放可同步查看
+各路相机和关节曲线，进度下方显示当前推理块及其耗时。点击 **回到实时画面** 返回相机预览。
+开始运行或回起始姿态会关闭回放；暂停后可以继续查看。
+
+在回放面板选择 **结果**，填写可选的单行 **备注**，然后点击 **保存**。修改记录在原文件旁的
+`rollout_XXX.review.json`，原始录制文件保持不变。复制已评审的试验时，请同时复制这两个文件。
+
 ### 执行方式（`--mode`）
 
 | 模式 | 做法 | 默认用于 |
@@ -143,7 +151,11 @@ class MyExecutor(Executor):
 ```bash
 macbot replay                                   # 打开终端显示的地址
 macbot video ~/macbot-data/rollouts/cubes_to_box/rollout_003.npz --height 720
+macbot health --data ~/macbot-data/rollouts/cubes_to_box
 ```
+
+独立回放和运行页共用同一个播放器与评审记录。`health --data` 指向试验目录时，
+报告会列出每条试验修改后的结果和备注。
 
 `macbot bench --policy DIR` 用空白图像测这台 Mac 上的推理耗时。
 

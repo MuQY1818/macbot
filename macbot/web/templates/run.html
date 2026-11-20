@@ -32,7 +32,10 @@
         </div>
         <div class="msg" id="msg"></div>
       </div>
-      <div class="card">
+      <section class="stack" id="run-replay" tabindex="-1" hidden>
+        {{rollout_player}}
+      </section>
+      <div class="card" id="live-trace">
         <h2><span data-i18n="recent">recent</span> <span class="hint" data-i18n="legend"></span></h2>
         <svg class="plot" id="plot" viewBox="0 0 1000 190" preserveAspectRatio="none"></svg>
         <div class="legend" id="legend"></div>
@@ -49,28 +52,109 @@
         </dl>
       </div>
       <div class="card">
-        <h2><span data-i18n="joints">joints</span> <span class="hint" data-i18n="joints_hint"></span></h2>
+        <h2><span id="joints-title" data-i18n="joints">joints</span> <span class="hint" data-i18n="joints_hint"></span></h2>
         <div id="joints"></div>
       </div>
       <div class="card">
-        <h2 data-i18n="trials">trials</h2>
-        <div class="table-wrap"><table><tbody id="saved"></tbody></table></div>
+        <h2 data-i18n="saved_trials">Saved trials</h2>
+        <p id="run-replay-msg" role="status" hidden></p>
+        <div class="table-wrap"><table class="rollout-list">
+          <thead><tr><th>#</th><th data-i18n="result"></th><th data-i18n="length"></th><th data-i18n="th_saved"></th></tr></thead>
+          <tbody id="saved"></tbody>
+        </table></div>
+        <button class="ghost rollout-toggle" id="all-trials" aria-controls="saved" hidden></button>
       </div>
+      <section id="run-review" aria-labelledby="rinfo-title" hidden>{{rollout_details}}</section>
     </div>
   </div>
 </div>
 <footer>macbot · <span data-i18n="tagline"></span></footer>
 
+<script src="/static/replay.js"></script>
 <script>
 let S = null, built = false, HQ = [], HC = [];
 const HIST = 75;   // samples kept for the trace (~15 s at the 200 ms poll)
-async function cmd(a) { render(await post("/api/cmd", { action: a })); }
+const panel = $("run-replay"), blocking = new Set(["start", "home", "quit"]);
+let motion = 0, indexLoad, indexRevision, indexError, viewerMessage, nextIndexTry = 0;
+const saved = new RolloutList($("saved"), n => {
+  saved.selected = n;
+  saved.render();
+  viewer.open(n);
+}, { toggle: $("all-trials"), timed: true });
+saved.enabled = false;
+const viewer = new RolloutViewer({
+  trialHeading: true,
+  status: key => { viewerMessage = key; replayMessage(); },
+  change: open => {
+    if (panel.hidden === !open) return;
+    panel.hidden = $("run-review").hidden = !open;
+    const jointsTitle = $("joints-title");
+    jointsTitle.dataset.i18n = open ? "live_joints" : "joints";
+    jointsTitle.textContent = t(jointsTitle.dataset.i18n);
+    $("views").hidden = $("live-trace").hidden = open;
+    for (const c of S.cam_names) {
+      const img = $("cam-" + c);
+      if (open) img.removeAttribute("src");
+      else img.src = `/stream/${c}.mjpg?t=${Date.now()}`;
+    }
+    if (open) panel.focus({ preventScroll: true });
+  },
+  result: (n, value) => saved.updateResult(n, value),
+});
+function replayMessage() {
+  const key = !saved.enabled ? (S ? "pause_first" : null) : viewerMessage || indexError;
+  $("run-replay-msg").hidden = !key;
+  $("run-replay-msg").textContent = key ? t(key) : "";
+}
+function enableReplay(enabled) {
+  if (!enabled && saved.enabled) {
+    viewer.close();
+    viewerMessage = null;
+    saved.selected = null;
+    indexLoad?.abort();
+    indexLoad = null;
+    indexRevision = null;
+  }
+  saved.enabled = enabled;
+  saved.render();
+  replayMessage();
+}
+async function readSaved(revision) {
+  const load = indexLoad = new AbortController();
+  try {
+    const items = await saved.read(load.signal);
+    if (load.signal.aborted) return;
+    saved.items = items;
+    indexRevision = revision;
+    indexError = null;
+    saved.render();
+  } catch (e) {
+    if (load.signal.aborted) return;
+    indexError = e.message in I18N.en ? e.message : "replay_failed";
+    nextIndexTry = Date.now() + 1000;
+  } finally {
+    if (!load.signal.aborted) { indexLoad = null; replayMessage(); }
+  }
+}
+async function cmd(a) {
+  const moves = blocking.has(a);
+  if (moves) { motion++; enableReplay(false); }
+  let s;
+  try {
+    s = await post("/api/cmd", { action: a });
+  } finally {
+    if (moves) motion--;
+  }
+  render(s);
+}
 
 function build(s) {
   layoutViews($("views"), s.cam_names, c => s.cam_size[c]);
   for (const c of s.cam_names) {
     $("cam-" + c).src = `/stream/${c}.mjpg`;
-    $("cam-" + c).onerror = () => setTimeout(() => { $("cam-" + c).src = `/stream/${c}.mjpg?t=${Date.now()}`; }, 1000);
+    $("cam-" + c).onerror = () => setTimeout(() => {
+      if (panel.hidden) $("cam-" + c).src = `/stream/${c}.mjpg?t=${Date.now()}`;
+    }, 1000);
   }
   built = true;
 }
@@ -103,22 +187,31 @@ function render(s) {
   renderJoints($("joints"), s.names, s.q, s.cmd, s.limits);
   if (s.mode === "running") { HQ.push(s.q); HC.push(s.cmd); if (HQ.length > HIST) { HQ.shift(); HC.shift(); } }
   if (HQ.length > 1) { drawTraces($("plot"), $("legend"), HQ.map(r => r.slice(0, -1)), HC.map(r => r.slice(0, -1)), s.names.slice(0, -1)); $("legend").lastElementChild.remove(); moveCursor($("plot"), HQ.length - 1, HQ.length); }
-  $("saved").innerHTML = s.saved.length ? s.saved.slice().reverse().map(r =>
-    `<tr><td class="num">${r.name}</td><td><span class="pill ${r.result === "success" ? "ok" : "bad"}">${t(r.result)}</span></td><td class="num">${r.s} s</td></tr>`).join("")
-    : `<tr><td class="empty">${t("no_trials")}</td></tr>`;
+  enableReplay(s.replay_ready && !motion);
+  if (saved.enabled && s.saved_revision !== indexRevision && !indexLoad && Date.now() >= nextIndexTry) readSaved(s.saved_revision);
 }
 
+$("rclose").hidden = false;
+$("rclose").onclick = () => {
+  const previous = saved.selected;
+  viewer.close();
+  viewerMessage = saved.selected = null;
+  saved.render();
+  replayMessage();
+  if (previous) $("saved").querySelector(`[data-n="${CSS.escape(previous)}"] button`)?.focus();
+};
 $("quit").onclick = () => { if (confirm(t("confirm_quit"))) cmd("quit"); };
 document.addEventListener("keydown", e => {
+  if ($("run-review").contains(e.target) || (panel.contains(e.target) && (e.repeat || viewer.key(e) || isEditing(e)))) return;
   if (["INPUT", "SELECT", "TEXTAREA"].includes(e.target.tagName) || e.repeat) return;
   const k = e.key.toLowerCase();
   if (k === "s") cmd("start"); else if (k === " ") { e.preventDefault(); cmd("pause"); }
   else if (k === "h") cmd("home"); else if (k === "y") cmd("save_ok"); else if (k === "n") cmd("save_fail");
 });
-window.onLang = () => { if (S) { for (const c of S.cam_names) $("tag-" + c).textContent = camLabel(c); render(S); } };
+window.onLang = () => { if (S) render(S); viewer.translate(); };
 async function poll() {
   try { render(await (await fetch("/api/status")).json()); }
-  catch (e) { $("badge").className = "badge idle"; $("badge").textContent = t("disconnected"); }
+  catch (e) { enableReplay(false); $("badge").className = "badge idle"; $("badge").textContent = t("disconnected"); }
   setTimeout(poll, 200);
 }
 poll();

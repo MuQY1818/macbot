@@ -14,31 +14,17 @@
 </header>
 
 <div class="wrap">
+  <p id="replay-status" role="status" hidden></p>
   <div class="layout">
     <div class="stack">
-      <div class="views" id="views"></div>
-      <div class="card">
-        <h2 id="rtitle"></h2>
-        <div class="btn-row">
-          <button id="rplay" class="primary"><span data-i18n="play">Play</span> <kbd>␣</kbd></button>
-          <select id="rspeed"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option></select>
-          <input type="range" id="rslider" min="0" value="0" style="flex:1">
-          <span class="num" id="rpos"></span>
-        </div>
-        <div style="margin-top:14px"><svg class="plot" id="plot" viewBox="0 0 1000 190" preserveAspectRatio="none"></svg></div>
-        <div class="legend" id="legend"></div>
-      </div>
+      {{rollout_player}}
     </div>
 
     <div class="stack">
-      <div class="card">
-        <h2 data-i18n="status">status</h2>
-        <div class="tiles" id="tiles"></div>
-        <dl class="kv" id="info" style="margin-top:12px"></dl>
-      </div>
+      <div id="replay-details" hidden>{{rollout_details}}</div>
       <div class="card">
         <h2 data-i18n="rollouts">rollouts</h2>
-        <div class="table-wrap"><table>
+        <div class="table-wrap"><table class="rollout-list">
           <thead><tr><th>#</th><th data-i18n="result"></th><th data-i18n="length"></th><th></th></tr></thead>
           <tbody id="list"></tbody>
         </table></div>
@@ -48,84 +34,48 @@
 </div>
 <footer>macbot · <span data-i18n="tagline"></span></footer>
 
+<script src="/static/replay.js"></script>
 <script>
-let LIST = [], R = null, name = null, k = 0, playing = false, timer = null;
-const tile = (key, v, u = "") => `<div class="tile"><div class="k">${t(key)}</div><div class="v">${v}<small> ${u}</small></div></div>`;
-
-function renderList() {
-  $("list").innerHTML = LIST.length ? LIST.map(r =>
-    `<tr data-n="${r.name}" class="${r.name === name ? "sel" : ""}" style="cursor:pointer">` +
-    `<td class="num">${r.name.split("_")[1]}</td>` +
-    `<td><span class="pill ${r.result === "success" ? "ok" : "bad"}">${t(r.result || "failure")}</span></td>` +
-    `<td class="num">${r.s} s</td><td class="acts"><button>${t("replay_btn")}</button></td></tr>`).join("")
-    : `<tr><td colspan="4" class="empty">${t("no_rollouts")}</td></tr>`;
+const list = new RolloutList($("list"), openRollout);
+let statusKey;
+function showStatus(key) {
+  statusKey = key;
+  $("replay-status").hidden = !key;
+  $("replay-status").textContent = key ? t(key) : "";
 }
-$("list").addEventListener("click", e => { const tr = e.target.closest("tr[data-n]"); if (tr) openRollout(tr.dataset.n); });
-
-async function openRollout(n) {
-  stop();
-  name = n;
-  R = await (await fetch(`/api/rollout/${n}`)).json();
-  layoutViews($("views"), R.cams, c => R.sizes[c]);
-  for (const c of R.cams) $("tag-" + c).textContent = `${camLabel(c)} · ${t("replay")}`;
-  const n0 = R.t.length, T = R.t.at(-1) || 1;
-  const marks = R.chunk_t.map(ct => { const x = (1000 * ct / T).toFixed(1);
-    return `<line x1="${x}" x2="${x}" y1="182" y2="190" stroke="currentColor" stroke-width="1" opacity=".45" vector-effect="non-scaling-stroke"/>`; }).join("");
-  drawTraces($("plot"), $("legend"), R.q, R.cmd, R.meta.joint_names, marks);
-  $("legend").innerHTML += `<span style="--c:transparent">${t("chunk_marks")}</span>`;
-  $("rslider").max = n0 - 1;
-  info();
-  renderList();
-  seek(0);
-}
-
-function info() {
-  if (!R) return;
-  const m = R.meta, ok = m.result === "success";
+function badge(result) {
+  const ok = result === "success";
   $("badge").className = "badge " + (ok ? "live" : "rec");
-  $("badge").textContent = t(m.result || "failure");
-  $("rtitle").textContent = `${name} · ${(R.t.at(-1) || 0).toFixed(1)} s`;
-  $("tiles").innerHTML = tile("length", (R.t.at(-1) || 0).toFixed(1), "s") + tile("chunks", R.chunks) +
-    tile("infer", R.infer_ms == null ? "–" : Math.round(R.infer_ms), "ms") + tile("speed", `×${m.speed}`);
-  const p = String(m.policy || "").split("/").slice(-2).join("/");
-  $("info").innerHTML = `<dt>${t("policy")}</dt><dd>${esc(p)}</dd><dt>${t("executor")}</dt><dd>${esc(m.executor || m.mode || "")}</dd>` +
-    `<dt>${t("th_saved")}</dt><dd>${esc(m.saved_at || "")}</dd><dt>${t("instruction")}</dt><dd>${esc(m.instruction || "")}</dd>`;
+  $("badge").textContent = t(ok ? "success" : "failure");
 }
-
-function seek(i) {
-  if (!R) return;
-  k = Math.max(0, Math.min(i, R.t.length - 1));
-  for (const c of R.cams) $("cam-" + c).src = `/api/rollout/${name}/${c}/${k}`;
-  $("rslider").value = k;
-  $("rpos").textContent = `${R.t[k].toFixed(2)} s`;
-  moveCursor($("plot"), k, R.t.length);
-}
-function stop() { playing = false; clearInterval(timer); $("rplay").firstElementChild.textContent = t("play"); }
-function play() {
-  if (!R) return;
-  if (playing) return stop();
-  if (k >= R.t.length - 1) seek(0);
-  playing = true; $("rplay").firstElementChild.textContent = t("pause");
-  const fps = R.meta.fps || 30, sp = +$("rspeed").value, step = Math.max(1, Math.round(sp * fps / 15));
-  timer = setInterval(() => { if (k >= R.t.length - 1) return stop(); seek(k + step); }, 1000 * step / (sp * fps));
-}
-$("rplay").onclick = play;
-$("rspeed").onchange = () => { if (playing) { stop(); play(); } };
-$("rslider").oninput = e => { stop(); seek(+e.target.value); };
-$("plot").addEventListener("click", e => { if (!R) return; const b = e.currentTarget.getBoundingClientRect();
-  stop(); seek(Math.round((e.clientX - b.left) / b.width * (R.t.length - 1))); });
-document.addEventListener("keydown", e => {
-  if (["INPUT", "SELECT"].includes(e.target.tagName)) return;
-  if (e.key === " ") { e.preventDefault(); play(); }
-  else if (e.key === "ArrowRight") { stop(); seek(k + 1); } else if (e.key === "ArrowLeft") { stop(); seek(k - 1); }
+const viewer = new RolloutViewer({
+  status: showStatus,
+  change: open => {
+    $("replay-details").hidden = !open;
+    if (open) badge(viewer.data.meta.result);
+  },
+  result: (n, value) => { list.updateResult(n, value); badge(value); },
 });
-window.onLang = () => { renderList(); if (R) { info(); for (const c of R.cams) $("tag-" + c).textContent = `${camLabel(c)} · ${t("replay")}`; } };
-
+function openRollout(n) {
+  list.selected = n;
+  list.render();
+  return viewer.open(n);
+}
+document.addEventListener("keydown", e => viewer.key(e));
+window.onLang = () => {
+  list.render();
+  viewer.translate();
+  showStatus(statusKey);
+  if (viewer.data) badge(viewer.data.meta.result);
+};
 (async () => {
-  const r = await (await fetch("/api/rollouts")).json();
-  LIST = r.items;
-  renderList();
-  if (LIST.length) openRollout(LIST[0].name);
+  try {
+    list.items = await list.read();
+    list.render();
+    if (list.items.length) await openRollout(list.items[0].name);
+  } catch (e) {
+    showStatus("replay_failed");
+  }
 })();
 </script>
 </body>

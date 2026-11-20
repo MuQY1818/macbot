@@ -15,13 +15,14 @@ import numpy as np
 
 from ..config import Config
 from ..system import expand
+from .rollouts import metadata, rollout_files
 
 
-def episode_stats(d, fps: float | None = None, cams=None) -> dict:
-    meta = json.loads(str(d["meta"]))
+def episode_stats(d, fps: float | None = None, cams=None, *, rollout_meta=None) -> dict:
+    meta = rollout_meta if rollout_meta is not None else json.loads(str(d["meta"]))
     fps = fps if fps is not None else float(meta["fps"])
     cams = cams if cams is not None else meta["cameras"]
-    q, a = d["qpos"].astype(float), d["action"].astype(float)
+    q, a = d["qpos"].astype(float), d["cmd" if rollout_meta is not None else "action"].astype(float)
     names = meta.get("joint_names") or [f"joint_{i}" for i in range(q.shape[1])]
     g = names.index(meta["gripper"]) if meta.get("gripper") in names else (names.index("gripper") if "gripper" in names else None)
     arm = [i for i in range(q.shape[1]) if i != g] or list(range(q.shape[1]))
@@ -34,7 +35,7 @@ def episode_stats(d, fps: float | None = None, cams=None) -> dict:
     _, lag, err = best
     still = np.abs(np.diff(a[:, arm], axis=0)).max(1) * fps < 2.0
     off = (a[1:][:, arm] - q[1:][:, arm])[still]
-    wt = d["wall_time"] if "wall_time" in d.files else d["timestamp"]
+    wt = d["t"] if rollout_meta is not None else d["wall_time"] if "wall_time" in d.files else d["timestamp"]
     dt = np.diff(wt) if len(wt) > 1 else np.zeros(1)
     return {"n": len(q), "lag": lag, "p95": np.percentile(err, 95, axis=0), "max": err.max(0),
             "still": np.median(off, 0) if len(off) else np.full(len(arm), np.nan),
@@ -47,20 +48,27 @@ def episode_stats(d, fps: float | None = None, cams=None) -> dict:
 def run(cfg: Config, args):
     data = expand(args.data) if args.data else cfg.raw_dir()
     files = sorted(data.glob("episode_*.npz"))
+    rollouts = not files and args.data is not None
+    if rollouts:
+        files = sorted(rollout_files(data))
     if not files:
-        sys.exit(f"no episode_*.npz in {data}")
+        sys.exit(f"no {'episode_*.npz or rollout_*.npz' if rollouts else 'episode_*.npz'} in {data}")
     np.set_printoptions(precision=1, suppress=True, linewidth=200)
     rows = []
-    print("ep   frames lag  p95 tracking error per arm joint     offset while still               gripper range    dt max  late  repeats")
+    print(("run " if rollouts else "ep  ") +
+          " frames lag  p95 tracking error per arm joint     offset while still               gripper range    dt max  late  repeats" +
+          ("  result / note" if rollouts else ""))
     for f in files:
         idx = int(f.stem.split("_")[-1])
+        meta = metadata(f) if rollouts else None
         with np.load(f) as d:
-            r = episode_stats(d)
+            r = episode_stats(d, rollout_meta=meta)
         r["idx"] = idx
         rows.append(r)
         rep = "/".join(str(v) for v in r["repeat"].values())
         print(f"{idx:03d} {r['n']:6d} {r['lag']:3d}  {r['p95']}  {r['still']}  {r['gmin']:6.1f}/{r['gmax']:6.1f}"
-              f"  {r['dt_max'] * 1e3:5.0f}ms {r['dt_late']:4d}  {rep}" + (f"  NaN {r['nan']}" if r["nan"] else ""))
+              f"  {r['dt_max'] * 1e3:5.0f}ms {r['dt_late']:4d}  {rep}" + (f"  NaN {r['nan']}" if r["nan"] else "") +
+              (f"  {meta.get('result', '–')}  {meta.get('note', '')}".rstrip() if meta is not None else ""))
     if args.split is not None:
         a = [r for r in rows if r["idx"] < args.split]
         b = [r for r in rows if r["idx"] >= args.split]

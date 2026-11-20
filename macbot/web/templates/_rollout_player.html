@@ -1,0 +1,14 @@
+<div class="views" id="rviews"></div>
+<div class="card">
+  <h2 class="rollout-heading"><span id="rtitle"></span><button id="rclose" class="ghost" data-i18n="back_live" hidden>Back to live</button></h2>
+  <div class="btn-row">
+    <button id="rplay" class="primary"><span data-i18n="play">Play</span> <kbd>␣</kbd></button>
+    <select id="rspeed" data-label="playback_speed"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option></select>
+    <input type="range" id="rslider" min="0" value="0" style="flex:1" data-label="playback_position">
+    <span class="num" id="rpos"></span>
+  </div>
+  <div style="margin-top:14px"><svg class="plot" id="rplot" viewBox="0 0 1000 190" preserveAspectRatio="none"></svg></div>
+  <div class="legend" id="rlegend"></div>
+  <div class="hint rollout-chunk num" id="rchunk"></div>
+  <p id="rframe-error" class="hint" role="status" hidden></p>
+</div>

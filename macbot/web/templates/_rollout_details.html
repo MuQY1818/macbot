@@ -1,0 +1,15 @@
+<div class="card">
+  <h2 id="rinfo-title" data-i18n="status">status</h2>
+  <div class="tiles" id="rtiles"></div>
+  <dl class="kv" id="rinfo" style="margin-top:12px"></dl>
+  <form id="rreview" class="btn-row rollout-review">
+    <label><span data-i18n="result">Result</span>
+      <select id="rresult" required><option value="success" data-i18n="success">success</option><option value="failure" data-i18n="failure">failure</option></select>
+    </label>
+    <label class="rollout-note"><span data-i18n="trial_note">Note</span>
+      <input type="text" id="rnote" maxlength="400" autocomplete="off">
+    </label>
+    <button id="rsave" type="submit" data-i18n="save">Save</button>
+    <span id="rreview-msg" class="hint" role="status"></span>
+  </form>
+</div>
