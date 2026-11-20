@@ -75,6 +75,9 @@ def page(name: str, **vars) -> bytes:
     html = (TEMPLATES / f"{name}.html").read_text(encoding="utf-8")
     head = (TEMPLATES / "_head.html").read_text(encoding="utf-8")
     html = html.replace("{{head}}", head).replace("{{brand}}", BRAND)
+    for part in ("rollout_player", "rollout_details"):
+        if "{{" + part + "}}" in html:
+            html = html.replace("{{" + part + "}}", (TEMPLATES / f"_{part}.html").read_text(encoding="utf-8"))
     for k, v in vars.items():
         html = html.replace("{{" + k + "}}", str(v))
     return html.encode()

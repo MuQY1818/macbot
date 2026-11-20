@@ -17,7 +17,7 @@ import re
 import sys
 import threading
 import time
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
 import numpy as np
@@ -28,11 +28,13 @@ from ..cameras.framing import check_framing, framing, training_framing
 from ..config import Config
 from ..i18n import tr
 from ..system import ensure_dir, expand, give_back, start_log
+from ..viz.rollouts import Store, serve_rollouts
 from .executors import AsyncChunk, Ensemble, Step, SyncChunk
 from .gripper import BinaryGripper, find_gripper_config
 from .models import check_joint_dimensions, load_generic, load_policy, policy_backend, prep_image, use_generic
 
 CAM_STALL_S = 0.5
+MOTION_COMMANDS = ("start", "home", "quit")
 
 
 class State:
@@ -50,13 +52,42 @@ class State:
         self.cams, self.chunks, self.infer_ms = {}, 0, []
         self.quit = False
         self.rec = None
-        self.saved = []
+        self.next = self.next_idx()
+        self.saved_revision = 0
+        self.replay_readers = 0
+        self.replay_transition = False
         self.executor = ""
         self.gripper, self.robot_info, self.limits = None, {}, {}
 
     def next_idx(self):
         ids = [int(m.group(1)) for p in self.out.glob("rollout_*.npz") if (m := re.search(r"_(\d+)\.npz$", p.name))]
         return max(ids, default=-1) + 1
+
+    def replay_ready(self):
+        """Call with the state lock held."""
+        return self.mode == "paused" and not self.quit and not self.replay_transition and self.want not in MOTION_COMMANDS
+
+    @contextmanager
+    def replay_lease(self):
+        with self.lock:
+            allowed = self.replay_ready()
+            if allowed:
+                self.replay_readers += 1
+        try:
+            yield allowed
+        finally:
+            if allowed:
+                with self.lock:
+                    self.replay_readers -= 1
+
+    def take_command(self):
+        with self.lock:
+            if self.want in MOTION_COMMANDS and self.replay_readers:
+                # Keep ticking while the last paused read finishes. Pending motion blocks new reads.
+                return None
+            want, self.want = self.want, None
+            self.replay_transition = want in MOTION_COMMANDS
+            return want
 
     def log_chunk(self, t_chunk, ms, **extra):
         """Called by executors after every inference."""
@@ -84,7 +115,7 @@ class State:
                     "executor": self.executor, "speed": self.args.speed, "fake": self.args.fake, "sim": self.sim,
                     "policy": "/".join(Path(self.args.policy).parts[-2:]), "task": self.cfg.task,
                     "rec_s": round(len(r["t"]) / self.cfg["record"]["fps"], 1) if r else 0,
-                    "saved": self.saved[-15:], "next": self.next_idx()}
+                    "saved_revision": self.saved_revision, "replay_ready": self.replay_ready(), "next": self.next}
 
 
 def save_rollout(st: State, rec: dict, result: str):
@@ -115,13 +146,14 @@ def save_rollout(st: State, rec: dict, result: str):
 
 def make_handler(st: State):
     preview = {k: tuple(st.cfg["cameras"][k]["save_size"]) for k in st.cam_names}
+    store = Store(st.out)
 
     class H(web.Handler):
         def do_GET(self):
             path = self.path.split("?")[0]
             if path == "/":
                 return self.send(200, web.page("run", task=st.cfg.task), "text/html; charset=utf-8")
-            if self.static(path):
+            if self.static(path) or serve_rollouts(self, store, path, lease=st.replay_lease):
                 return
             if path == "/api/status":
                 return self.json(st.status())
@@ -131,6 +163,8 @@ def make_handler(st: State):
             self.send(404, b"not found", "text/plain")
 
         def do_POST(self):
+            if serve_rollouts(self, store, self.path, method="POST", lease=st.replay_lease):
+                return
             if self.path != "/api/cmd":
                 return self.send(404, b"", "text/plain")
             try:
@@ -312,8 +346,7 @@ def _control(st, srv, fps, gripper, cleanup):
             if auto and now - auto_t0 >= auto[0][0]:
                 with st.lock:
                     st.want = auto.pop(0)[1]
-            with st.lock:
-                want, st.want = st.want, None
+            want = st.take_command()
             if want == "quit":
                 break
             if st.sim and want in ("start", "home"):
@@ -355,7 +388,8 @@ def _control(st, srv, fps, gripper, cleanup):
                 if rec and want != "discard" and rec["t"]:
                     name, meta = save_rollout(st, rec, "success" if want == "save_ok" else "failure")
                     with st.lock:
-                        st.saved.append({"name": name, "result": meta["result"], "s": round(meta["frames"] / fps, 1)})
+                        st.next = int(Path(name).stem.split("_")[-1]) + 1
+                        st.saved_revision += 1
                     ok = want == "save_ok"
                     say(f"Saved {name} ({'success' if ok else 'failure'}). Reset the scene and press Start.",
                         f"已保存 {name}（{'成功' if ok else '失败'}）。复位场景后按开始。")

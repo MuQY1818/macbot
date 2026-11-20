@@ -24,6 +24,12 @@ const I18N = {
     policy: "policy", trials: "trials", no_trials: "no trials yet", success: "success", failure: "failure",
     rollouts: "rollouts", replay_btn: "Replay", result: "result", length: "length", no_rollouts: "no rollouts in this folder",
     chunk_marks: "ticks = new chunk", recent: "recent 15 s",
+    saved_trials: "Saved trials", show_all: n => `Show all (${n})`, show_less: "Show recent",
+    pause_first: "Pause first to replay a saved trial.", replay_busy: "Replay is busy. Try again.",
+    replay_failed: "Could not load replay.", replay_missing: "This trial or frame is no longer available.",
+    replay_loading: "Loading trial…", trial_note: "Note", review_saved: "Review saved.",
+    review_failed: "Could not save this review.", playback_speed: "Playback speed",
+    playback_position: "Playback position", chunk_at: n => `Chunk ${n}`, median_infer: "median inference",
   },
   zh: {
     quit: "结束并回零", collect: "采集", run: "跑策略", replay: "回放", instruction: "语言指令",
@@ -46,6 +52,12 @@ const I18N = {
     policy: "策略", trials: "已保存的试验", no_trials: "还没有试验", success: "成功", failure: "失败",
     rollouts: "试验记录", replay_btn: "回放", result: "结果", length: "时长", no_rollouts: "这个文件夹里没有试验记录",
     chunk_marks: "刻度 = 换块", recent: "最近 15 秒",
+    saved_trials: "已保存的试验", show_all: n => `显示全部（${n}）`, show_less: "只显示最近试验",
+    pause_first: "请先暂停，再回放已保存的试验。", replay_busy: "回放繁忙，请重试。",
+    replay_failed: "无法加载回放。", replay_missing: "这条试验或这一帧已不可用。",
+    replay_loading: "正在加载试验…", trial_note: "备注", review_saved: "已保存试验评审。",
+    review_failed: "无法保存试验评审。", playback_speed: "回放速度",
+    playback_position: "回放位置", chunk_at: n => `第 ${n} 块`, median_infer: "推理耗时中位数",
   },
 };
 let LANG = (() => { try { return localStorage.getItem("macbot.lang") || ((navigator.language || "").toLowerCase().startsWith("zh") ? "zh" : "en"); } catch (e) { return "en"; } })();
@@ -57,6 +69,7 @@ const camLabel = c => (CAM_LABEL[LANG] || {})[c] || c;
 function applyI18n() {
   document.documentElement.lang = LANG === "zh" ? "zh-CN" : "en";
   document.querySelectorAll("[data-i18n]").forEach(el => { el.textContent = t(el.dataset.i18n); });
+  document.querySelectorAll("[data-label]").forEach(el => el.setAttribute("aria-label", t(el.dataset.label)));
   const b = document.getElementById("lang");
   if (b) b.textContent = LANG === "zh" ? "EN" : "中文";
 }
@@ -92,11 +105,11 @@ async function post(url, body) {
 // Joint meters: thick bar = command, thin line = measured, scaled to the joint limits.
 // Camera views share one row at equal height: each view's width follows its own aspect ratio,
 // so a square top view and a 16:9 wrist view line up without cropping or empty space.
-function layoutViews(el, names, sizeOf) {
+function layoutViews(el, names, sizeOf, prefix = "") {
   el.innerHTML = names.map(c => {
     const [w, h] = sizeOf(c) || [4, 3];
-    return `<div class="view" style="--ar:${(w / h).toFixed(4)}"><img id="cam-${c}" alt="${c}">` +
-      `<span class="tag" id="tag-${c}">${camLabel(c)}</span><span class="age" id="age-${c}"></span></div>`;
+    return `<div class="view" style="--ar:${(w / h).toFixed(4)}"><img id="${prefix}cam-${esc(c)}" alt="${esc(c)}">` +
+      `<span class="tag" id="${prefix}tag-${esc(c)}">${esc(camLabel(c))}</span><span class="age" id="${prefix}age-${esc(c)}"></span></div>`;
   }).join("");
 }
 
@@ -117,8 +130,8 @@ function renderHP(el, frac) {
 }
 
 // Joint traces for one episode: solid = measured, dashed = command, each joint scaled on its own.
-function drawTraces(svg, legend, qpos, action, names, extra = "") {
-  const n = qpos.length, W = 1000, H = 190, x = i => (W * i / Math.max(n - 1, 1)).toFixed(1);
+function drawTraces(svg, legend, qpos, action, names, extra = "", fractions = null) {
+  const n = qpos.length, W = 1000, H = 190, x = i => (W * (fractions?.[i] ?? i / Math.max(n - 1, 1))).toFixed(1);
   let s = "";
   for (let j = 0; j < names.length; j++) {
     const v = qpos.map(r => r[j]), a = action.map(r => r[j]);
@@ -129,14 +142,14 @@ function drawTraces(svg, legend, qpos, action, names, extra = "") {
     s += `<polyline points="${a.map((val, i) => `${x(i)},${y(val)}`).join(" ")}" fill="none" stroke="${color}" stroke-width="1.2" stroke-dasharray="5 4" opacity=".55" vector-effect="non-scaling-stroke"/>`;
     s += `<polyline points="${v.map((val, i) => `${x(i)},${y(val)}`).join(" ")}" fill="none" stroke="${color}" stroke-width="2" vector-effect="non-scaling-stroke"/>`;
   }
-  s += extra + `<line id="cursor" x1="0" x2="0" y1="0" y2="${H}" stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke"/>`;
+  s += extra + `<line data-cursor x1="0" x2="0" y1="0" y2="${H}" stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke"/>`;
   svg.innerHTML = s;
   legend.innerHTML = names.map((nm, j) => `<span style="--c:${jointColor(j)}">${esc(jointLabel(nm))}</span>`).join("") +
     `<span style="--c:transparent">${t("legend")}</span>`;
 }
 
-function moveCursor(svg, k, n) {
-  const c = svg.querySelector("#cursor"), cx = 1000 * k / Math.max(n - 1, 1);
+function moveCursor(svg, k, n, fraction = k / Math.max(n - 1, 1)) {
+  const c = svg.querySelector("[data-cursor]"), cx = 1000 * fraction;
   if (c) { c.setAttribute("x1", cx); c.setAttribute("x2", cx); }
 }
 
