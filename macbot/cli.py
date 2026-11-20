@@ -136,6 +136,8 @@ def cmd_bench(args):
 def _backend_args(parser):
     parser.add_argument("--backend", choices=["torch", "mlx"], help="policy backend (default: torch or YAML setting)")
     parser.add_argument("--mlx-bits", type=int, choices=[4, 8], help="experimental lossy MLX weight quantization")
+    parser.add_argument("--mlx-time-grid", choices=["uniform", "quadratic"], default="uniform",
+                        help="MLX Euler schedule; quadratic is an opt-in lossy experiment")
     parser.add_argument("--mlx-quantize", choices=["prefix", "expert", "both"], default="prefix",
                         help="weight groups to quantize with --mlx-bits")
 

@@ -157,7 +157,8 @@ def policy_backend(cfg, args):
 
 
 def load_policy(path: Path, device: str, task: str, steps: int | None = None, *,
-                backend: str = "torch", mlx_bits: int | None = None, mlx_quantize: str = "prefix"):
+                backend: str = "torch", mlx_bits: int | None = None, mlx_quantize: str = "prefix",
+                mlx_time_grid: str = "uniform"):
     typ = json.loads((Path(path) / "config.json").read_text()).get("type", "act")
     if backend == "mlx":
         if typ != "pi05":
@@ -175,7 +176,7 @@ def load_policy(path: Path, device: str, task: str, steps: int | None = None, *,
         return PI05MLX(
             Path(path), task, steps, bits=mlx_bits, quantize=mlx_quantize, trim=True, precompute_adarms=True,
             dtype=mx.float16 if mlx_bits is None else mx.bfloat16, pack_linears=mlx_bits is None,
-            fused_rope=mlx_bits is None,
+            fused_rope=mlx_bits is None, time_grid=mlx_time_grid,
         )
     if backend != "torch":
         raise ValueError(f"Unsupported policy backend: {backend}")

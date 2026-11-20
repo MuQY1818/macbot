@@ -24,16 +24,24 @@
 
 做真机实验时，大家通常默认机械臂旁边要放一台装 Ubuntu、插 NVIDIA 显卡的工作站。我们发现，机械臂旁边的工作一台 MacBook 就够了：遥操作采数据、检查数据、导出 LeRobot 数据集，以及闭环跑策略，包括 π0.5。训练仍然放在 GPU 服务器上。macbot 就是我们日常用的这套工具，整理之后开源出来，方便大家复用。
 
-以下数据在 MacBook Pro（M5 Pro，48 GB）上用 PyTorch MPS 实测：
+以下数据在 MacBook Pro（M5 Pro，48 GB）上实测。策略推理，每个动作块的耗时：
 
-| 项目 | 实测 |
-|---|---|
-| π0.5 推理（动作块 50 步，去噪 10 步） | **约 280 ms**（bf16 + `torch.compile`） |
-| π0.5 走可选的 MLX 后端（`--backend mlx`，fp16，动作误差 0.1° 以内） | **约 165 ms** |
-| π0.5 加 Real-Time Chunking 引导 | **约 350 ms** |
-| ACT 推理（动作块 100 步） | **约 25 ms** |
+| 策略 | 后端 | 执行方式 | 延迟 |
+|---|---|---|---:|
+| π0.5（动作块 50 步，去噪 10 步） | PyTorch MPS（bf16，`torch.compile`） | 普通 | 约 270 ms |
+| | PyTorch MPS | Real-Time Chunking 引导 | 约 350 ms |
+| | **MLX**（fp16，`--backend mlx`） | 普通 | **约 165 ms** |
+| | **MLX** | Real-Time Chunking 引导 | **约 170 ms** |
+| ACT（动作块 100 步） | PyTorch MPS | 普通 | 约 25 ms |
+
+MLX 后端输出的动作与 PyTorch 平均相差不到 0.1°。测法和完整结果见[推理基准](https://github.com/MuQY1818/macbot/blob/main/docs/acceleration_zh.md)。
+
+数据采集：
+
+| | 实测 |
+|---|---:|
 | 遥操作控制频率 / 录制采样频率 | 60 Hz / 30 fps |
-| 采样时刻的画面延迟 p95 | **≤ 40 ms**（俯视 UVC + 腕部 Orbbec） |
+| 采样时刻的画面延迟 p95（俯视 UVC + 腕部 Orbbec） | ≤ 40 ms |
 
 ## 功能
 

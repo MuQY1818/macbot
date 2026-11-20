@@ -59,7 +59,7 @@ For policy inference, use a checkpoint matching the joint layout and cameras; `r
 Keep commits small and focused, with plain English subjects. Run the checks above before each
 commit. Open a pull request with the behavior change, how to verify it, and the results. Update
 the English and Simplified Chinese docs together and add an entry under **Unreleased** for
-user-visible changes.
+user-visible changes. How versions are numbered and released is described in [docs/releasing.md](docs/releasing.md).
 
 Hardware test reports are welcome. Include the arm and camera setup, macOS and chip, what worked
 or failed, and `macbot bench` numbers when available. Use the hardware report issue form and

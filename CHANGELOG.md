@@ -4,9 +4,28 @@
 
 All notable changes to macbot will be documented here. This project follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
-[Semantic Versioning](https://semver.org/).
+[Semantic Versioning](https://semver.org/). What each version number means and when it changes is in
+[docs/releasing.md](docs/releasing.md).
 
 ## [Unreleased]
+
+## [0.3.1] - 2026-11-20
+
+### Added
+
+- Guided Real-Time Chunking on the MLX backend. `--backend mlx --mode rtc` now stays on MLX instead
+  of falling back to PyTorch: about 170 ms per guided chunk on an M5 Pro against about 350 ms on
+  PyTorch MPS, matching LeRobot's guided output within 0.07° mean / 0.35° p99.
+- `--mlx-time-grid quadratic` for `run` and `bench`: with a reduced `--steps`, places the flow
+  evaluations closer to the clean action end. Lossy; evaluate on your own checkpoint first.
+- `tools/accel/`: matmul shape benchmarks, alternative solvers (quadratic grid, AB2, midpoint) and
+  attention-ranked visual token dropping for offline study only.
+- Versioning and release policy (`docs/releasing.md`).
+
+### Changed
+
+- The README benchmark tables are grouped by policy, backend and execution scheme.
+- The default 10-step MLX path returns bit-identical actions to 0.3.0.
 
 ## [0.3.0] - 2026-11-20
 
@@ -70,7 +89,8 @@ All notable changes to macbot will be documented here. This project follows
   chunks and Real-Time Chunking, plus rollout replay, MP4 export and inference benchmarks.
 - Equipment diagnostics, setup and usage guides, and English and Simplified Chinese consoles.
 
-[Unreleased]: https://github.com/MuQY1818/macbot/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/MuQY1818/macbot/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/MuQY1818/macbot/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/MuQY1818/macbot/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/MuQY1818/macbot/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/MuQY1818/macbot/releases/tag/v0.1.0

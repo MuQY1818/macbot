@@ -24,7 +24,7 @@ def run(cfg: Config, args):
     steps = getattr(args, "steps", None)
     if backend == "mlx":
         pol = load_policy(path, args.device, cfg["task"]["instruction"], steps, backend="mlx",
-                          mlx_bits=args.mlx_bits, mlx_quantize=args.mlx_quantize)
+                          mlx_bits=args.mlx_bits, mlx_quantize=args.mlx_quantize, mlx_time_grid=args.mlx_time_grid)
     elif steps is not None:
         pol = load_policy(path, args.device, cfg["task"]["instruction"], steps)
     else:

@@ -4,9 +4,27 @@
 
 macbot 的主要变更记录在这里。本项目遵循
 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 和
-[语义化版本](https://semver.org/lang/zh-CN/)。
+[语义化版本](https://semver.org/lang/zh-CN/)。版本号各位的含义和升级时机见
+[docs/releasing_zh.md](docs/releasing_zh.md)。
 
 ## [Unreleased]
+
+## [0.3.1] - 2026-11-20
+
+### 新增
+
+- MLX 后端支持带引导的 Real-Time Chunking。`--backend mlx --mode rtc` 不再退回 PyTorch：M5 Pro 上每个
+  带引导的动作块约 170 ms，PyTorch MPS 约 350 ms；与 LeRobot 的引导输出相差平均 0.07°、p99 0.35°。
+- `run` 和 `bench` 新增 `--mlx-time-grid quadratic`：配合较少的 `--steps`，把去噪求值集中在接近干净动作的一端。
+  属于有损选项，请先在自己的 checkpoint 上评测。
+- `tools/accel/`：矩阵乘形状测速、其他求解器（二次时间网格、AB2、中点法），以及按注意力丢弃图像 token，
+  仅供离线研究。
+- 版本号与发版规则（`docs/releasing_zh.md`）。
+
+### 变更
+
+- README 的测速表按策略、后端和执行方式分组排列。
+- 默认的 10 步 MLX 路径输出与 0.3.0 逐位一致。
 
 ## [0.3.0] - 2026-11-20
 
@@ -62,7 +80,8 @@ macbot 的主要变更记录在这里。本项目遵循
   以及试验回放、MP4 导出和推理测速。
 - 设备诊断、安装和使用指南，以及英文与简体中文控制台。
 
-[Unreleased]: https://github.com/MuQY1818/macbot/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/MuQY1818/macbot/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/MuQY1818/macbot/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/MuQY1818/macbot/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/MuQY1818/macbot/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/MuQY1818/macbot/releases/tag/v0.1.0
