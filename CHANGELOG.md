@@ -29,6 +29,11 @@ All notable changes to macbot will be documented here. This project follows
 - README: a pixel-art workflow scene replaces the console screenshot at the top, and the tagline and
   package description now cover LeRobot policies in general rather than only ACT and π0.5.
 
+### Fixed
+
+- `macbot init` no longer fails on macOS while scanning USB devices (`ioreg` returns one root entry), and a camera's
+  serial port is no longer offered as an arm.
+
 ## [0.3.1] - 2026-11-20
 
 ### Added
