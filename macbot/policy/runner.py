@@ -184,9 +184,6 @@ def _control(st, srv, port, fps, gripper, cleanup):
         sys.exit("gripper.json found but the robot has no joint named gripper; use --gripper raw")
     print(f"loading policy {args.policy} on {args.device}", flush=True)
     backend = policy_backend(cfg, args)
-    if backend == "mlx" and args.mode == "rtc":
-        print("Guided RTC requires PyTorch; using the torch backend.", flush=True)
-        backend = "torch"
     if backend == "mlx":
         pol = load_policy(args.policy, args.device, cfg["task"]["instruction"], args.steps, backend="mlx",
                           mlx_bits=args.mlx_bits, mlx_quantize=args.mlx_quantize, mlx_time_grid=args.mlx_time_grid)

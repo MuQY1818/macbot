@@ -317,7 +317,7 @@ class PI05Network:
 
 class PI05MLX:
     kind = "pi05"
-    supports_rtc = False
+    supports_rtc = True
 
     def __init__(self, path, task, steps=None, *, bits=None, quantize="prefix", trim=False, fused_attention=True,
                  fused_rope=False, dtype=mx.bfloat16, precompute_adarms=False, pack_linears=False, gelu_fp32=False,
@@ -357,6 +357,8 @@ class PI05MLX:
         if time_grid == "quadratic":
             times = [t ** 2 for t in times]
             self.deltas = [end - t for t, end in zip(times[:-1], times[1:], strict=True)]
+        self.times = times[:-1]
+        self.rtc_beta = None
         schedule = mx.array(times[:-1], dtype=mx.float32)
         self.cond = self.network.time_condition(schedule, config.min_period, config.max_period)
         self.modulation = self.network.adarms(self.cond) if precompute_adarms else None
@@ -400,7 +402,29 @@ class PI05MLX:
                 tokens, mask = tokens[:, :length], mask[:, :length]
         return mx.array(np.concatenate(images, axis=0)), mx.array(tokens, dtype=mx.int32), mx.array(mask), bool(mask.all())
 
-    def stages(self, images, tokens, mask, all_valid, noise, *, stage=None):
+    def enable_rtc(self, beta):
+        if not np.isfinite(beta) or beta <= 0:
+            raise ValueError("RTC guidance weight must be finite and positive")
+        self.rtc_beta = float(beta)
+
+    def rtc_target(self, leftover, delay, horizon, shape):
+        if self.rtc_beta is None:
+            raise ValueError("Enable RTC before supplying a guided prefix")
+        left = np.asarray(leftover, dtype=np.float32)
+        _, length, width = shape
+        if left.ndim != 2 or not (0 < left.shape[1] <= width and len(left) <= length):
+            raise ValueError("RTC leftover must fit the model action chunk")
+        end = min(horizon or len(left), len(left))
+        if end < 1:
+            raise ValueError("RTC horizon must be positive")
+        start = min(delay, end)
+        weights = np.zeros(length, dtype=np.float32)
+        weights[:start] = 1
+        weights[start:end] = np.linspace(1, 0, end - start + 2)[1:-1]
+        target = np.pad(left, ((0, length - len(left)), (0, width - left.shape[1])))
+        return mx.array(target[None]), mx.array(weights[None, :, None])
+
+    def stages(self, images, tokens, mask, all_valid, noise, *, stage=None, guidance=None):
         def run(name, fn, *args):
             return fn(*args) if stage is None else stage(name, fn, *args)
 
@@ -412,19 +436,28 @@ class PI05MLX:
             cond, modulation = self.velocity_args(i)
             velocity = run(f"denoise_{i:02d}", self.velocity, x, cond, cache, positions, keep, modulation)
             v = velocity.astype(mx.float32)
+            if guidance is not None:
+                t = self.times[i]
+                strength = self.rtc_beta if t == 1 else min(self.rtc_beta, (t * t + (1 - t) ** 2) / (t * (1 - t)))
+                # LeRobot 0.7.0 enables x_t gradients after evaluating v_t. Its VJP
+                # through x_t - t * stop_gradient(v_t) is the identity on the error.
+                target, weights = guidance
+                v = v - strength * ((target - (x - t * v)) * weights)
             x = x - v / self.steps if self.deltas is None else x + self.deltas[i] * v
         return x
 
     def __call__(self, imgs, q, leftover=None, delay=0, horizon=None, return_raw=False, *, noise=None, stage=None):
-        if leftover is not None and len(leftover) > delay > 0:
-            raise ValueError("Guided RTC requires the PyTorch backend")
         with self.torch.inference_mode():
             obs = self.prepare(imgs, q) if stage is None else stage("prepare", self.prepare, imgs, q)
             if noise is None:
                 noise = mx.random.normal((1, self.config.chunk_size, self.config.max_action_dim))
             else:
                 noise = mx.array(noise, dtype=mx.float32)
-            x = self.stages(*obs, noise, stage=stage)
+            if leftover is not None and len(leftover) > delay > 0:
+                guidance = self.rtc_target(leftover, delay, horizon, noise.shape)
+                x = self.stages(*obs, noise, stage=stage, guidance=guidance)
+            else:
+                x = self.stages(*obs, noise, stage=stage)
             dim = self.config.output_features["action"].shape[0]
 
             def finish():

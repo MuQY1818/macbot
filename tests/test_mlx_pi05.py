@@ -187,3 +187,35 @@ def test_attention_pruning_keeps_absolute_positions(tiny):
     assert all(k.shape[2] == v.shape[2] == 6 for k, v in small)
     cond = net.time_condition(mx.array([1.0]), 0.004, 4.0)
     assert np.isfinite(np.array(net.velocity(noise, cond, small, pos, keep))).all()
+
+
+def test_guidance_matches_frozen_velocity_vjp(tiny):
+    from macbot.policy.mlx_pi05 import PI05MLX
+
+    g, weights, images, noise = tiny
+    p = PI05MLX.__new__(PI05MLX)
+    p.network = net = PI05Network(weights, g, dtype=mx.float32)
+    p.pool_images = False
+    p.vision, p.prefix, p.velocity = net.vision, net.prefix, mx.compile(net.velocity)
+    p.steps, p.times, p.deltas = 2, [1.0, 0.5], None
+    p.cond = net.time_condition(mx.array(p.times), 0.004, 4.0)
+    p.modulation = net.adarms(p.cond)
+    p.enable_rtc(3)
+    left = np.array([[0.2, -0.3], [-0.1, 0.1], [0.7, -0.3]], dtype=np.float32)
+    target, weights = p.rtc_target(left, 1, 3, noise.shape)
+    np.testing.assert_allclose(np.array(weights).ravel(), [1, 2 / 3, 1 / 3, 0, 0])
+    np.testing.assert_array_equal(np.array(target)[0, :3, :2], left)
+    assert np.count_nonzero(np.array(target)[0, :, 2]) == 0
+    tokens, mask = mx.array([[5]]), mx.array([[True]])
+    valid, cache = net.prefix(net.vision(images), tokens, mask, False)
+    pos, keep = net.expert_inputs(valid, noise.shape[1], masked=False)
+    x = noise
+    for i, t in enumerate(p.times):
+        cond, mod = p.velocity_args(i)
+        v = net.velocity(x, cond, cache, pos, keep, mod)
+        clean = x - t * v
+        _, (correction,) = mx.vjp(lambda z, t=t, v=v: z - t * mx.stop_gradient(v), [x], [(target - clean) * weights])
+        x = x - (v - [3, 2][i] * correction) / 2
+    actual = p.stages(images, tokens, mask, True, noise, guidance=(target, weights))
+    np.testing.assert_allclose(np.array(actual), np.array(x), atol=1e-5)
+    assert not np.allclose(np.array(actual), np.array(p.stages(images, tokens, mask, True, noise)))
