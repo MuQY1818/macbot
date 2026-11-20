@@ -28,7 +28,7 @@ macbot is the toolkit we use for that, cleaned up so others can reuse it.
 
 Measured on a MacBook Pro (M5 Pro, 48 GB), PyTorch MPS:
 
-| | |
+| Measurement | Result |
 |---|---|
 | π0.5 inference, 50-step action chunk, 10 denoising steps | **~280 ms** (bf16 + `torch.compile`) |
 | π0.5 with Real-Time Chunking guidance | **~350 ms** |

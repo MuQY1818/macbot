@@ -25,7 +25,7 @@
 
 以下数据在 MacBook Pro（M5 Pro，48 GB）上用 PyTorch MPS 实测：
 
-| | |
+| 项目 | 实测 |
 |---|---|
 | π0.5 推理（动作块 50 步，去噪 10 步） | **约 280 ms**（bf16 + `torch.compile`） |
 | π0.5 加 Real-Time Chunking 引导 | **约 350 ms** |
