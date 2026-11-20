@@ -11,9 +11,9 @@ import yaml
 from macbot.cameras.discovery import Camera
 from macbot.cli import main
 from macbot.config import load, load_cli
+from macbot.init_wizard import Setup, calibration_info
 from macbot.robot.usb import Adapter
-from macbot.setup import Setup, calibration_info
-from macbot.web.setup import State, make_handler
+from macbot.web.init_wizard import State, make_handler
 
 CHOICE = {"family": "so101", "leader": 1, "follower": 0, "cameras": {"top": 0}}
 HOST = "127.0.0.1:8765"
@@ -65,7 +65,7 @@ def test_generated_config_and_remembered_roles(wizard, monkeypatch):
 
 
 def test_noninteractive_stops_when_ambiguous_and_never_reads(wizard, monkeypatch, capsys):
-    import macbot.setup as module
+    import macbot.init_wizard as module
 
     setup, probe = wizard
     monkeypatch.setattr(module, "Setup", lambda _: setup)

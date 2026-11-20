@@ -14,7 +14,7 @@
 
 `macbot/cli.py` 选择命令，`macbot/config.py` 将用户 YAML 配置叠加到 `macbot/default.yaml`。
 `cameras` 映射作为整体替换。`macbot/web/` 为设置、采集、运行和回放提供 HTTP 处理器、模板和公共资源。
-`macbot/setup.py` 生成配置，`robot/usb.py` 和 `cameras/discovery.py` 提供设备发现与预览。
+`macbot/init_wizard.py` 生成配置，`robot/usb.py` 和 `cameras/discovery.py` 提供设备发现与预览。
 设置控制台释放预览后，再交由独立的 `collect` 命令启动采集。
 
 | 模块 | 职责 |

@@ -40,7 +40,7 @@ def cmd_doctor(args):
 def cmd_init(args):
     import os
 
-    from .setup import Setup
+    from .init_wizard import Setup
     from .system import expand
 
     if not args.yes and any((args.family, args.leader_serial, args.follower_serial)):
@@ -52,7 +52,7 @@ def cmd_init(args):
             status, output = setup.automatic(family=args.family, leader=args.leader_serial, follower=args.follower_serial)
             print(f"Configuration: {setup.path}\n{output}", end="")
             return status
-        from .web.setup import serve
+        from .web.init_wizard import serve
 
         launch = serve(setup, args.port, open_browser=not args.no_browser)
     except (OSError, ValueError, RuntimeError) as exc:

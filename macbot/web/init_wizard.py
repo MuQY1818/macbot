@@ -14,8 +14,8 @@ import cv2
 
 from .. import web
 from ..config import load
+from ..init_wizard import ROLES
 from ..robot.usb import FAMILIES
-from ..setup import ROLES
 
 
 class State:

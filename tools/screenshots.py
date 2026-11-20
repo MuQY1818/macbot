@@ -144,8 +144,8 @@ def init_mock():
     from dataclasses import asdict
 
     from macbot.cameras.discovery import Camera
+    from macbot.init_wizard import ROLES
     from macbot.robot.usb import FAMILIES, Adapter
-    from macbot.setup import ROLES
 
     devices = [Adapter(f"/dev/cu.demo-{role}", 0x1A86, 0x7523, f"DEMO-{role}", "USB servo board") for role in ("A", "B")]
     cams = [Camera("uvc", "USB Camera", "DEMO-UVC", (1280, 720, 30)),

@@ -1,4 +1,4 @@
-"""Setup decisions and configuration; hardware is supplied through small callables."""
+"""Init wizard decisions and configuration; hardware is supplied through small callables."""
 from __future__ import annotations
 
 import contextlib
