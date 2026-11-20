@@ -5,7 +5,7 @@ training: images resized to the recorded size and passed through JPEG, state = m
 
 Safety: starts paused; arm joints move at most ``max_vel x speed`` deg/s; joint limits; gripper force
 clamp; a camera that stalls for 0.5 s pauses the run; pause holds the current command; "home" moves
-slowly to the zero pose; quitting returns to zero in two stages before disabling.
+to the start pose at ``home_vel`` (all arm joints arrive together, with a short ramp); quitting returns to zero in two stages before disabling.
 
 Each trial is saved as ``<data_root>/rollouts/<task>/rollout_XXX.npz``: qpos, cmd, t, chunk_id per
 frame, chunk_t and infer_ms per chunk, executor extras, JPEG frames per camera, and meta (result).
@@ -37,6 +37,7 @@ from .gripper import BinaryGripper, find_gripper_config
 from .models import check_joint_dimensions, load_generic, load_policy, policy_backend, prep_image, use_generic
 
 CAM_STALL_S = 0.5
+HOME_RAMP_S = 0.6                                         # homing speeds up over this time
 MOTION_COMMANDS = ("start", "home", "quit")
 
 
@@ -181,6 +182,14 @@ def make_handler(st: State, trace_worker=None):
             self.json(st.status())
 
     return H
+
+
+def homing_steps(cmd, home, gi, step_max):
+    """Per-joint step limits for a straight line in joint space: the farthest arm joint moves ``step_max`` per
+    cycle and every other arm joint proportionally less, so all arrive together."""
+    dist = [abs(h - c) for h, c in zip(home, cmd, strict=True)]
+    far = max((d for j, d in enumerate(dist) if j != gi), default=0.0)
+    return [step_max * (d / far if far > 0 else 1.0) for d in dist]
 
 
 def run(cfg: Config, args):
@@ -341,6 +350,8 @@ def _control(st, srv, fps, gripper, cleanup):
     hz = rc["hz"]
     dt = 1.0 / hz
     vmax = rc["max_vel"] * args.speed * dt               # max arm joint step per control cycle (robot units)
+    home_vmax = rc.get("home_vel", 25.0) * dt             # homing is slow regardless of speed
+    home_t0 = 0.0
 
     def say(en, zh, mode=None):
         with st.lock:
@@ -397,6 +408,7 @@ def _control(st, srv, fps, gripper, cleanup):
                 say("Paused (holding the current command).", "已暂停（保持当前指令）。", "paused")
             elif want == "home":
                 say("Moving slowly to the start pose...", "正在慢速回到起始姿态…", "homing")
+                home_t0 = now
             elif want in ("save_ok", "save_fail", "discard"):
                 with st.lock:
                     rec, st.rec, st.mode = st.rec, None, "paused"
@@ -444,8 +456,14 @@ def _control(st, srv, fps, gripper, cleanup):
                 if all(abs(cmd[j] - home[j]) < 0.5 for j in range(n_j) if j != gi):
                     say("Back at the start pose. Reset the scene and press Start.", "已回到起始姿态。复位场景后按开始。", "paused")
 
+            if mode == "homing":
+                ramp = min(1.0, 0.2 + (now - home_t0) / HOME_RAMP_S)
+                steps = homing_steps(cmd, home, gi, home_vmax * ramp)
             for j, n in enumerate(names):                 # velocity limit (arm joints) + joint limits
-                step = (300.0 * args.speed * dt if mode == "homing" else 1e9) if j == gi else vmax
+                if j == gi:
+                    step = 300.0 * args.speed * dt if mode == "homing" else 1e9
+                else:
+                    step = steps[j] if mode == "homing" else vmax
                 cmd[j] = robot.clamp(n, cmd[j] + max(-step, min(step, target[j] - cmd[j])))
             with st.lock:
                 rec = st.rec if st.mode == "running" else None

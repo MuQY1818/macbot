@@ -144,7 +144,8 @@ All schemes interpolate between policy steps for the 60 Hz control loop.
 
 - **Speed:** `--speed` scales time. At 0.5, a 30 fps policy is played at 15 steps per second.
 - **Safety limits:** arm joints move at most `run.max_vel × speed` degrees per second and stay within the
-  joint limits.
+  joint limits. **Home** moves at `run.home_vel` (default 25 degrees per second for the farthest joint, independent of
+  `speed`); all arm joints arrive together after a short ramp.
 - **Pause on stall:** if a camera stops for 0.5 s, the run pauses.
 
 ### Adding your own execution scheme

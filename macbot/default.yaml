@@ -62,6 +62,7 @@ run:
   hz: 60
   speed: 0.5                                # global slow-down for first runs (0.1 - 1.0)
   max_vel: 120.0                            # deg/s per arm joint, multiplied by speed
+  home_vel: 25.0                            # deg/s of the farthest arm joint when moving to the start pose
 
 replay:
   port: 8768
