@@ -13,9 +13,18 @@ BUILTINS = (
 STATUS = {
     "act": ("verified", "built-in wrapper and generic chunks"),
     "diffusion": ("verified", "generic select_action; tiny DDIM checkpoint"),
+    "gaussian_actor": ("verified", "generic select_action; continuous actions"),
+    "pi0": ("verified", "generic chunks; six-joint random checkpoint with 2B prefix"),
+    "pi0_fast": ("not verified", "weights loaded; random tokens failed FAST action decoding"),
     "tdmpc": ("verified", "generic select_action; one camera named observation.image"),
     "vqbet": ("verified", "generic select_action; one camera"),
     "pi05": ("verified", "built-in PyTorch MPS and MLX wrappers"),
+    "smolvla": ("verified", "generic chunks; official SmolVLA base checkpoint"),
+    "xvla": ("verified", "SO-101 joint checkpoint; end-effector variants are unsupported"),
+    "groot": ("not verified", "GR00T base model and robot-specific embodiment checkpoint needed"),
+    "wall_x": ("not verified", "needs a compatible WALL-X checkpoint and Qwen vision-language assets"),
+    "wall_oss_05": ("not verified", "separate WALL-OSS model and robot action convention needed"),
+    "multi_task_dit": ("verified", "generic select_action; tiny DDIM and local CLIP checkpoint"),
 }
 
 

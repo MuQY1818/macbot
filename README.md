@@ -27,7 +27,7 @@ MacBook is enough for everything that happens at the robot: teleoperated data co
 export to LeRobot, and closed-loop policy inference, π0.5 included. Training still goes to a GPU machine.
 macbot is the toolkit we use for that, cleaned up so others can reuse it.
 
-Measured on a MacBook Pro (M5 Pro, 48 GB). Policy inference, time per action chunk:
+Measured on a MacBook Pro (M5 Pro, 48 GB). Time per policy call:
 
 | Policy | Backend | Execution | Latency |
 |---|---|---|---:|
@@ -36,6 +36,14 @@ Measured on a MacBook Pro (M5 Pro, 48 GB). Policy inference, time per action chu
 | | **MLX** (fp16, `--backend mlx`) | plain | **~165 ms** |
 | | **MLX** | Real-Time Chunking guidance | **~170 ms** |
 | ACT (100-step chunk) | PyTorch MPS | plain | ~25 ms |
+| Diffusion (tiny DDIM checkpoint) | PyTorch MPS | step, including queued actions | 1.85 ms median / 20.62 ms p90 |
+| VQ-BeT (tiny checkpoint) | PyTorch MPS | step, including queued actions | 1.24 ms median / 7.94 ms p90 |
+| TDMPC (tiny checkpoint) | PyTorch MPS | step, including queued actions | 5.16 ms median / 10.44 ms p90 |
+| Gaussian actor (tiny checkpoint) | PyTorch MPS | step | 3.75 ms median / 4.25 ms p90 |
+| Multi-Task DiT (tiny checkpoint) | PyTorch MPS | step, including queued actions | 1.84 ms median / 7.93 ms p90 |
+| π0 (random weights, 2 denoising steps) | PyTorch MPS (fp32) | generic chunk | 488 ms median / 489 ms p90 |
+| SmolVLA (official base, 50-step chunk) | PyTorch MPS | generic chunk | 299 ms median / 303 ms p90 |
+| X-VLA (SO-101, 30-step chunk) | PyTorch MPS | generic chunk | 233 ms median / 270 ms p90 |
 
 The MLX backend returns the same actions as PyTorch within 0.1° on average. Method and full results are in
 [docs/acceleration.md](https://github.com/MuQY1818/macbot/blob/main/docs/acceleration.md).

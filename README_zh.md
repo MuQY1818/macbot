@@ -24,7 +24,7 @@
 
 做真机实验时，大家通常默认机械臂旁边要放一台装 Ubuntu、插 NVIDIA 显卡的工作站。我们发现，机械臂旁边的工作一台 MacBook 就够了：遥操作采数据、检查数据、导出 LeRobot 数据集，以及闭环跑策略，包括 π0.5。训练仍然放在 GPU 服务器上。macbot 就是我们日常用的这套工具，整理之后开源出来，方便大家复用。
 
-以下数据在 MacBook Pro（M5 Pro，48 GB）上实测。策略推理，每个动作块的耗时：
+以下数据在 MacBook Pro（M5 Pro，48 GB）上实测。每次策略调用的耗时：
 
 | 策略 | 后端 | 执行方式 | 延迟 |
 |---|---|---|---:|
@@ -33,6 +33,14 @@
 | | **MLX**（fp16，`--backend mlx`） | 普通 | **约 165 ms** |
 | | **MLX** | Real-Time Chunking 引导 | **约 170 ms** |
 | ACT（动作块 100 步） | PyTorch MPS | 普通 | 约 25 ms |
+| Diffusion（DDIM 小模型） | PyTorch MPS | 逐步，含队列取值 | 中位数 1.85 ms / p90 20.62 ms |
+| VQ-BeT（小模型） | PyTorch MPS | 逐步，含队列取值 | 中位数 1.24 ms / p90 7.94 ms |
+| TDMPC（小模型） | PyTorch MPS | 逐步，含队列取值 | 中位数 5.16 ms / p90 10.44 ms |
+| GaussianActor（小模型） | PyTorch MPS | 逐步 | 中位数 3.75 ms / p90 4.25 ms |
+| Multi-Task DiT（小模型） | PyTorch MPS | 逐步，含队列取值 | 中位数 1.84 ms / p90 7.93 ms |
+| π0（随机权重，去噪 2 步） | PyTorch MPS（fp32） | 通用分块 | 中位数 488 ms / p90 489 ms |
+| SmolVLA（官方基础模型，50 步动作块） | PyTorch MPS | 通用分块 | 中位数 299 ms / p90 303 ms |
+| X-VLA（SO-101，30 步动作块） | PyTorch MPS | 通用分块 | 中位数 233 ms / p90 270 ms |
 
 MLX 后端输出的动作与 PyTorch 平均相差不到 0.1°。测法和完整结果见[推理基准](https://github.com/MuQY1818/macbot/blob/main/docs/acceleration_zh.md)。
 
