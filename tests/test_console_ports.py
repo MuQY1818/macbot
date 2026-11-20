@@ -122,3 +122,24 @@ def test_console_reuses_a_page_left_open(monkeypatch):
             assert web.show(server, wait=1).join() is None and opened == []
             reply = client.recv(4096)
         assert f"X-Macbot-Boot: {web.BOOT}".encode() in reply
+
+
+def test_scripts_are_revalidated_but_fonts_are_cached():
+    import socket as socketlib
+
+    import macbot.web as web
+
+    class Static(web.Handler):
+        def do_GET(self):
+            self.static(self.path)
+
+    fonts = sorted((web.STATIC / "fonts").rglob("*.*"))
+    with web.ConsoleServer(("127.0.0.1", 0), Static) as server:
+        for path, expected in [("/static/common.js", b"no-cache"), ("/static/theme.css", b"no-cache"),
+                               (f"/static/{fonts[0].relative_to(web.STATIC)}", b"max-age=3600")]:
+            client, conn = socketlib.socketpair()
+            with client:
+                client.sendall(f"GET {path} HTTP/1.0\r\n\r\n".encode())
+                server.process_request(conn, ("127.0.0.1", 1))
+                head = client.recv(65536).split(b"\r\n\r\n")[0]
+            assert b"Cache-Control: " + expected in head, path

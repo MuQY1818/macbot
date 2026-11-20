@@ -167,7 +167,8 @@ class Handler(BaseHTTPRequestHandler):
         data = f.read_bytes()
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(data)))
-        self.send_header("Cache-Control", "max-age=3600")
+        # Scripts and styles change with macbot; a cached copy from an older version breaks the new pages.
+        self.send_header("Cache-Control", "no-cache" if f.suffix in {".js", ".css"} else "max-age=3600")
         self.end_headers()
         self.wfile.write(data)
         return True

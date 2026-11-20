@@ -34,6 +34,7 @@ All notable changes to macbot will be documented here. This project follows
 
 ### Fixed
 
+- Console pages no longer break after an upgrade because the browser kept an older cached `common.js`.
 - `macbot init` no longer fails on macOS while scanning USB devices (`ioreg` returns one root entry), and a camera's
   serial port is no longer offered as an arm.
 
