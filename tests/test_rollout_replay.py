@@ -3,6 +3,7 @@ import io
 import json
 import threading
 from contextlib import contextmanager
+from http.client import HTTPConnection
 from types import SimpleNamespace
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -132,6 +133,33 @@ def test_review_is_shared_by_run_replay_and_health(tmp_path, capsys):
     main(["health", "--data", str(tmp_path)])
     assert "1001" in (report := capsys.readouterr().out)
     assert "success  第三次夹取成功" in report
+
+
+def test_reused_replay_connection_checks_current_run_state(tmp_path):
+    frames = trial(tmp_path / "rollout_000.npz")
+    cfg = load()
+    st = State(cfg, tmp_path, SimpleNamespace(fake=True, speed=1.0, policy="fake"))
+    with serve(cfg, "run", make_handler(st)) as url:
+        conn = HTTPConnection(url.removeprefix("http://"), timeout=3)
+        try:
+            route = "/api/rollout/rollout_000/top/0"
+            conn.request("GET", route)
+            res = conn.getresponse()
+            assert res.status == 200 and res.read() == frames[0]
+            sock = conn.sock
+            assert sock is not None
+            with st.lock:
+                st.mode = "running"
+            conn.request("GET", route)
+            res = conn.getresponse()
+            assert res.status == 409 and json.loads(res.read()) == {"error": "pause_first"}
+            assert conn.sock is sock
+            conn.request("GET", "/api/status")
+            res = conn.getresponse()
+            assert res.status == 200 and json.loads(res.read())["mode"] == "running"
+            assert conn.sock is None  # The status route still closes the connection.
+        finally:
+            conn.close()
 
 
 def test_run_gates_all_replay_io_and_defers_motion_without_waiting(tmp_path, monkeypatch):

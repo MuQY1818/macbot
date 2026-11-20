@@ -4,9 +4,11 @@ from __future__ import annotations
 import json
 import os
 import re
+import socket
 import struct
 import threading
 from collections import OrderedDict
+from concurrent.futures import BrokenExecutor
 from contextlib import contextmanager, nullcontext
 from datetime import datetime
 from functools import lru_cache
@@ -212,10 +214,21 @@ def serve_rollouts(handler, store, path, *, method="GET", lease=nullcontext):
     index = method == "GET" and path == "/api/rollouts"
     if not (index or trial or frame or edit):
         return False
-    if not store.slots.acquire(blocking=False):
-        handler.json({"error": "replay_busy"}, 429)
-        return True
+    # Reuse replay GET connections so scrubbing does not start a thread per camera frame.
+    # The response has a Content-Length; other console endpoints keep their existing protocol.
+    version = handler.protocol_version
+    if (method == "GET" and handler.request_version == "HTTP/1.1"
+            and handler.headers.get("Connection", "").lower() != "close"
+            and handler.headers.get("Content-Length") in (None, "0") and "Transfer-Encoding" not in handler.headers):
+        handler.protocol_version = "HTTP/1.1"
+        handler.close_connection = False
+        handler.connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+    handler.connection.settimeout(2)
+    acquired = store.slots.acquire(blocking=False)
     try:
+        if not acquired:
+            handler.json({"error": "replay_busy"}, 429)
+            return True
         status, ctype = 200, "application/json"
         try:
             # Read small request bodies before taking the lease, so slow clients cannot defer Start.
@@ -223,7 +236,6 @@ def serve_rollouts(handler, store, path, *, method="GET", lease=nullcontext):
                 length = int(handler.headers.get("Content-Length", 0))
                 if handler.headers.get_content_type() != "application/json" or not 0 < length <= 4096:
                     raise ValueError("Invalid annotation body")
-                handler.connection.settimeout(2)
                 payload = handler.body_json()
             with lease() as allowed:
                 if allowed is False:
@@ -243,11 +255,13 @@ def serve_rollouts(handler, store, path, *, method="GET", lease=nullcontext):
             status, response = 404, b'{"error":"replay_missing"}'
         except (*READ_ERRORS, cv2.error, struct.error):
             status, response = (400 if edit else 422), b'{"error":"review_failed"}' if edit else b'{"error":"replay_failed"}'
-        handler.connection.settimeout(2)
-        try:
-            handler.send(status, response, ctype)
-        except (BrokenPipeError, ConnectionResetError, TimeoutError):
-            pass
+        except BrokenExecutor:
+            status, response = 503, b'{"error":"replay_failed"}'
+        handler.send(status, response, ctype)
+    except (BrokenPipeError, ConnectionResetError, TimeoutError):
+        handler.close_connection = True
     finally:
-        store.slots.release()
+        if acquired:
+            store.slots.release()
+        handler.protocol_version = version
     return True
