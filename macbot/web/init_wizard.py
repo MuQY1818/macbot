@@ -25,6 +25,7 @@ class State:
         self.revision = 0
         self.previews = {}
         self.preview_errors = {}
+        self.preview_keep = None
         self.result = None
         self.launch = threading.Event()
         self.collect_server = None
@@ -36,21 +37,28 @@ class State:
         self.revision += 1
 
     def inventory(self):
+        source = self.setup.source_framing()
+        matches = self.setup.camera_matches()
         return {
-            "revision": self.revision, "token": self.token, "families": FAMILIES, "roles": ROLES,
+            "revision": self.revision, "token": self.token, "families": FAMILIES,
+            "roles": list(dict.fromkeys([*ROLES, *(source or {})])),
             "devices": [{**asdict(d), "adapter": d.hint[0], "suggestions": d.hint[1]} for d in self.setup.devices],
             "cameras": [asdict(c) for c in self.setup.cameras], "notes": self.setup.notes,
             "remembered": self.setup.remembered(), "exists": self.setup.path.is_file(),
+            "source_framing": source, "camera_matches": matches,
         }
 
-    def photo(self, index):
+    def photo(self, index, keep=True):
         if self.launch.is_set() or not 0 <= index < len(self.setup.cameras):
             raise ValueError("Camera not available.")
+        if self.preview_keep != keep:
+            self.close_previews()
+            self.preview_keep = keep
         if index in self.preview_errors:
             raise ValueError(self.preview_errors[index])
         if index not in self.previews:
             try:
-                self.previews[index] = self.setup.preview(self.setup.cameras[index])
+                self.previews[index] = self.setup.preview(*self.setup.preview_settings(index, keep))
             except Exception as exc:
                 self.preview_errors[index] = str(exc)
                 raise
@@ -111,11 +119,11 @@ def make_handler(state, host):
             with state.lock:
                 if self.path == "/api/setup":
                     return self.json(state.inventory())
-                if match := re.fullmatch(r"/api/preview/(\d+)\?revision=(\d+)", self.path):
+                if match := re.fullmatch(r"/api/preview/(\d+)\?revision=(\d+)(?:&keep=([01]))?", self.path):
                     if int(match[2]) != state.revision:
                         return self.json({"error": "Camera inventory changed."}, 409)
                     try:
-                        photo = state.photo(int(match[1]))
+                        photo = state.photo(int(match[1]), keep=match[3] != "0")
                     except Exception as exc:
                         return self.json({"error": str(exc)}, 422)
                     return self.send(200, photo, "image/jpeg")

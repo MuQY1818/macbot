@@ -34,7 +34,7 @@ def wizard(tmp_path):
         return 1
 
     obj = Setup(tmp_path / "config.yaml", scan=lambda: devices, cameras=lambda: (cameras, []), positions=positions,
-                preview=lambda _: camera, calibration=lambda _: [], check=lambda _: (0, "fake doctor passed"))
+                preview=lambda *_: camera, calibration=lambda _: [], check=lambda _: (0, "fake doctor passed"))
     obj.refresh()
     return obj, probe
 
@@ -54,7 +54,7 @@ def test_generated_config_and_remembered_roles(wizard, monkeypatch):
     assert cfg["record"]["fps"] == 15 and cfg["teleop"] == load()["teleop"]
     assert cfg["cameras"]["wrist"]["serial"] == "G1"
     assert cfg["cameras"]["top"]["unique_id"] == "exact-id"
-    assert setup.remembered() == selection
+    assert setup.remembered() == selection | {"keep_framing": True}
     monkeypatch.setattr(config, "setup_path", lambda: setup.path)
     assert load_cli(None) == cfg
     custom = setup.path.with_name("custom.yaml")
@@ -70,7 +70,7 @@ def test_noninteractive_stops_when_ambiguous_and_never_reads(wizard, monkeypatch
     import macbot.init_wizard as module
 
     setup, probe = wizard
-    monkeypatch.setattr(module, "Setup", lambda _: setup)
+    monkeypatch.setattr(module, "Setup", lambda *_, **__: setup)
     with pytest.raises(SystemExit, match="ambiguous"):
         main(["init", "--yes"])
     assert not setup.path.exists()
@@ -161,3 +161,65 @@ def test_replacing_a_profile_keeps_explicit_console_ports(wizard):
     cfg = load(setup.path)
     assert cfg.explicit_ports == {"init", "teleop"}
     assert cfg["init"]["port"] == 8765 and cfg["teleop"]["port"] == 9000
+
+
+def test_migrate_rebot_framing_and_custom_calibration(wizard, tmp_path, monkeypatch):
+    from macbot import init_wizard
+
+    template, probe = wizard
+    source = tmp_path / "rebot.yaml"
+    source.write_text(
+        "robot: {follower_id: shop_follower, leader_id: shop_leader}\n"
+        "record: {fps: 25}\nrun: {speed: 0.3}\n"
+        "cameras:\n  top: {type: uvc, unique_id: exact-id, crop: [625, 140, 1610, 1080], save_size: [492, 470]}\n"
+        "  wrist: {type: orbbec, expect_size: [1280, 720], save_size: [640, 360]}\n"
+    )
+    devices = [template.devices[1], Adapter(None, 0x0C72, 0x000C, "CAN", "PCAN")]
+    cameras = [template.cameras[0], Camera("orbbec", "Gemini", "G1", (640, 480, 30))]
+    target = tmp_path / "migrated.yaml"
+
+    def setup(path, *, source=None):
+        return Setup(path, source=source, scan=lambda: devices, cameras=lambda: (cameras, []),
+                     positions=template.positions, calibration=lambda _: [], check=template.check)
+
+    monkeypatch.setattr(init_wizard, "Setup", setup)
+    assert main(["--config", str(target), "init", "--from", str(source), "--yes"]) == 0
+    cfg = load(target)
+    assert cfg["cameras"]["top"]["crop"] == [625, 140, 1610, 1080]
+    assert cfg["cameras"]["top"]["save_size"] == [492, 470] and "expect_size" not in cfg["cameras"]["top"]
+    assert cfg["cameras"]["wrist"]["serial"] == "G1" and "fps" not in cfg["cameras"]["wrist"]
+    assert cfg["record"]["fps"] == 25 and cfg["run"]["speed"] == 0.3
+    assert (cfg["robot"]["follower_id"], cfg["robot"]["leader_id"]) == ("shop_follower", "shop_leader")
+    assert not cfg.explicit_ports and not probe
+
+    migrated = setup(target)
+    migrated.refresh()
+    saved = migrated.remembered()
+    assert migrated.preview_settings(0, True)[0]["crop"] == [625, 140, 1610, 1080]
+    reassigned = saved | {"cameras": {"top": 1, "wrist": 0}}
+    with pytest.raises(ValueError, match="explicitly turn off"):
+        migrated.profile(reassigned)
+    assert migrated.profile(reassigned | {"keep_framing": False})["cameras"]["wrist"]["save_size"] == [640, 360]
+
+
+def test_migration_matches_serial_and_preserves_leader_and_follower_ids(wizard, tmp_path):
+    template, _ = wizard
+    source = tmp_path / "old.yaml"
+    source.write_text(
+        "robot:\n  type: lerobot\n"
+        "  leader: {type: so101_leader, port: /dev/cu.fake1, id: blue, calibration_dir: /cal}\n"
+        "  follower: {type: so101_follower, port: /dev/cu.fake0, id: red}\n"
+        "cameras:\n  top: {type: orbbec, serial: G2, fps: 25, expect_size: [640, 480], save_size: [320, 240]}\n"
+    )
+    cams = [Camera("orbbec", "Gemini", serial, (1280, 720, 30)) for serial in ("G1", "G2")]
+    migrated = Setup(tmp_path / "new.yaml", source=source, scan=template.scan, cameras=lambda: (cams, []))
+    migrated.refresh()
+    selected = migrated.remembered()
+    assert selected["cameras"] == {"top": 1}
+    cfg = migrated.profile(selected)
+    assert cfg["cameras"]["top"]["fps"] == 25 and cfg["cameras"]["top"]["expect_size"] == [640, 480]
+    assert cfg["robot"]["leader"]["id"] == "blue" and cfg["robot"]["leader"]["calibration_dir"] == "/cal"
+    assert cfg["robot"]["follower"]["id"] == "red"
+    cams.pop()
+    with pytest.raises(ValueError, match="Cannot keep the framing for top"):
+        migrated.profile(selected | {"cameras": {"top": 0}})

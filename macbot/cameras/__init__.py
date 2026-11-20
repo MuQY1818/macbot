@@ -192,12 +192,14 @@ class OrbbecColor(_Latest):
             if len(matches) != 1:
                 raise RuntimeError(f"{name}: expected exactly one Orbbec with serial {serial}")
             self.pipe = Pipeline(devices.get_device_by_index(matches[0]))
+        else:
+            self.pipe = Pipeline()
+        if serial and fps is not None:
             prof = next((p for p in orbbec_profiles(self.pipe)
                          if (p.get_width(), p.get_height(), p.get_fps()) == (*expect_size, fps)), None)
             if prof is None:
                 raise RuntimeError(f"{name}: Orbbec color mode {expect_size} at {fps} fps is unavailable")
         else:
-            self.pipe = Pipeline()
             prof = self.pipe.get_stream_profile_list(OBSensorType.COLOR_SENSOR).get_default_video_stream_profile()
         if (prof.get_width(), prof.get_height()) != tuple(expect_size):
             raise RuntimeError(f"{name}: color stream is {prof.get_width()}x{prof.get_height()}, config expects {expect_size}")

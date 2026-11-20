@@ -76,5 +76,5 @@ def discover_cameras(uvc=uvc_inventory, orbbec=orbbec_inventory):
     return cameras, notes
 
 
-def open_preview(camera):
-    return open_cameras({"preview": camera.config()}, camera.mode[2], fake=False)["preview"]
+def open_preview(config, fps):
+    return open_cameras({"preview": config}, fps, fake=False)["preview"]

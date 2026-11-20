@@ -11,6 +11,11 @@ Object.assign(I18N.en, {
   setup_moving: "Move the leader now…", setup_skip: "Do not use", setup_role: "Recording role",
   setup_noCameras: "No cameras found. Connect a camera and rescan.",
   setup_cameraHint: "Match each preview to a recording role. iPhone and Continuity Camera are excluded.",
+  setup_keepFraming: "Keep framing from the existing config",
+  setup_newFraming: "Changing framing can affect a trained policy.",
+  setup_unmatched: "Original cameras not matched",
+  setup_savedSize: "Saved",
+  setup_fullFrame: "Full frame",
   setup_preview: "Camera preview", setup_previewWait: "Waiting for preview…", setup_previewError: "Preview unavailable",
   setup_calHint: "For each missing file, run the command in a separate Terminal and follow LeRobot’s prompts. Move the joints by hand.",
   setup_calExtra: "If the calibration command cannot import its dependencies, install lerobot[core-scripts]==0.7.0.",
@@ -34,6 +39,11 @@ Object.assign(I18N.zh, {
   setup_moving: "现在移动主臂…", setup_skip: "不使用", setup_role: "录制角色",
   setup_noCameras: "未找到相机。请接入相机并重新扫描。",
   setup_cameraHint: "根据预览选择相机角色。已排除 iPhone 和连续互通相机。",
+  setup_keepFraming: "保留现有配置的取景",
+  setup_newFraming: "更改取景可能影响已训练的策略。",
+  setup_unmatched: "未匹配的原相机",
+  setup_savedSize: "保存尺寸",
+  setup_fullFrame: "全幅",
   setup_preview: "相机预览", setup_previewWait: "正在等待预览…", setup_previewError: "无法预览",
   setup_calHint: "在另一个终端运行缺失校准对应的命令，按 LeRobot 提示手动移动关节。",
   setup_calExtra: "若校准命令缺少依赖，请安装 lerobot[core-scripts]==0.7.0。",
@@ -126,17 +136,28 @@ function armStage() {
 }
 
 function cameraStage() {
+  const keep = select.keep_framing !== false;
+  const source = data.source_framing;
+  const matches = data.camera_matches || {};
+  const missing = Object.keys(source || {}).filter(role => !Object.hasOwn(matches, role));
+  const choice = source ? `<p><label><input id="keep-framing" type="checkbox" ${keep ? "checked" : ""}> ${t("setup_keepFraming")}</label></p>
+    ${!keep ? `<p class="setup-note">${t("setup_newFraming")}</p>` : missing.length ?
+      `<p class="setup-note">${t("setup_unmatched")}: ${esc(missing.map(camLabel).join(", "))}</p>` : ""}` : "";
   const cards = data.cameras.map((c, i) => {
     const role = Object.keys(select.cameras).find(role => select.cameras[role] === i) || "";
+    const original = keep && source?.[Object.keys(matches).find(r => matches[r] === i)];
+    const detail = original ? `${t("setup_savedSize")} ${original.save_size.join(" × ")} · ` +
+      (original.crop ? `${t("crop")} ${original.crop.join(", ")}` : t("setup_fullFrame")) :
+      c.mode ? `${c.kind} · ${c.mode[0]} × ${c.mode[1]} · ${c.mode[2]} fps` : c.issue || "—";
     return `<article class="card"><h3>${esc(c.name)}</h3>
-      <p class="setup-details">${esc(c.mode ? `${c.kind} · ${c.mode[0]} × ${c.mode[1]} · ${c.mode[2]} fps` : c.issue || "—")}</p>
+      <p class="setup-details">${esc(detail)}</p>
       <div class="view"><img alt="${esc(t("setup_preview"))}: ${esc(c.name)}" data-preview="${i}">
         <span class="tag">${t(c.mode ? "setup_previewWait" : "setup_previewError")}</span></div>
       <label class="setup-role">${t("setup_role")}<select data-camera="${i}" ${c.mode ? "" : "disabled"}>
         ${option("", t("setup_skip"), role)}${data.roles.map(r => option(r, camLabel(r), role)).join("")}
       </select></label></article>`;
   }).join("");
-  return `<p>${t("setup_cameraHint")}</p>${cards ? `<div class="setup-cameras">${cards}</div>` : `<p>${t("setup_noCameras")}</p>`}
+  return `<p>${t("setup_cameraHint")}</p>${choice}${cards ? `<div class="setup-cameras">${cards}</div>` : `<p>${t("setup_noCameras")}</p>`}
     ${data.notes.map(note => `<p class="setup-note">${esc(note)}</p>`).join("")}`;
 }
 
@@ -177,7 +198,7 @@ function syncButtons() {
 
 async function preview(img) {
   if (!img.isConnected || busy || stage !== 1) return;
-  const url = `/api/preview/${img.dataset.preview}?revision=${data.revision}`;
+  const url = `/api/preview/${img.dataset.preview}?revision=${data.revision}&keep=${select.keep_framing === false ? 0 : 1}`;
   try {
     const response = await fetch(url);
     if (!response.ok) throw new Error((await response.json()).error);
@@ -241,6 +262,10 @@ $("stage").onchange = e => {
     $("stage").querySelectorAll("[data-camera]").forEach(drop => {
       drop.value = Object.keys(select.cameras).find(r => select.cameras[r] === Number(drop.dataset.camera)) || "";
     });
+  } else if (el.id === "keep-framing") {
+    select.keep_framing = el.checked;
+    render();
+    $("keep-framing").focus();
   } else if (el.id === "overwrite") select.overwrite = el.checked;
   syncButtons();
 };

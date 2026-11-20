@@ -45,8 +45,8 @@ def cmd_init(args):
 
     if not args.yes and any((args.family, args.leader_serial, args.follower_serial)):
         raise SystemExit("--family and --*-serial are for macbot init --yes")
-    setup = Setup(expand(args.config).absolute() if args.config else None)
     try:
+        setup = Setup(expand(args.config).absolute() if args.config else None, source=args.source)
         if args.yes:
             setup.refresh()
             status, output = setup.automatic(family=args.family, leader=args.leader_serial, follower=args.follower_serial)
@@ -192,6 +192,7 @@ def main(argv=None):
     sub = ap.add_subparsers(dest="cmd", required=True, metavar="command")
 
     p = sub.add_parser("init", help="detect arms and cameras and create a configuration")
+    p.add_argument("--from", dest="source", help="reuse framing and calibration from an existing macbot YAML")
     p.add_argument("--yes", action="store_true", help="configure without a browser when roles are unambiguous")
     p.add_argument("--family", choices=FAMILIES, help="confirm a robot model for scripted setup")
     p.add_argument("--leader-serial", help="confirm the leader's USB serial for scripted setup")

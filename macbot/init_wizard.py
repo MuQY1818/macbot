@@ -8,15 +8,17 @@ import os
 import shlex
 import shutil
 import tempfile
+from copy import deepcopy
 from pathlib import Path
 
 import yaml
 
 from . import doctor
 from .cameras.discovery import discover_cameras, open_preview
+from .cameras.framing import framing
 from .config import CONSOLES, DEFAULT, load, setup_path
 from .robot.usb import FAMILIES, calibration_id, detect_leader, resolve_adapter, resolve_robot, scan_adapters
-from .system import give_back
+from .system import expand, give_back
 
 ROLES = ("top", "wrist", "front", "side")
 
@@ -32,9 +34,11 @@ def calibration_info(robot):
     specs = robot
     if robot["type"] == "rebot_b601":
         specs = {
-            "follower": {"type": "rebot_b601_follower", "port": "can0", "id": "follower1",
+            "follower": {"type": "rebot_b601_follower", "port": robot.get("can_channel", "can0"),
+                         "id": robot.get("follower_id", "follower1"),
                          "motor_family": "rs", "can_adapter": "socketcan"},
-            "leader": {"type": "rebot_102_leader", "port": robot["leader_port"], "id": "rebot_arm_102_leader"},
+            "leader": {"type": "rebot_102_leader", "port": robot["leader_port"],
+                       "id": robot.get("leader_id", "rebot_arm_102_leader")},
         }
     result = []
     for role in ("follower", "leader"):
@@ -60,7 +64,9 @@ def _difference(base, current):
             out[key] = value
         elif base[key] != value:
             if key != "cameras" and isinstance(value, dict) and isinstance(base[key], dict):
-                out[key] = _difference(base[key], value)
+                delta = _difference(base[key], value)
+                if delta:
+                    out[key] = delta
             else:
                 out[key] = value
     return out
@@ -108,8 +114,10 @@ def check_profile(cfg):
 
 class Setup:
     def __init__(self, path=None, *, scan=scan_adapters, cameras=discover_cameras, positions=detect_leader,
-                 preview=open_preview, calibration=calibration_info, check=check_profile):
+                 preview=open_preview, calibration=calibration_info, check=check_profile, source=None):
         self.path = Path(path) if path is not None else setup_path()
+        self.source_path = expand(source) if source is not None else self.path if self.path.is_file() else None
+        self.source = load(self.source_path) if self.source_path is not None else None
         self.scan, self.discover = scan, cameras
         self.positions, self.preview, self.calibration, self.check = positions, preview, calibration, check
         self.devices, self.cameras, self.notes = [], [], []
@@ -157,17 +165,75 @@ class Setup:
         if leader == follower:
             raise ValueError("The leader and follower must be different devices.")
         self._current([leader, follower])
+        old = self.source["robot"] if self.source is not None else {}
         follower_role = "can" if family == "rebot_b601" else "follower"
         bindings = {role: usb_binding(d, self.devices) for role, d in [("leader", leader), (follower_role, follower)]}
+
+        def same_device(role, old_port, new_port):
+            if binding := old.get("usb", {}).get(role):
+                return binding == bindings[role]
+            return not old_port or old_port == new_port or all(d.port != old_port for d in self.devices)
+
         if family == "rebot_b601":
             if sum(d.port is None for d in self.devices) != 1:
                 raise ValueError("Connect exactly one PCAN-USB adapter for reBot can0.")
-            return {"type": family, "leader_port": leader.port, "usb": bindings}
-        return {
-            "type": "lerobot", "usb": bindings,
-            **{role: {"type": f"{family}_{role}", "port": dev.port, "id": calibration_id(bindings[role], role)}
-               for role, dev in [("follower", follower), ("leader", leader)]},
-        }
+            inherited = dict(old) if old.get("type") == family else {}
+            if inherited and not same_device("can", None, None):
+                inherited["follower_id"] = calibration_id(bindings["can"], "follower")
+            if inherited and not same_device("leader", old.get("leader_port"), leader.port):
+                inherited["leader_id"] = calibration_id(bindings["leader"], "leader")
+            return {**inherited, "type": family, "leader_port": leader.port, "usb": bindings}
+        same_types = old.get("type") == "lerobot" and all(
+            (old.get(role) or {}).get("type") == f"{family}_{role}" for role in ("leader", "follower")
+        )
+        robot = {**(old if same_types else {}), "type": "lerobot", "usb": bindings}
+        for role, dev in (("follower", follower), ("leader", leader)):
+            prior = old[role] if same_types else {}
+            # An existing binding is stronger evidence than a port path. For
+            # old manual profiles, the selected role confirms that association.
+            same = same_types and same_device(role, prior.get("port"), dev.port)
+            robot[role] = {**(prior if same else {}), "type": f"{family}_{role}", "port": dev.port,
+                           "id": (prior.get("id") if same else None) or calibration_id(bindings[role], role)}
+        return robot
+
+    def camera_matches(self):
+        if self.source is None:
+            return {}
+        matches = {}
+        for role, spec in self.source["cameras"].items():
+            kind = spec["type"]
+            uid = spec.get("unique_id") if kind == "uvc" else spec.get("serial")
+            # A legacy Orbbec profile selected the SDK's sole camera implicitly.
+            hits = [i for i, c in enumerate(self.cameras) if c.kind == kind and (
+                c.uid == uid if uid else kind == "orbbec"
+            )]
+            if len(hits) == 1:
+                matches[role] = hits[0]
+        # One physical camera cannot stand in for two old roles.
+        return {role: i for role, i in matches.items() if list(matches.values()).count(i) == 1}
+
+    def saved_camera(self, index):
+        for role, i in self.camera_matches().items():
+            if i == index:
+                spec = dict(self.source["cameras"][role])
+                if spec["type"] == "orbbec" and not spec.get("serial"):
+                    spec.pop("fps", None)  # The legacy SDK default did not use this field.
+                address = {"unique_id": self.cameras[i].uid, "exact_id": True} if spec["type"] == "uvc" else {
+                    "serial": self.cameras[i].uid
+                }
+                return spec | address
+        return None
+
+    def preview_settings(self, index, keep):
+        if keep and (saved := self.saved_camera(index)) is not None:
+            return saved, self.source["record"]["fps"]
+        config = self.cameras[index].config()
+        return config, config["fps"]
+
+    def source_framing(self):
+        if self.source is None:
+            return None
+        return framing(self.source["cameras"], self.source["record"]["fps"])
 
     def profile(self, selection):
         robot = self.robot_config(selection)
@@ -176,10 +242,25 @@ class Setup:
             raise ValueError("Assign at least one camera role.")
         if any(type(i) is not int or not 0 <= i < len(self.cameras) for i in assignments.values()):
             raise ValueError("Select cameras from the inventory.")
-        if set(assignments) - set(ROLES) or len(set(assignments.values())) != len(assignments):
+        roles = set(ROLES) | (self.source["cameras"].keys() if self.source is not None else set())
+        if set(assignments) - roles or len(set(assignments.values())) != len(assignments):
             raise ValueError("Assign each camera and each role only once.")
-        cameras = {role: self.cameras[i].config() for role, i in assignments.items()}
-        return {"robot": robot, "cameras": cameras, "record": {"fps": min(30, *(c["fps"] for c in cameras.values()))}}
+        keep = self.source is not None and selection.get("keep_framing") is not False
+        if keep:
+            matches = self.camera_matches()
+            missing = [role for role in self.source["cameras"] if role not in matches or assignments.get(role) != matches[role]]
+            if missing:
+                raise ValueError("Cannot keep the framing for " + ", ".join(missing)
+                                 + ". Match the original cameras and roles, or explicitly turn off keeping framing.")
+        cameras = {role: self.preview_settings(i, keep)[0] for role, i in assignments.items()}
+        fps = self.source["record"]["fps"] if self.source is not None else min(30, *(c["fps"] for c in cameras.values()))
+        profile = deepcopy(dict(self.source)) if self.source is not None else {}
+        profile.update(robot=robot, cameras=cameras, record={**profile.get("record", {}), "fps": fps})
+        if self.source is not None:
+            # Merged config includes implicit port defaults; do not make them explicit on save.
+            for section in set(CONSOLES) - self.source.explicit_ports:
+                profile.get(section, {}).pop("port", None)
+        return profile
 
     def save(self, selection, *, overwrite=False):
         profile = self.profile(selection)
@@ -192,11 +273,16 @@ class Setup:
             suffix = "" if shutil.which("lerobot-calibrate") else "\nInstall lerobot[core-scripts]==0.7.0 first."
             raise ValueError("Finish LeRobot calibration first:\n" + "\n".join(f["command"] for f in missing) + suffix)
         save_profile(self.path, profile, overwrite=overwrite)
-        return self.check(load(self.path))
+        saved = load(self.path)
+        if self.source is None:
+            self.source_path, self.source = self.path, saved
+        return self.check(saved)
 
     def automatic(self, *, family=None, leader=None, follower=None):
         """Non-interactive setup never samples a motor bus or assigns ambiguous roles."""
         exists = self.path.is_file()
+        if exists and self.source_path is not None and self.source_path.resolve() != self.path.resolve():
+            raise ValueError("A target profile already exists. Run macbot init without --yes to review and replace it.")
         if exists and not any((family, leader, follower)):
             current = load(self.path)
             robot = current["robot"]
@@ -215,6 +301,11 @@ class Setup:
 
         if exists:
             raise ValueError("A profile already exists. Run macbot init to review and replace it.")
+        if self.source is not None and not any((family, leader, follower)):
+            selection = self.remembered()
+            if selection.get("family") and {"leader", "follower", "cameras"} <= selection.keys():
+                return self.save(selection)
+            raise ValueError("The existing profile does not identify both arms. Confirm them in macbot init.")
         serial_ports = [i for i, d in enumerate(self.devices) if d.port]
         can = [i for i, d in enumerate(self.devices) if not d.port]
         if family == "rebot_b601":
@@ -225,21 +316,23 @@ class Setup:
             a, b = by_serial(leader), by_serial(follower)
         else:
             raise ValueError("Arm model or roles are ambiguous. Run macbot init or specify --family and both USB serials.")
+        if self.source is not None:
+            return self.save({"family": family, "leader": a, "follower": b, "cameras": self.camera_matches()})
         cams = [i for i, c in enumerate(self.cameras) if not c.builtin]
         if len(cams) != 1 or not self.cameras[cams[0]].mode:
             raise ValueError("Camera roles are ambiguous or no external camera is ready. Run macbot init.")
         return self.save({"family": family, "leader": a, "follower": b, "cameras": {"top": cams[0]}})
 
     def remembered(self):
-        if not self.path.is_file():
+        if self.source is None:
             return {}
-        cfg = load(self.path)
+        cfg = self.source
         robot = cfg["robot"]
         specs = robot.get("usb", {})
-        if not specs:
-            return {}
-        family = "rebot_b601" if robot["type"] == "rebot_b601" else robot["follower"]["type"].removesuffix("_follower")
-        selection = {"family": family, "cameras": {}}
+        follower_type = (robot.get("follower") or {}).get("type", "")
+        family = "rebot_b601" if robot["type"] == "rebot_b601" else follower_type.removesuffix("_follower")
+        selection = {"family": family if family in FAMILIES else "", "cameras": self.camera_matches(),
+                     "keep_framing": True}
         for role in ("leader", "can" if family == "rebot_b601" else "follower"):
             if role in specs:
                 try:
@@ -247,9 +340,15 @@ class Setup:
                     selection["follower" if role == "can" else role] = self.devices.index(dev)
                 except ValueError:
                     pass
-        for role, spec in cfg["cameras"].items():
-            ids = [i for i, c in enumerate(self.cameras)
-                   if spec["type"] == c.kind and (spec.get("unique_id") or spec.get("serial")) == c.uid]
-            if ids and role in ROLES:
-                selection["cameras"][role] = ids[0]
+            elif role == "can":
+                matches = [i for i, d in enumerate(self.devices) if d.port is None]
+                if len(matches) == 1:
+                    selection["follower"] = matches[0]
+            else:
+                port = robot.get("leader_port") if family == "rebot_b601" else (robot.get(role) or {}).get("port")
+                matches = [i for i, d in enumerate(self.devices) if d.port and (d.port == port or (
+                    family == "rebot_b601" and not port
+                ))]
+                if len(matches) == 1:
+                    selection[role] = matches[0]
         return selection
