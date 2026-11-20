@@ -6,7 +6,9 @@ macbot 的主要变更记录在这里。本项目遵循
 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 和
 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]（未发布）
+## [Unreleased]
+
+## [0.2.0] - 2026-11-19
 
 ### 新增
 
@@ -41,5 +43,6 @@ macbot 的主要变更记录在这里。本项目遵循
   以及试验回放、MP4 导出和推理测速。
 - 设备诊断、安装和使用指南，以及英文与简体中文控制台。
 
-[Unreleased]: https://github.com/MuQY1818/macbot/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/MuQY1818/macbot/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/MuQY1818/macbot/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/MuQY1818/macbot/releases/tag/v0.1.0

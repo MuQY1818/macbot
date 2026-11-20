@@ -8,6 +8,8 @@ All notable changes to macbot will be documented here. This project follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-19
+
 ### Added
 
 - A shared robot interface with a reBot B601 profile and generic LeRobot follower/leader
@@ -46,5 +48,6 @@ All notable changes to macbot will be documented here. This project follows
   chunks and Real-Time Chunking, plus rollout replay, MP4 export and inference benchmarks.
 - Equipment diagnostics, setup and usage guides, and English and Simplified Chinese consoles.
 
-[Unreleased]: https://github.com/MuQY1818/macbot/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/MuQY1818/macbot/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/MuQY1818/macbot/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/MuQY1818/macbot/releases/tag/v0.1.0
