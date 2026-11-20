@@ -1,0 +1,55 @@
+# macbot configuration. Angles are in degrees (LeRobot public joint coordinates).
+# Built-in defaults. Override any subset in your own YAML: `macbot --config my.yaml <command>`.
+
+task:
+  name: cubes_to_box                        # dataset name; data goes to <data_root>/raw/<name>/
+  instruction: "put the cubes into the paper box"   # language prompt (used by pi0.5); editable per episode in the web UI
+  target_episodes: 50                       # progress bar target
+
+data_root: ~/macbot-data                    # raw/, datasets/, rollouts/, logs/ live here
+
+robot:
+  type: rebot_b601                          # reBot B601-RS follower + reBot Arm 102 leader
+  can_channel: can0                         # PCAN-USB through PCBUSB on macOS
+  follower_id: follower1                    # LeRobot calibration ids (files under ~/.cache/huggingface/lerobot/calibration/)
+  leader_id: rebot_arm_102_leader
+  velocity_feedforward: 0.7                 # 0 = LeRobot default (target velocity 0 in the MIT command)
+  gravity_compensation: 0.9                 # 0 = off; needs robot.urdf
+  urdf: null                                # path to ReBot_Arm_RS.urdf (from Seeed's reBot description package)
+  gripper_mode: mit                         # mit (position control with a lead clamp) | impedance (LeRobot default)
+  gripper_lead_deg: 20.0                    # max lead of the gripper target over the measured angle (limits squeeze force)
+  gripper_zero_offset_deg: 0.0              # software zero trim for the gripper (reading and command shift together)
+
+cameras:
+  top:                                      # fixed scene camera, any UVC webcam
+    type: uvc
+    unique_id: "0x0000000000000000"         # run `macbot cameras` to list IDs; opening by name can grab an iPhone
+    crop: [625, 140, 1610, 1080]            # x0 y0 x1 y1 on the 1920x1080 frame
+    save_size: [492, 470]                   # stored (width, height)
+  wrist:
+    type: orbbec                            # Orbbec Gemini 2 color stream (needs sudo on macOS)
+    expect_size: [1280, 720]
+    save_size: [640, 360]
+
+record:
+  fps: 30                                   # fixed sampling grid
+  jpeg_quality: 92
+  min_episode_s: 2.0
+
+teleop:
+  port: 8766
+  hz: 60                                    # leader -> follower control rate
+  align_max_deg: 10                         # refuse to start if leader and follower differ more than this
+  soft_start_s: 1.5
+
+checks:                                     # run on every saved episode, shown in the web UI
+  max_cam_age_s: 0.10
+  max_repeat_ratio: 0.25
+  max_joint_step_deg: 15
+  max_late_ratio: 0.05
+
+run:
+  port: 8767
+  hz: 60
+  speed: 0.5                                # global slow-down for first runs (0.1 - 1.0)
+  max_vel: 120.0                            # deg/s per arm joint, multiplied by speed

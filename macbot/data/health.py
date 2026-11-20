@@ -1,0 +1,67 @@
+"""Per-episode tracking and timing report of recorded data.
+
+For every episode: the lag (frames) that best aligns command and measurement, p95 and max tracking error
+of the six arm joints at that lag, the median offset while the leader is still (a calibration drift
+shows up here), the gripper range, the worst frame interval and the repeated camera frames.
+``--split N`` prints medians before and after episode N, for example to compare data recorded before
+and after a repair.
+"""
+from __future__ import annotations
+
+import sys
+
+import numpy as np
+
+from ..config import Config
+from ..system import expand
+
+
+def episode_stats(d, fps: float, cams) -> dict:
+    q, a = d["qpos"].astype(float), d["action"].astype(float)
+    best = None
+    for lag in range(8):
+        err = np.abs(a[:len(a) - lag, :6] - q[lag:, :6])
+        m = np.percentile(err, 95, axis=0).mean()
+        if best is None or m < best[0]:
+            best = (m, lag, err)
+    _, lag, err = best
+    still = np.abs(np.diff(a[:, :6], axis=0)).max(1) * fps < 2.0
+    off = (a[1:, :6] - q[1:, :6])[still]
+    wt = d["wall_time"] if "wall_time" in d.files else d["timestamp"]
+    dt = np.diff(wt) if len(wt) > 1 else np.zeros(1)
+    return {"n": len(q), "lag": lag, "p95": np.percentile(err, 95, axis=0), "max": err.max(0),
+            "still": np.median(off, 0) if len(off) else np.full(6, np.nan),
+            "vmax": np.abs(np.diff(q[:, :6], axis=0)).max(0) * fps,
+            "gmin": q[:, 6].min(), "gmax": q[:, 6].max(), "dt_max": dt.max(), "dt_late": int((dt > 1.5 / fps).sum()),
+            "repeat": {c: int(d[f"{c}_repeat"].sum()) for c in cams if f"{c}_repeat" in d.files},
+            "nan": int(np.isnan(q).sum() + np.isnan(a).sum())}
+
+
+def run(cfg: Config, args):
+    data = expand(args.data) if args.data else cfg.raw_dir()
+    files = sorted(data.glob("episode_*.npz"))
+    if not files:
+        sys.exit(f"no episode_*.npz in {data}")
+    fps, cams = float(cfg["record"]["fps"]), list(cfg["cameras"])
+    np.set_printoptions(precision=1, suppress=True, linewidth=200)
+    rows = []
+    print("ep   frames lag  p95 tracking error J1..J6 (deg)      offset while still (deg)          gripper range    dt max  late  repeats")
+    for f in files:
+        idx = int(f.stem.split("_")[-1])
+        with np.load(f) as d:
+            r = episode_stats(d, fps, cams)
+        r["idx"] = idx
+        rows.append(r)
+        rep = "/".join(str(v) for v in r["repeat"].values())
+        print(f"{idx:03d} {r['n']:6d} {r['lag']:3d}  {r['p95']}  {r['still']}  {r['gmin']:6.1f}/{r['gmax']:6.1f}"
+              f"  {r['dt_max'] * 1e3:5.0f}ms {r['dt_late']:4d}  {rep}" + (f"  NaN {r['nan']}" if r["nan"] else ""))
+    if args.split is not None:
+        a = [r for r in rows if r["idx"] < args.split]
+        b = [r for r in rows if r["idx"] >= args.split]
+        if not a or not b:
+            sys.exit(f"--split {args.split} leaves one side empty")
+        print(f"\nmedian over episodes, before {args.split} ({len(a)}) vs from {args.split} ({len(b)}):")
+        for label, k in [("p95 tracking", "p95"), ("max error", "max"), ("still offset", "still"), ("max speed", "vmax")]:
+            print(f"  {label:13s} {np.median([r[k] for r in a], 0)}  ->  {np.median([r[k] for r in b], 0)}")
+        for label, k in [("gripper min", "gmin"), ("gripper max", "gmax")]:
+            print(f"  {label:13s} {np.median([r[k] for r in a]):7.1f}  ->  {np.median([r[k] for r in b]):7.1f}")

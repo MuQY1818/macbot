@@ -1,0 +1,26 @@
+# Copy this file, edit it, and pass it with `macbot --config my.yaml <command>`.
+# Only the keys you set here override macbot/default.yaml.
+
+task:
+  name: cubes_to_box
+  instruction: "put the cubes into the paper box"
+  target_episodes: 50
+
+data_root: ~/macbot-data
+
+robot:
+  urdf: null                       # path to the reBot URDF to enable gravity feedforward
+
+cameras:
+  top:
+    type: uvc
+    unique_id: "0x0000000000000000"   # from `macbot cameras`
+    crop: [625, 140, 1610, 1080]
+    save_size: [492, 470]
+  wrist:
+    type: orbbec
+    expect_size: [1280, 720]
+    save_size: [640, 360]
+
+run:
+  speed: 0.5

@@ -1,0 +1,179 @@
+"""Command line entry point: ``macbot <command>``.
+
+    macbot doctor                 check the Mac: Python packages, MPS, PCAN driver, cameras, sudo
+    macbot cameras                list video devices with their uniqueIDs
+    macbot joints                 read leader and follower joint angles without powering anything
+    macbot collect [--fake]       teleoperate and record episodes (web page)
+    macbot export                 convert recorded episodes to a LeRobot dataset
+    macbot health                 per-episode tracking and timing report of recorded data
+    macbot run --policy DIR       run a trained ACT or pi0.5 policy on the robot (web page)
+    macbot replay                 browse recorded rollouts in the browser
+    macbot video ROLLOUT          export a rollout as a side-by-side MP4
+    macbot bench --policy DIR     time policy inference on this Mac
+
+Robot commands need ``sudo -E`` on macOS (the Orbbec SDK requires root). Everything that does not
+touch the hardware runs as a normal user, and ``--fake`` simulates robot and cameras.
+"""
+from __future__ import annotations
+
+import argparse
+import sys
+
+
+
+def _cfg(args):
+    from .config import load
+    return load(args.config)
+
+
+def cmd_doctor(args):
+    from .doctor import run
+    return run(_cfg(args))
+
+
+def cmd_cameras(args):
+    from .cameras import list_cameras
+    cams = list_cameras()
+    if not cams:
+        print("no video devices found")
+    for c in cams:
+        print(f"{c['name']:<36s} {c['unique_id']:<24s} {c['model']}")
+    print("\nPut the uniqueID of your scene camera into cameras.<name>.unique_id.")
+
+
+def cmd_joints(args):
+    from .system import preload_pcan
+    preload_pcan()
+    from .config import JOINTS
+    from .robot.rebot import make_leader, read_joints_passive
+    cfg = _cfg(args)
+    leader = make_leader(leader_id=cfg["robot"].get("leader_id", "rebot_arm_102_leader"))
+    leader.connect(calibrate=False)        # leader: unlock (torque off) and reset turn counters; it does not move
+    act = leader.get_action()
+    leader.disconnect()
+    fol = read_joints_passive(cfg["robot"])
+    print(f"{'joint':14s} {'leader':>8s} {'follower':>9s} {'diff':>8s}")
+    for n in JOINTS:
+        a, f = act[f"{n}.pos"], fol[n]
+        print(f"{n:14s} {a:8.1f} {f:9.1f} {a - f:+8.1f}")
+
+
+def cmd_collect(args):
+    if not args.fake:
+        from .system import preload_pcan
+        preload_pcan()
+    from .collect.server import run
+    run(_cfg(args), fake=args.fake, port=args.port, out=args.out)
+
+
+def cmd_export(args):
+    from .data.export import run
+    run(_cfg(args), args)
+
+
+def cmd_health(args):
+    from .data.health import run
+    run(_cfg(args), args)
+
+
+def cmd_run(args):
+    if not args.fake:
+        from .system import preload_pcan
+        preload_pcan()
+    from .policy.runner import run
+    run(_cfg(args), args)
+
+
+def cmd_replay(args):
+    from .viz.replay import run
+    run(_cfg(args), args)
+
+
+def cmd_video(args):
+    from .viz.video import run
+    run(args)
+
+
+def cmd_bench(args):
+    from .policy.bench import run
+    run(_cfg(args), args)
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(prog="macbot", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--config", help="YAML file overriding the built-in defaults")
+    sub = ap.add_subparsers(dest="cmd", required=True, metavar="command")
+
+    sub.add_parser("doctor", help="check this Mac").set_defaults(fn=cmd_doctor)
+    sub.add_parser("cameras", help="list video devices and uniqueIDs").set_defaults(fn=cmd_cameras)
+    sub.add_parser("joints", help="read joint angles without powering motors").set_defaults(fn=cmd_joints)
+
+    p = sub.add_parser("collect", help="teleoperate and record (web page)")
+    p.add_argument("--fake", action="store_true", help="simulate robot, leader and cameras")
+    p.add_argument("--port", type=int)
+    p.add_argument("--out", help="episode folder (default <data_root>/raw/<task>)")
+    p.set_defaults(fn=cmd_collect)
+
+    p = sub.add_parser("export", help="recorded episodes -> LeRobot dataset")
+    p.add_argument("--data", help="episode folder (default <data_root>/raw/<task>)")
+    p.add_argument("--out", help="dataset folder (default <data_root>/datasets/<task>[_bin])")
+    p.add_argument("--repo-id")
+    p.add_argument("--gripper", choices=["raw", "binary"], default="raw", help="gripper action: leader angle, or 0/1")
+    p.add_argument("--close-above", type=float, default=-40.0, help="binary: leader angle above this = closed")
+    p.add_argument("--open-below", type=float, default=-80.0, help="binary: once closed, below this = open")
+    p.add_argument("--open-deg", type=float, default=-150.0, help="binary: gripper angle commanded for 'open'")
+    p.add_argument("--close-deg", type=float, default=0.0, help="binary: gripper angle commanded for 'closed'")
+    p.add_argument("--skip-warnings", action="store_true", help="also skip episodes with warnings")
+    p.add_argument("--images", action="store_true", help="store PNG frames instead of video (debugging)")
+    p.add_argument("--overwrite", action="store_true")
+    p.set_defaults(fn=cmd_export)
+
+    p = sub.add_parser("health", help="tracking and timing report of recorded episodes")
+    p.add_argument("--data", help="episode folder (default <data_root>/raw/<task>)")
+    p.add_argument("--split", type=int, help="compare episodes before / from this index (e.g. after a repair)")
+    p.set_defaults(fn=cmd_health)
+
+    p = sub.add_parser("run", help="run a policy on the robot (web page)")
+    p.add_argument("--policy", required=True, help="pretrained_model folder (ACT or pi0.5)")
+    p.add_argument("--mode", choices=["auto", "chunk", "ensemble", "async", "rtc"], default="auto",
+                   help="auto: ACT -> ensemble, pi0.5 -> rtc")
+    p.add_argument("--k", type=int, default=30, help="chunk mode: steps executed per chunk")
+    p.add_argument("--te-m", type=float, default=0.01, help="ensemble: weight exp(m * age), as in ACT")
+    p.add_argument("--te-hz", type=float, default=30.0, help="ensemble: max inference rate")
+    p.add_argument("--rtc-beta", type=float, default=10.0, help="rtc: max guidance weight")
+    p.add_argument("--rtc-horizon", type=int, default=20, help="rtc: guided prefix length in policy steps")
+    p.add_argument("--gripper", default="auto", help="auto (find gripper.json), raw, or a path to gripper.json")
+    p.add_argument("--grip-debounce", type=float, default=0.6, help="binary gripper: seconds of 'open' before opening")
+    p.add_argument("--steps", type=int, help="pi0.5 denoising steps (default from checkpoint)")
+    p.add_argument("--no-compile", action="store_true", help="pi0.5: skip torch.compile")
+    p.add_argument("--speed", type=float, help="0.1-1.0, default from config")
+    p.add_argument("--device", default="mps")
+    p.add_argument("--port", type=int)
+    p.add_argument("--fake", action="store_true", help="simulate robot and cameras (policy runs for real)")
+    p.add_argument("--autostart", type=float, default=0, help="with --fake: run this many seconds, save, quit")
+    p.set_defaults(fn=cmd_run)
+
+    p = sub.add_parser("replay", help="browse recorded rollouts")
+    p.add_argument("--dir", help="rollout folder (default <data_root>/rollouts/<task>)")
+    p.add_argument("--port", type=int, default=8768)
+    p.set_defaults(fn=cmd_replay)
+
+    p = sub.add_parser("video", help="rollout -> side-by-side MP4")
+    p.add_argument("rollout")
+    p.add_argument("--out")
+    p.add_argument("--height", type=int, default=540)
+    p.set_defaults(fn=cmd_video)
+
+    p = sub.add_parser("bench", help="time policy inference")
+    p.add_argument("--policy", required=True)
+    p.add_argument("--device", default="mps")
+    p.add_argument("-n", type=int, default=20)
+    p.add_argument("--no-compile", action="store_true")
+    p.set_defaults(fn=cmd_bench)
+
+    args = ap.parse_args(argv)
+    return args.fn(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

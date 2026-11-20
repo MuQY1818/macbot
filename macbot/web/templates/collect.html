@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+{{head}}
+<title>macbot · collect</title>
+</head>
+<body>
+<header class="topbar">
+  {{brand}}
+  <span class="crumb"><span data-i18n="collect">collect</span> · {{task}}</span>
+  <span id="badge" class="badge idle" data-i18n="connecting">connecting</span>
+  <span id="timer" class="num"></span>
+  <span class="spacer"></span>
+  <span class="chip" id="total"></span>
+  <button class="ghost lang" id="lang">中文</button>
+  <button class="danger" id="quit" data-i18n="quit">Quit &amp; home</button>
+</header>
+
+<div class="wrap">
+  <div class="layout">
+    <div class="stack">
+      <div class="views" id="views"></div>
+      <div class="card" id="replay" style="display:none">
+        <h2 id="rtitle">replay</h2>
+        <div class="btn-row" style="align-items:center">
+          <button id="rplay" class="primary" data-i18n="play">Play</button>
+          <select id="rspeed"><option value="1">1×</option><option value="2">2×</option><option value="4">4×</option></select>
+          <input type="range" id="rslider" min="0" value="0" style="flex:1">
+          <span class="num" id="rpos"></span>
+          <button id="rclose" data-i18n="back_live">Back to live</button>
+        </div>
+        <div style="margin-top:12px"><svg class="plot" id="plot" viewBox="0 0 1000 190" preserveAspectRatio="none"></svg></div>
+        <div class="legend" id="legend"></div>
+      </div>
+      <div class="card">
+        <h2 data-i18n="episodes">episodes</h2>
+        <div class="table-wrap"><table>
+          <thead><tr><th>#</th><th data-i18n="th_len"></th><th data-i18n="th_frames"></th><th data-i18n="th_ins"></th><th data-i18n="th_saved"></th><th data-i18n="th_check"></th><th></th></tr></thead>
+          <tbody id="eps"></tbody>
+        </table></div>
+      </div>
+    </div>
+
+    <div class="stack">
+      <div class="card">
+        <h2 data-i18n="instruction">instruction</h2>
+        <textarea id="ins" spellcheck="false"></textarea>
+        <div class="btn-grid" style="margin-top:12px">
+          <button class="primary wide" id="bStart"><span data-i18n="record">Record</span> <kbd>S</kbd></button>
+          <button class="go" id="bSave"><span data-i18n="save">Save</span> <kbd>↵</kbd></button>
+          <button class="danger" id="bDiscard"><span data-i18n="discard">Discard</span> <kbd>←</kbd></button>
+          <button class="ghost wide" id="bIns" data-i18n="set_ins">Set instruction</button>
+        </div>
+        <div class="msg" id="msg"></div>
+      </div>
+
+      <div class="card">
+        <h2 data-i18n="progress">progress</h2>
+        <div class="hp" id="hp"></div>
+        <div class="num" id="progN" style="font-size:12px;color:var(--mid)"></div>
+        <dl class="kv" id="camkv" style="margin-top:12px"></dl>
+      </div>
+
+      <div class="card">
+        <h2><span data-i18n="joints">joints</span> <span class="hint" data-i18n="joints_hint"></span></h2>
+        <div id="joints"></div>
+      </div>
+    </div>
+  </div>
+</div>
+<footer>macbot · <span data-i18n="tagline"></span></footer>
+
+<script>
+let S = null, epsKey = "", replay = null, insDirty = false, camsBuilt = false;
+
+async function cmd(action, extra = {}) { render(await post("/api/cmd", { action, ...extra })); }
+
+function buildViews(names, cams) {
+  layoutViews($("views"), names, c => cams[c].size);
+  for (const c of names) $("cam-" + c).onerror = () => { if (!replay) setTimeout(() => { if (!replay) $("cam-" + c).src = liveSrc(c); }, 1000); };
+  camsBuilt = true;
+  startLive();
+}
+
+function render(s) {
+  S = s;
+  if (!camsBuilt) buildViews(s.cam_names, s.cams);
+  const rec = s.phase === "recording";
+  const b = $("badge");
+  b.className = "badge " + (rec ? "rec" : (!s.ready ? "idle" : (s.fake ? "warn" : "live")));
+  b.textContent = t(rec ? "rec" : (s.ready ? (s.fake ? "simulated" : "ready") : "not_ready"));
+  $("timer").textContent = rec ? `${fmtTime(s.elapsed)} · ${s.frames} ${t("frames")}` : (s.saving ? t("saving") : "");
+  $("views").classList.toggle("hot", rec && !replay);
+  $("bStart").disabled = rec || !s.ready;
+  $("bSave").disabled = !rec; $("bDiscard").disabled = !rec;
+  $("bIns").disabled = rec; $("ins").disabled = rec;
+  if (!insDirty && document.activeElement !== $("ins")) $("ins").value = s.instruction;
+  $("msg").textContent = L(s.msg);
+  renderHP($("hp"), s.count / s.target);
+  $("progN").textContent = t("eps_of", s.count, s.target, s.fps);
+  $("total").textContent = t("saved_n", s.count);
+  $("camkv").innerHTML = s.cam_names.map(c => {
+    const i = s.cams[c];
+    return `<dt>${camLabel(c)}</dt><dd>${i.size[0]}×${i.size[1]}${i.crop ? ` · ${t("crop")} ${i.crop.join(",")}` : ` · ${t("full")}`}</dd>`;
+  }).join("") + `<dt>${t("data")}</dt><dd>${esc(s.out)}</dd>`;
+  for (const c of s.cam_names) {
+    const a = s.cam_age ? s.cam_age[c] : null;
+    if (!replay) camTag($("tag-" + c), c, a, s.stall_s);
+    $("age-" + c).textContent = a == null || replay ? "" : `${Math.round(a * 1000)} ms`;
+  }
+  renderJoints($("joints"), s.names, s.q, s.cmd, s.limits);
+  const key = JSON.stringify(s.episodes.map(e => [e.idx, e.frames, e.check]));
+  if (key !== epsKey) { epsKey = key; renderEps(s.episodes); }
+}
+
+function chk(c) {
+  if (!c) return `<td>–</td>`;
+  const detail = esc([...c.errors, ...c.warnings].map(L).join(LANG === "zh" ? "；" : "; "));
+  if (!c.ok) return `<td title="${detail}"><span class="pill bad">${t("fail")}</span> <small>${detail}</small></td>`;
+  if (c.warnings.length) return `<td title="${detail}"><span class="pill warn">${t("warn")}</span> <small>${detail}</small></td>`;
+  return `<td><span class="pill ok">${t("ok")}</span></td>`;
+}
+
+function renderEps(eps) {
+  if (!eps.length) { $("eps").innerHTML = `<tr><td colspan="7" class="empty">${t("no_eps")}</td></tr>`; return; }
+  $("eps").innerHTML = eps.map(e =>
+    `<tr data-idx="${e.idx}" class="${replay && replay.idx === e.idx ? "sel" : ""}">` +
+    `<td class="num">${String(e.idx).padStart(3, "0")}</td><td class="num">${(+e.dur).toFixed(1)} s</td>` +
+    `<td class="num">${e.frames}</td><td class="ins" title="${esc(e.instruction)}">${esc(e.instruction)}</td>` +
+    `<td class="num" style="color:var(--mid)">${esc(e.time)}</td>` + chk(e.check) +
+    `<td class="acts"><button data-act="play">${t("replay_btn")}</button> <button class="ghost" data-act="del">${t("del")}</button></td></tr>`
+  ).join("");
+}
+
+$("eps").addEventListener("click", ev => {
+  const b = ev.target.closest("button"); if (!b) return;
+  const idx = +b.closest("tr").dataset.idx;
+  if (b.dataset.act === "play") openReplay(idx);
+  if (b.dataset.act === "del" && confirm(t("confirm_del", idx))) {
+    if (replay && replay.idx === idx) closeReplay();
+    cmd("delete", { idx });
+  }
+});
+
+const liveSrc = c => `/stream/${c}.mjpg?t=${Date.now()}`;
+function startLive() { if (S) for (const c of S.cam_names) $("cam-" + c).src = liveSrc(c); }
+
+async function openReplay(idx) {
+  const d = await (await fetch(`/api/episode/${idx}`)).json();
+  replay = { idx, d, k: 0, playing: false };
+  $("replay").style.display = "";
+  $("views").classList.remove("hot");
+  $("rtitle").textContent = t("replay_title", String(idx).padStart(3, "0"), d.ts.at(-1).toFixed(1));
+  for (const c of S.cam_names) { $("tag-" + c).textContent = `${camLabel(c)} · ${t("replay")}`; $("tag-" + c).classList.remove("bad"); }
+  $("rslider").max = d.ts.length - 1;
+  drawTraces($("plot"), $("legend"), d.qpos, d.action, S.names);
+  seek(0);
+  renderEps(S.episodes);
+}
+
+function closeReplay() {
+  replay = null;
+  $("replay").style.display = "none";
+  $("rplay").textContent = t("play");
+  startLive();
+  renderEps(S.episodes);
+}
+
+function seek(k) {
+  if (!replay) return;
+  const n = replay.d.ts.length; k = Math.max(0, Math.min(n - 1, k)); replay.k = k;
+  for (const c of S.cam_names) $("cam-" + c).src = `/api/episode/${replay.idx}/${c}/${k}`;
+  $("rslider").value = k;
+  $("rpos").textContent = `${replay.d.ts[k].toFixed(2)} s · #${k}`;
+  moveCursor($("plot"), k, n);
+}
+
+$("plot").addEventListener("click", ev => {
+  if (!replay) return;
+  const r = $("plot").getBoundingClientRect();
+  seek(Math.round((ev.clientX - r.left) / r.width * (replay.d.ts.length - 1)));
+});
+$("rslider").addEventListener("input", e => seek(+e.target.value));
+$("rclose").onclick = closeReplay;
+$("rplay").onclick = () => {
+  if (!replay) return;
+  replay.playing = !replay.playing; $("rplay").textContent = t(replay.playing ? "pause" : "play");
+  if (replay.playing && replay.k >= replay.d.ts.length - 1) seek(0);
+};
+setInterval(() => {
+  if (!replay || !replay.playing) return;
+  const last = replay.d.ts.length - 1;
+  if (replay.k >= last) { replay.playing = false; $("rplay").textContent = t("play"); return; }
+  seek(Math.min(last, replay.k + 2 * +$("rspeed").value));     // 30 fps data, 15 Hz timer
+}, 1000 / 15);
+
+$("bStart").onclick = () => cmd("start");
+$("bSave").onclick = () => cmd("save");
+$("bDiscard").onclick = () => cmd("discard");
+$("bIns").onclick = () => { insDirty = false; cmd("instruction", { text: $("ins").value }); };
+$("ins").addEventListener("input", () => { insDirty = true; });
+$("quit").onclick = () => { if (confirm(t("confirm_quit"))) cmd("quit"); };
+
+document.addEventListener("keydown", e => {
+  if (["INPUT", "SELECT", "TEXTAREA"].includes(e.target.tagName) || e.repeat) return;
+  if (e.key === "s" || e.key === "S") { if (replay) closeReplay(); cmd("start"); }
+  else if (e.key === "Enter" || e.key === "ArrowRight") { e.preventDefault(); document.activeElement?.blur?.(); cmd("save"); }
+  else if (e.key === "ArrowLeft") { e.preventDefault(); cmd("discard"); }
+});
+
+let lost = false;
+async function poll() {
+  try {
+    render(await (await fetch("/api/status")).json());
+    if (lost) { lost = false; if (!replay) startLive(); }
+  } catch (e) { lost = true; $("badge").className = "badge idle"; $("badge").textContent = t("disconnected"); }
+  setTimeout(poll, 200);
+}
+window.onLang = () => { if (!S) return; epsKey = ""; render(S); if (replay) { const d = replay.d; drawTraces($("plot"), $("legend"), d.qpos, d.action, S.names); moveCursor($("plot"), replay.k, d.ts.length); $("rplay").textContent = t(replay.playing ? "pause" : "play"); } };
+poll();
+</script>
+</body>
+</html>
