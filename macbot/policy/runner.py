@@ -241,6 +241,8 @@ def save_rollout(st: State, rec: dict, result: str):
     fps = st.cfg["record"]["fps"]
     meta = {"task": st.cfg.task, "instruction": st.cfg["task"]["instruction"], "policy": str(a.policy),
             "executor": st.executor, "mode": a.mode, "k": a.k, "te_m": a.te_m, "rtc_beta": a.rtc_beta,
+            "rtc_horizon": getattr(a, "rtc_horizon", None), "rtc_schedule": getattr(a, "rtc_schedule", "linear"),
+            "query_every": getattr(a, "query_every", 0),
             "grip_debounce": a.grip_debounce, "grip_lead": getattr(a, "grip_lead", 0.0), "speed": a.speed, "max_vel": st.cfg["run"]["max_vel"], "result": result,
             "fps": fps, "frames": len(rec["t"]), "joint_names": st.joints, "gripper": st.gripper, "robot": st.robot_info, "cameras": st.cam_names,
             "camera_framing": framing(st.cfg["cameras"], fps),
@@ -340,6 +342,8 @@ def _run(cfg, args, srv, cleanup):
     lead = float(getattr(args, "grip_lead", 0.0) or 0.0)
     if not (math.isfinite(lead) and 0 <= lead <= 2):
         sys.exit("--grip-lead must be between 0 and 2 seconds")
+    if int(getattr(args, "query_every", 0) or 0) < 0:
+        sys.exit("--query-every must be 0 or positive")
     if lead and gripper is None:
         print("--grip-lead applies to binary grippers only; ignored", flush=True)
 
@@ -415,6 +419,8 @@ def _control(st, srv, fps, gripper, cleanup):
         print(f"pi0.5: {compiler} on; the first inference compiles.", flush=True)
     if args.mode == "auto":
         args.mode = "async" if backend == "mlx" else "rtc" if pol.kind == "pi05" else "ensemble"
+    if getattr(args, "query_every", 0) and args.mode not in ("async", "rtc"):
+        sys.exit("--query-every applies to --mode async or rtc only")
     if args.mode == "step" and not generic:
         sys.exit("--mode step requires a generic policy that uses select_action")
     if args.mode == "rtc" and not pol.supports_rtc:
@@ -443,7 +449,7 @@ def _control(st, srv, fps, gripper, cleanup):
     execution = "step" if generic and pol.stepwise else f"chunk {pol.H}"
     print(f"policy ready ({pol.kind}, {execution}): {(time.perf_counter() - t) * 1e3:.0f} ms per inference", flush=True)
     if args.mode == "rtc":
-        pol.enable_rtc(args.rtc_beta)
+        pol.enable_rtc(args.rtc_beta, getattr(args, "rtc_schedule", "linear"))
         pol(dummy, [0.0] * n_j)                          # unguided call (first chunk) compiles separately
         lo = np.zeros((pol.H, n_j), np.float32)
         pol(dummy, [0.0] * n_j, leftover=lo, delay=8)
@@ -481,7 +487,8 @@ def _control(st, srv, fps, gripper, cleanup):
     elif args.mode == "ensemble":
         ex = Ensemble(pol, observe, rate, st.log_chunk, args.te_m, args.te_hz, stop)
     else:
-        ex = AsyncChunk(pol, observe, rate, st.log_chunk, guide=args.mode == "rtc", horizon=args.rtc_horizon, stop=stop)
+        ex = AsyncChunk(pol, observe, rate, st.log_chunk, guide=args.mode == "rtc", horizon=args.rtc_horizon,
+                        every=getattr(args, "query_every", 0), stop=stop)
     ex.start()
     st.executor = ex.describe()
     threading.Thread(target=srv.serve_forever, daemon=True).start()

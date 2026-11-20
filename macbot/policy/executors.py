@@ -20,6 +20,7 @@ Executors receive ``observe() -> (images, q)`` and ``log(t_chunk, infer_ms, **ex
   time with the old one (step 0 of the new chunk = the step the old chunk was at when inference
   started). With ``guide=True`` (pi0.5 only) the unexecuted rest of the old chunk guides the new one
   (Real-Time Chunking, Black et al. 2025): ``delay`` = expected inference time in steps.
+  ``every`` > 0 queries every ``every`` policy steps instead of as soon as the previous inference ends.
   Override ``accept()`` to decide whether and where to switch to a new chunk.
 """
 from __future__ import annotations
@@ -220,18 +221,21 @@ class AsyncChunk(Executor, threading.Thread):
     name = "async"
     start = threading.Thread.start
 
-    def __init__(self, policy, observe, rate, log, guide: bool = False, horizon: int = 20, stop=lambda: False):
+    def __init__(self, policy, observe, rate, log, guide: bool = False, horizon: int = 20, every: int = 0,
+                 stop=lambda: False):
         Executor.__init__(self, policy, observe, rate, log)
         threading.Thread.__init__(self, daemon=True)
-        self.guide, self.horizon, self.stop = guide, horizon, stop
+        self.guide, self.horizon, self.every, self.stop = guide, horizon, every, stop
         self.lk = threading.Lock()
         self.cur, self.active, self.gen, self.n = None, False, 0, 0
         self.lat = []                                         # recent inference times (s)
+        self.last_req = None                                  # wall time of the previous query
 
     def reset(self, active: bool):
         with self.lk:
             self.cur, self.active = None, active
             self.gen += 1
+            self.last_req = None
 
     def target(self, now):
         with self.lk:
@@ -257,7 +261,13 @@ class AsyncChunk(Executor, threading.Thread):
             if not act:
                 time.sleep(0.005)
                 continue
+            if self.every and cur is not None and self.last_req is not None:
+                wait = self.last_req + self.every / self.rate - time.time()
+                if wait > 0:                                  # query every `every` steps, not continuously
+                    time.sleep(min(wait, 0.005))
+                    continue
             t_req = time.time()
+            self.last_req = t_req
             leftover, delay, T_aligned = None, 0, t_req
             if cur is not None:
                 i0 = int((t_req - cur["T0"]) * self.rate)
@@ -302,4 +312,5 @@ class AsyncChunk(Executor, threading.Thread):
                      overrun=round((t_done - T0) * self.rate - delay, 2), **rec)
 
     def describe(self):
-        return "real-time chunking (guided)" if self.guide else "asynchronous chunks"
+        name = "real-time chunking (guided)" if self.guide else "asynchronous chunks"
+        return name + (f", query every {self.every} steps" if self.every else "")

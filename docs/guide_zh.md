@@ -180,6 +180,8 @@ sudo -E $(which python) -m macbot.cli run --policy ~/policies/cubes_pi05/004000 
 
 所有执行方式都会在策略步之间插值，供 60 Hz 控制环使用。
 
+`async` 和 `rtc` 默认在上一次推理结束后立刻再推理，所以每个块只执行几步。`--query-every K` 改为每 `K` 个策略步推理一次，对应 RTC 论文的执行步长。`rtc` 对推理期间执行的动作给权重 1，之后的权重在 `--rtc-horizon` 处衰减到 0；`--rtc-schedule exp` 用 RTC 论文的指数衰减，默认是线性。与论文一致的设置（块长 50）是 `--query-every 15 --rtc-horizon 35 --rtc-schedule exp`。
+
 - **速度：** `--speed` 按比例缩放时间。0.5 倍速时，30 fps 的策略按每秒 15 步执行。
 - **安全限制：** 臂关节速度不超过 `run.max_vel × speed` 度每秒，并始终在关节限位之内。**回起始姿态**按 `run.home_vel` 移动（默认最远的关节每秒 25 度，不受
   `speed` 影响），起步有短暂加速，各臂关节同时到位。

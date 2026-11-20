@@ -212,6 +212,12 @@ aligning and following on the timeline and traces, and marks each hand entry.
 
 All schemes interpolate between policy steps for the 60 Hz control loop.
 
+`async` and `rtc` query again as soon as the previous inference ends, so each chunk runs for only a few steps.
+`--query-every K` queries every `K` policy steps instead, as in the RTC paper's execution horizon. `rtc` guides the
+new chunk with weight 1 for the actions executed during inference and a weight that decays to zero at
+`--rtc-horizon`; `--rtc-schedule exp` uses the exponential decay of the RTC paper instead of the linear default.
+A setting that matches the paper with a 50-step chunk is `--query-every 15 --rtc-horizon 35 --rtc-schedule exp`.
+
 - **Speed:** `--speed` scales time. At 0.5, a 30 fps policy is played at 15 steps per second.
 - **Safety limits:** arm joints move at most `run.max_vel × speed` degrees per second and stay within the
   joint limits. **Home** moves at `run.home_vel` (default 25 degrees per second for the farthest joint, independent of
