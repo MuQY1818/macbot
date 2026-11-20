@@ -18,7 +18,12 @@
 
 <p align="center"><a href="https://github.com/MuQY1818/macbot/blob/main/README.md">English</a> · <b>中文</b></p>
 
-<p align="center"><img src="https://raw.githubusercontent.com/MuQY1818/macbot/main/docs/img/collect_zh.jpg" alt="macbot 采集控制台" width="100%"></p>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/MuQY1818/macbot/main/assets/scene-dark.svg">
+    <img src="https://raw.githubusercontent.com/MuQY1818/macbot/main/assets/scene.svg" alt="在机械臂上采集，导出 LeRobot 数据集，在 GPU 上训练，把权重拿回 MacBook 上部署" width="100%">
+  </picture>
+</p>
 
 ## 为什么做这个
 
@@ -52,6 +57,8 @@ MLX 后端输出的动作与 PyTorch 平均相差不到 0.1°。测法和完整�
 - **`macbot doctor`**：开工前检查依赖、MPS 和配置中的机械臂与相机。
 - `collect` 和 `run` 支持 **`--fake`**，使用 fake 机械臂和相机；`run` 仍会运行真实策略。
 - 每个网页都有中英文（顶栏切换），支持浅色和深色模式。
+
+<p align="center"><img src="https://raw.githubusercontent.com/MuQY1818/macbot/main/docs/img/collect_zh.jpg" alt="macbot 采集控制台" width="100%"></p>
 
 | 跑策略 | 回放试验 |
 |---|---|
