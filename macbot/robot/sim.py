@@ -10,17 +10,22 @@ from .base import Robot
 from .lerobot_generic import _config, joint_names
 
 
-def _make_sim(spec, task_id):
-    from lerobot.robots.sim_robot import SimRobot, SimRobotConfig
+def sim_config(spec, task_id):
+    from lerobot.robots.sim_robot import SimRobotConfig
     from lerobot.robots.sim_robot.config_sim_robot import SimulatedEnvConfig
 
     if not spec or not spec.get("type"):
         raise SystemExit("robot.type sim needs robot.env: {type: ..., ...}")
     if spec.get("server"):
         raise SystemExit("macbot sim supports only local environments; remove robot.env.server")
-    env = _config(SimulatedEnvConfig, spec)
+    return SimRobotConfig(env=_config(SimulatedEnvConfig, spec), task_id=task_id)
+
+
+def _make_sim(spec, task_id):
+    from lerobot.robots.sim_robot import SimRobot
+
     try:
-        return SimRobot(SimRobotConfig(env=env, task_id=task_id))
+        return SimRobot(sim_config(spec, task_id))
     except ImportError as exc:
         raise SystemExit(f"cannot load simulator: {exc}. For SO-101 install macbot[sim].") from exc
 

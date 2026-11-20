@@ -71,18 +71,23 @@ def _config(base, spec: dict):
     return draccus.decode(cls, spec)
 
 
-def make_follower(spec: dict):
+def device_config(spec: dict, *, leader: bool = False):
     _load_registry()
+    if leader:
+        from lerobot.teleoperators.config import TeleoperatorConfig
+        return _config(TeleoperatorConfig, spec)
     from lerobot.robots.config import RobotConfig
+    return _config(RobotConfig, spec)
+
+
+def make_follower(spec: dict):
     from lerobot.robots.utils import make_robot_from_config
-    return make_robot_from_config(_config(RobotConfig, spec))
+    return make_robot_from_config(device_config(spec))
 
 
 def make_leader(spec: dict):
-    _load_registry()
-    from lerobot.teleoperators.config import TeleoperatorConfig
     from lerobot.teleoperators.utils import make_teleoperator_from_config
-    return make_teleoperator_from_config(_config(TeleoperatorConfig, spec))
+    return make_teleoperator_from_config(device_config(spec, leader=True))
 
 
 def joint_names(device) -> list[str]:

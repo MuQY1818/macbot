@@ -1,6 +1,6 @@
 """Command line entry point: ``macbot <command>``.
 
-    macbot doctor                 check the Mac: Python packages, MPS, PCAN driver, cameras, sudo
+    macbot doctor                 check dependencies, the configured robot and cameras
     macbot cameras                list video devices with their uniqueIDs
     macbot joints                 read leader and follower joint angles without powering anything
     macbot robots                 list the LeRobot arm types macbot can drive (robot.type: lerobot)
@@ -138,7 +138,7 @@ def main(argv=None):
     ap.add_argument("--config", help="YAML file overriding the built-in defaults")
     sub = ap.add_subparsers(dest="cmd", required=True, metavar="command")
 
-    sub.add_parser("doctor", help="check this Mac").set_defaults(fn=cmd_doctor)
+    sub.add_parser("doctor", help="check the configured robot and cameras without connecting").set_defaults(fn=cmd_doctor)
     sub.add_parser("cameras", help="list video devices and uniqueIDs").set_defaults(fn=cmd_cameras)
     sub.add_parser("joints", help="read joint angles without powering motors").set_defaults(fn=cmd_joints)
     sub.add_parser("robots", help="list the LeRobot robot and leader types available here").set_defaults(fn=cmd_robots)
