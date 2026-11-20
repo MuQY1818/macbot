@@ -54,7 +54,7 @@ macbot --config configs/so101.yaml health --data ~/macbot-data/raw/pick_cube_fak
 ## 提交和拉取请求
 
 每次提交集中处理一件事，使用简洁的英文标题。每次提交前运行上述检查。提交 PR 时说明行为变化、
-验证方法和结果。英文和简体中文文档应同步更新；用户可见的改动应记在 **Unreleased（未发布）** 下。
+验证方法和结果。英文和简体中文文档应同步更新；用户可见的改动应记在 **Unreleased（未发布）** 下。版本号规则和发版流程见 [docs/releasing_zh.md](docs/releasing_zh.md)。
 
 欢迎提交真机测试报告。请注明机械臂与相机配置、macOS 版本和芯片、成功与失败的操作，条件允许时提供
 `macbot bench` 数字。请使用真机报告表单，并事先移除日志和截图中的个人信息。
