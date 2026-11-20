@@ -321,7 +321,7 @@ class PI05MLX:
 
     def __init__(self, path, task, steps=None, *, bits=None, quantize="prefix", trim=False, fused_attention=True,
                  fused_rope=False, dtype=mx.bfloat16, precompute_adarms=False, pack_linears=False, gelu_fp32=False,
-                 pool_images=False):
+                 pool_images=False, time_grid="uniform"):
         import torch
         from lerobot.configs import PreTrainedConfig
         from lerobot.policies.factory import make_pre_post_processors
@@ -350,7 +350,14 @@ class PI05MLX:
                                    fused_attention=fused_attention, fused_rope=fused_rope, pack_linears=pack_linears,
                                    gelu_fp32=gelu_fp32)
         self.vision, self.prefix, self.velocity = self.network.vision, self.network.prefix, self.network.velocity
-        schedule = mx.array([1.0 - i / self.steps for i in range(self.steps)], dtype=mx.float32)
+        if time_grid not in ("uniform", "quadratic"):
+            raise ValueError("Expected a uniform or quadratic MLX time grid")
+        times = [1.0 - i / self.steps for i in range(self.steps)] + [0.0]
+        self.deltas = None
+        if time_grid == "quadratic":
+            times = [t ** 2 for t in times]
+            self.deltas = [end - t for t, end in zip(times[:-1], times[1:], strict=True)]
+        schedule = mx.array(times[:-1], dtype=mx.float32)
         self.cond = self.network.time_condition(schedule, config.min_period, config.max_period)
         self.modulation = self.network.adarms(self.cond) if precompute_adarms else None
         mx.eval(self.cond, self.modulation)
@@ -404,7 +411,8 @@ class PI05MLX:
         for i in range(self.steps):
             cond, modulation = self.velocity_args(i)
             velocity = run(f"denoise_{i:02d}", self.velocity, x, cond, cache, positions, keep, modulation)
-            x = x - velocity.astype(mx.float32) / self.steps
+            v = velocity.astype(mx.float32)
+            x = x - v / self.steps if self.deltas is None else x + self.deltas[i] * v
         return x
 
     def __call__(self, imgs, q, leftover=None, delay=0, horizon=None, return_raw=False, *, noise=None, stage=None):

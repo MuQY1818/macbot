@@ -189,7 +189,7 @@ def _control(st, srv, port, fps, gripper, cleanup):
         backend = "torch"
     if backend == "mlx":
         pol = load_policy(args.policy, args.device, cfg["task"]["instruction"], args.steps, backend="mlx",
-                          mlx_bits=args.mlx_bits, mlx_quantize=args.mlx_quantize)
+                          mlx_bits=args.mlx_bits, mlx_quantize=args.mlx_quantize, mlx_time_grid=args.mlx_time_grid)
     else:
         pol = load_policy(args.policy, args.device, cfg["task"]["instruction"], args.steps)
     if pol.kind == "pi05" and not args.no_compile:
