@@ -14,7 +14,7 @@ macbot --config "$CONFIG" bench --policy "$CHECKPOINT" --backend mlx -n 30
 macbot --config "$CONFIG" bench --policy "$CHECKPOINT" --backend torch --profile -n 30
 ```
 
-`bench` uses generated blank RGB arrays; it never opens a camera or a robot. Synchronized stage timings are a separate pass and will not add up to the end-to-end latency. `--no-compile` disables the backend's graph compiler. To select MLX for deployment, pass `--backend mlx` to `macbot run` or add `policy: {backend: mlx}` to your YAML. With MLX, `--mode auto` uses unguided asynchronous execution. Explicit `--mode rtc` selects PyTorch for guided RTC.
+`bench` uses generated blank RGB arrays; it never opens a camera or a robot. Synchronized stage timings are a separate pass and will not add up to the end-to-end latency. `--no-compile` disables the backend's graph compiler. To select MLX for deployment, pass `--backend mlx` to `macbot run` or add `policy: {backend: mlx}` to your YAML. With MLX, `--mode auto` uses unguided asynchronous execution. Explicit `--mode rtc` uses the selected backend for guidance.
 
 Weight quantization is an experimental option: `--mlx-bits 8` or `--mlx-bits 4`, with `--mlx-quantize prefix`, `expert` or `both`. Reducing `--steps` changes the flow integration. Evaluate each of these options against your checkpoint before using it.
 
@@ -70,6 +70,26 @@ Each error cell is mean / p99. RSS is the process lifetime peak, including load 
 **Below 100 ms with fidelity was not reached.** Each of the eight error statistics for the deployed MLX setting was at most 34% of the corresponding seed-spread statistic, and median latency was 39% lower than the repeated MPS baseline. Its synchronized split was 24.32 ms for vision, 98.58 ms for prefix/KV, and 5.20–5.65 ms per expert step. Fewer steps alone cannot fix the prefix cost. Removing padding, MLX compilation, and precomputing AdaRMS helped. Affine 8-bit quantization saved GPU allocations but was slower; 4-bit prefix quantization caused much larger KV and action errors. The sub-100 ms result above uses a 2×2 mean over projected visual tokens and a two-step Euler schedule. It is available only in the offline harness (`--pool-images --steps 2`), not as a deployment setting. Start from the FP16 command above and omit `--pack-linears` to reproduce that result.
 
 An additional speed gain at the same fidelity would require substantially faster prefix projection and attention kernels, or a model with a smaller prefix. A reduced-step model designed or distilled for that schedule might also lower expert cost. These alternatives were not trained or tested here.
+
+## Round 2: where the time goes
+
+The standard ten-step MLX output remained bit-for-bit identical to v0.3.0 on all 50 observations. It took **164.00/167.32 ms** (median/p90); the final integration check took **160.74/162.85 ms**. AC power, an active desktop, one benchmark at a time, at least five warm-ups and 30 timed calls. The difference between these repeats is not an optimization.
+
+Metal capture of synthetic matrices at the real dimensions confirmed that MLX 0.32.4 already dispatches gate/up to `steel_gemm_fused_nax` and down to `steel_gemm_splitk_nax`. The replay had 553–558 tokens. At 557 rows, FP16 gate/up (2048→32768) delivered **27.7 TFLOP/s**, and down (16384→2048) delivered **21.1 TFLOP/s**. The same device delivered **30.0 TFLOP/s** on a 4096-square FP16 control. Padding to 576 rows changed gate/up from 2.696 to 2.690 ms and down from 1.771 to 1.872 ms. More FLOP/s on padded work does not necessarily save time. Reproduce the dtype/layout/alignment sweep with `python -m tools.accel.bench_mlx_shapes --out "$EVAL/shapes.json"`.
+
+The initial synchronized split was 1.93 ms for preparation, 23.60 ms for both cameras, 92.54 ms for prefix/KV and 5.21–5.52 ms per expert evaluation. In a separate, slower run, device-ready inputs through both cameras and complete KV creation took **146.51/174.19 ms** without any denoising or intermediate barrier. These timings describe the tested implementation, not a theoretical hardware limit. Padding, changing the weight layout, compiling the entire denoising loop, a custom AdaRMS kernel and pre-slicing modulation did not establish a repeatable end-to-end improvement sufficient to change the default.
+
+| Full replay, matched noise | Median/p90 ms | Arm mean/p99 ° | Worst of eight errors / seed spread |
+| :-- | --: | --: | --: |
+| Integrated default, ten steps | 160.74/162.85 | 0.082/0.416 | 34.0% |
+| Uniform Euler, three evaluations | 159.42/181.83 | 0.320/1.587 | 134.4% |
+| Quadratic Euler, three evaluations | 132.94/135.83 | 0.145/1.350 | 50.7% |
+| Keep half the patches, three uniform evaluations | 95.17/99.24 | 0.818/5.788 | 933.6% |
+| Keep one quarter, three uniform evaluations | 82.62/88.07 | 1.530/11.938 | 13847.9% |
+
+All shortened schedules and all patch pruning are **lossy**. For the quadratic grid, set `--backend mlx --steps 3 --mlx-time-grid quadratic` in `bench` or `run`. It spends more evaluations near the clean end of the flow. Compare fidelity at equal evaluation counts; absolute timings in different desktop-load windows do not isolate solver overhead. To reproduce in the offline command above, add `--steps 3 --solver quadratic`; `ab2` and `midpoint` are also available for comparison (midpoint requires an even budget). Patch selection is offline only: `--steps 3 --keep-visual-fraction 0.5` keeps the highest attention patches per camera after block two, retains the text, and preserves absolute token positions. With half the patches the full-chunk gripper p99 error was 0.06643, against a seed spread of 0.00712.
+
+Explicit MLX RTC was tested separately on three observations with matched noise, model-space leftovers, delay 4, horizon 16 and maximum guidance weight 10. Against guided PyTorch, arm mean/p99 was **0.071/0.350°**; timed guided MLX calls took **163.17/175.12 ms**. LeRobot 0.7.0 evaluates the velocity before enabling gradients on its input, so the reference correction is the weighted residual. Differentiating through the entire denoiser instead gave 0.183/1.670° and is not the deployed rule. No hardware rollout was performed.
 
 ## Implementation references
 
