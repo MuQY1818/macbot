@@ -238,6 +238,33 @@ Parquet 元数据写入评审后的 `success`、`source="rollout"` 和空抓统�
 `meta/camera_framing.json`。旧试验可能缺少构图字段，请确认采集设置后再合并。保留核对过的构图文件和
 `gripper.json`。优势值在训练机计算。
 
+#### 导出供 DAgger 和优势条件训练使用的片段
+
+```bash
+macbot export --rollouts --segments --min-segment-s 1.0 --pre-takeover-s 1.7
+```
+
+不加 `--segments` 时仍是每次试验一个 episode。片段导出遵循三条规则：
+
+1. 丢弃 `takeover=2` 的帧。对齐、保持、软启动和领臂掉线时的动作来自接管过程，不应作为训练目标。
+2. 连续的策略控制帧（`0`）或人工控制帧（`1`）各自组成一个 episode。这样动作块不会跨越控制权交接，
+   包括从人工直接切回策略。每个 episode 的帧索引和时间戳从零开始。LeRobot 会在 episode 末尾填充
+   动作块；训练时可用 `action_is_pad` 屏蔽填充项，或只采样完整的动作块。
+3. 加入 `pre_takeover`（`uint8`）。它标记同一次试验中距下一次接管请求不超过 `--pre-takeover-s` 的
+   策略帧（默认 1.7 秒，30 fps 下约 50 帧），便于识别触发人工干预前的行为。记录没有按钮时间戳，
+   因此以首个从策略切到对齐或人工控制的采样时刻为准。人工跟随中领臂掉线不会产生新的窗口。
+   设为 `0` 可关闭标记。
+
+以 `帧数 / fps` 计算片段时长，短于 `--min-segment-s`（默认 1.0 秒）的片段会丢弃。保留的 episode
+包含 `source="rollout_policy"` 或 `"rollout_human"`、`trial_name`（原 NPZ 文件名）、
+`original_start_time`（片段起点距试验开始的秒数），以及 `segment_index`（从 0 开始，按丢弃短片段前的
+策略和人工片段编号）。评审后的 `success` 和空抓统计仍对应整次试验。排除的试验继续跳过，`grasp_miss`
+和 `hand_mark` 与保留帧对齐。汇总列出纳入的试验数、各来源的片段数、丢弃的标签 `2` 帧数和短片段数，
+以及保留的人工控制秒数和接管前帧数。
+
+`--with-rollout-labels` 不写入新增的 `pre_takeover`。若要与示范合并，请先为示范补上形状为 `(1,)`、
+类型为 `uint8` 的全零 `pre_takeover` 列，使字段一致。
+
 `macbot bench --policy DIR` 用空白图像测这台 Mac 上的推理耗时。
 
 ## 假硬件模式
