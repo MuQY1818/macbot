@@ -399,8 +399,8 @@ def test_fresh_leader_angles_tolerate_single_servo_misses():
     ids, good = {"a": 1, "b": 2}, {}
     assert fresh_leader_angles(good, ids, {1: sample(10), 2: None}, 0.0) is None          # b never read
     assert fresh_leader_angles(good, ids, {1: sample(10), 2: sample(5)}, 0.01) == {"a": 10, "b": 5}
-    # b misses one cycle: its last reliable angle is still recent
-    assert fresh_leader_angles(good, ids, {1: sample(11), 2: sample(99, reliable=False)}, 0.05) == {"a": 11, "b": 5}
-    # b keeps missing: too old, no sample
-    assert fresh_leader_angles(good, ids, {1: sample(12), 2: sample(99, reliable=False)}, 0.2) is None
-    assert fresh_leader_angles(good, ids, {1: sample(12), 2: sample(6)}, 0.21) == {"a": 12, "b": 6}
+    # b goes silent for seconds, as reBot 102 servos do: keep its last reliable angle, as collect does
+    assert fresh_leader_angles(good, ids, {1: sample(11), 2: sample(99, reliable=False)}, 2.5) == {"a": 11, "b": 5}
+    # silent for longer than the limit: no sample
+    assert fresh_leader_angles(good, ids, {1: sample(12), 2: sample(99, reliable=False)}, 3.1) is None
+    assert fresh_leader_angles(good, ids, {1: sample(12), 2: sample(6)}, 3.2) == {"a": 12, "b": 6}

@@ -169,16 +169,18 @@ def make_follower(rcfg: dict):
     return robot
 
 
-LEADER_FRESH_S = 0.15
+LEADER_FRESH_S = 3.0
 
 
 def fresh_leader_angles(good: dict, ids: dict, samples: dict, now: float, max_age: float = LEADER_FRESH_S):
     """Leader angles for takeover, or None when any joint has no fresh reading within ``max_age`` seconds.
 
     Upstream get_action falls back to cached angles on errors, and the bus returns a cached angle for a servo
-    that missed one cycle. Single misses are common (one of seven servos in about a third of reads on the
-    reBot 102), so requiring all seven in every read dropped most of a takeover. ``good`` keeps each joint's
-    last reliable reading between calls.
+    that did not answer. On the reBot 102 single servos go silent for up to about 3 s at a time (measured with
+    the arm in use: shoulder_pan, elbow_flex and the gripper, 9-13 % of reads each), while the others keep
+    answering. `collect` uses the cached angle and works well, so takeover does the same; the follower's
+    velocity limit bounds the catch-up when a joint answers again. Only a joint silent for longer than
+    ``max_age`` makes the sample stale. ``good`` keeps each joint's last reliable reading between calls.
     """
     for n, i in ids.items():
         sample = samples.get(i)

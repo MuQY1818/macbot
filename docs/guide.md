@@ -150,8 +150,8 @@ its current command. Move the leader by hand until every arm joint is roughly in
 soft start: it moves along a straight line at `run.home_vel` and speeds up to the normal limit
 (`run.max_vel` × speed) within one second, or sooner once every joint is within 2°. The soft start is
 labelled like alignment (2); human frames (1) start after it. A leader dropout shorter than 0.5 s holds the
-follower and then keeps following with a new soft start; a longer one returns to alignment. A leader joint
-that misses a single read keeps its last reading for up to 0.15 s. With a binary policy, the leader must be above
+follower and then keeps following with a new soft start; a longer one returns to alignment. A leader servo
+that stops answering keeps its last reading for up to 3 s, as in `collect`. With a binary policy, the leader must be above
 `export.gripper_close_above` if the follower is commanded closed, or below `export.gripper_open_below`
 if it is commanded open. A leader reading between the thresholds keeps the follower on hold.
 With a raw gripper, match the follower command within `run.takeover_gripper_align_deg` (default 15°).
