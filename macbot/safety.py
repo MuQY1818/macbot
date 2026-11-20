@@ -93,6 +93,10 @@ class MotorWatch:
             events.append(dict(kind="static_hold", sustained_s=tick - self.hold_since))
         return events
 
+    def _sample_names(self):
+        # Before the first feedback there are joint names but no samples yet.
+        return self.names if len(self.names) == len(self.samples) else (None,) * len(self.samples)
+
     def fault_status(self, name, motor):
         """RobStride status bits that count as a fault. A gripper holding an object is stalled by design."""
         status = motor.status or 0
@@ -111,7 +115,7 @@ class MotorWatch:
         temps = [m.hottest for m in self.samples]
         levels = ["alarm" if self.fault_status(n, m) or m.fault or (t is not None and t > self.temp_alarm_c)
                   else "warning" if m.warning or (t is not None and t > self.temp_warn_c)
-                  else "" for n, m, t in zip(self.names, self.samples, temps, strict=True)]
+                  else "" for n, m, t in zip(self._sample_names(), self.samples, temps, strict=True)]
         return {"temp_c": temps, "levels": levels, "blocked": self.blocked(), "tripped": self.trip is not None,
                 "rest": tr("Move to the start pose to rest the motors.", "请回到起始姿态，让电机休息。") if self.rest else None}
 
