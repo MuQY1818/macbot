@@ -34,7 +34,7 @@ from ..i18n import tr
 from ..system import ensure_dir, expand, give_back, start_log
 from ..viz.rollouts import Store, serve_rollouts
 from .executors import AsyncChunk, Ensemble, Step, SyncChunk
-from .gripper import BinaryGripper, find_gripper_config
+from .gripper import BinaryGripper, find_gripper_config, takeover_gripper_alignment
 from .models import check_joint_dimensions, load_generic, load_policy, policy_backend, prep_image, use_generic
 
 CAM_STALL_S = 0.5
@@ -88,6 +88,8 @@ class State:
         if self.takeover and not (math.isfinite(self.align_deg) and self.align_deg > 0):
             raise SystemExit("run.takeover_align_deg must be positive and finite")
         self.alignment = {}
+        self.gripper_alignment = None
+        self.gripper_gate = {}
         self.follow_since = None
         self.cam_names = list(cfg["cameras"])
         self.lock = threading.Lock()
@@ -165,6 +167,7 @@ class State:
         self.mode = mode
         if mode not in TAKEOVER_MODES:
             self.alignment = {}
+            self.gripper_alignment = None
 
     def log_chunk(self, t_chunk, ms, **extra):
         """Called by executors after every inference."""
@@ -196,6 +199,7 @@ class State:
                     "rec_s": round(len(r["t"]) / self.cfg["record"]["fps"], 1) if r else 0,
                     "recording": r is not None, "hand_marks": len(r["hand_marks"]) if r else 0,
                     "takeover_enabled": self.takeover, "align_deg": self.align_deg, "alignment": self.alignment,
+                    "gripper_alignment": self.gripper_alignment, "gripper": self.gripper,
                     "saved_revision": self.saved_revision, "replay_ready": self.replay_ready(), "next": self.next}
 
 
@@ -219,6 +223,7 @@ def save_rollout(st: State, rec: dict, result: str):
     if "grasp_miss" in st.cfg["robot"]:
         meta["grasp_miss_profile"] = st.cfg["robot"]["grasp_miss"]
     if st.takeover:
+        meta["takeover_alignment"] = {"arm_deg": st.align_deg, **st.gripper_gate}
         arrs["takeover"] = np.asarray(rec["takeover"], np.uint8)
         arrs["leader"] = np.asarray(rec["leader"], np.float32)
     ex = {k: np.asarray(v, np.float64) for k, v in rec.items() if k.startswith("ex_")}
@@ -318,6 +323,20 @@ def _run(cfg, args, srv, cleanup):
 def _control(st, srv, fps, gripper, cleanup):
     cfg, args, rc = st.cfg, st.args, st.cfg["run"]
     from ..robot import open_robot
+
+    st.binary_gripper = {"open_deg": gripper.open_deg, "close_deg": gripper.close_deg} if gripper else False
+    if st.takeover:
+        if st.binary_gripper:
+            close = float(cfg["export"]["gripper_close_above"])
+            opened = float(cfg["export"]["gripper_open_below"])
+            if not (math.isfinite(opened) and math.isfinite(close) and opened < close):
+                sys.exit("takeover needs finite export gripper thresholds with open_below less than close_above")
+            st.gripper_gate = {"close_above": close, "open_below": opened}
+        else:
+            tolerance = float(rc["takeover_gripper_align_deg"])
+            if not (math.isfinite(tolerance) and tolerance > 0):
+                sys.exit("run.takeover_gripper_align_deg must be positive and finite")
+            st.gripper_gate = {"tolerance": tolerance}
     robot = (open_robot(cfg["robot"], fake=args.fake, leader=True, fresh_leader=True) if st.takeover
              else open_robot(cfg["robot"], fake=args.fake))
     started = False
@@ -401,7 +420,6 @@ def _control(st, srv, fps, gripper, cleanup):
     for cam in cams.values():
         cleanup.callback(cam.close)
     robot.connect(leader=st.takeover)
-    st.binary_gripper = {"open_deg": gripper.open_deg, "close_deg": gripper.close_deg} if gripper else False
     st.robot_info = robot.info()
     st.limits = {n: list(v) for n, v in robot.limits.items()}
     home = robot.home_pose()
@@ -436,6 +454,7 @@ def _control(st, srv, fps, gripper, cleanup):
         web.show(srv)
 
     vmax = rc["max_vel"] * args.speed * dt               # max arm joint step per control cycle (robot units)
+    grip_step = 300.0 * args.speed * dt                  # gripper step while following or homing
     home_vmax = rc.get("home_vel", 25.0) * dt             # homing is slow regardless of speed
     home_t0 = 0.0
 
@@ -501,8 +520,8 @@ def _control(st, srv, fps, gripper, cleanup):
                 gp_last, chunk_id = float("nan"), -1
                 with st.lock:
                     st.rec["takeover_count"] += 1
-                say("Holding the follower. Align every arm joint to take control.",
-                    "从臂保持当前位置。请对齐所有臂关节以接管。", "aligning")
+                say("Holding the follower. Align the leader to take control.",
+                    "从臂保持当前指令。请对齐领臂以接管。", "aligning")
             elif want == "takeover" and st.mode in TAKEOVER_MODES:
                 if stalled or (st.sim and robot.ended):
                     say("Cannot resume the policy. Trial paused.", "暂时无法恢复策略，试验已暂停。", "paused")
@@ -567,8 +586,11 @@ def _control(st, srv, fps, gripper, cleanup):
             elif mode in TAKEOVER_MODES:
                 errors = ({n: a - x for n, a, x in zip(names, leader, q, strict=True) if n != robot.gripper}
                           if leader is not None else {})
+                grip = (takeover_gripper_alignment(leader[gi], cmd[gi], st.binary_gripper, st.gripper_gate)
+                        if leader is not None and gi is not None else None)
                 with st.lock:
                     st.alignment = errors
+                    st.gripper_alignment = grip
                 if leader is None:
                     say("Leader signal lost. Holding the follower; align again when the signal returns.",
                         "领臂信号丢失。从臂保持当前位置，信号恢复后请重新对齐。", "aligning")
@@ -576,12 +598,13 @@ def _control(st, srv, fps, gripper, cleanup):
                 elif mode == "aligning":
                     clamped_errors = robot.alignment_errors(leader, q)
                     if (want != "takeover" and all(abs(d) <= st.align_deg for d in errors.values())
-                            and all(abs(d) <= st.align_deg for d in clamped_errors.values())):
+                            and all(abs(d) <= st.align_deg for d in clamped_errors.values())
+                            and (grip is None or grip["ready"])):
                         say("Following the leader.", "正在跟随领臂。", "following")
                         mode = "following"
                     else:
-                        say("Holding the follower. Align every arm joint to take control.",
-                            "从臂保持当前位置。请对齐所有臂关节以接管。")
+                        say("Holding the follower. Align the leader to take control.",
+                            "从臂保持当前指令。请对齐领臂以接管。")
                 if mode == "following":
                     target = leader
             elif mode == "homing":
@@ -594,7 +617,7 @@ def _control(st, srv, fps, gripper, cleanup):
                 steps = homing_steps(cmd, home, gi, home_vmax * ramp)
             for j, n in enumerate(names):                 # velocity limit (arm joints) + joint limits
                 if j == gi:
-                    step = 300.0 * args.speed * dt if mode == "homing" else 1e9
+                    step = grip_step if mode in ("homing", "following") else 1e9
                 else:
                     step = steps[j] if mode == "homing" else vmax
                 cmd[j] = robot.clamp(n, cmd[j] + max(-step, min(step, target[j] - cmd[j])))

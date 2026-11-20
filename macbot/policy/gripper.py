@@ -33,8 +33,24 @@ class BinaryGripper:
 
     def sync(self, command: float) -> None:
         """Seed hysteresis from the current gripper command after manual control."""
-        self.closed = abs(command - self.close_deg) < abs(command - self.open_deg)
+        self.closed = command_is_closed(command, self.open_deg, self.close_deg)
         self._open_since = None
+
+
+def command_is_closed(command, open_deg, close_deg):
+    return abs(command - close_deg) < abs(command - open_deg)
+
+
+def takeover_gripper_alignment(leader, command, binary, gate):
+    """Use the held follower command, since a grasp can block the measured position."""
+    if binary:
+        follower = "closed" if command_is_closed(command, **binary) else "open"
+        # A reading between the export thresholds cannot safely establish a state on handoff.
+        current = "closed" if leader > gate["close_above"] else "open" if leader < gate["open_below"] else "between"
+        return {"leader": current, "follower": follower, "ready": current == follower}
+    delta = leader - command
+    tolerance = gate["tolerance"]
+    return {"delta": delta, "tolerance": tolerance, "ready": abs(delta) <= tolerance}
 
 
 def find_gripper_config(policy: Path, arg: str) -> dict | None:

@@ -11,7 +11,7 @@ All notable changes to macbot will be documented here. This project follows
 
 ### Added
 
-- Opt-in leader takeover in `run`, with joint alignment, recorded control states and hand-in-scene marks.
+- Opt-in leader takeover in `run`, with arm and gripper alignment, a gripper speed limit, recorded control states and hand-in-scene marks.
 - Replay shows calibrated grasp-miss flags, and reviews can exclude trials from summaries and exports.
 - `macbot export --rollouts` writes LeRobot v3 trials with frame labels and reviewed outcomes.
 - Review saved trials from current and earlier sessions in the paused run console, with synchronized

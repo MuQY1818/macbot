@@ -140,9 +140,15 @@ trial. The original recording is unchanged.
 Add `--takeover` to `run`, or set `run.takeover: true` in YAML. This connects the calibrated leader
 configured for `collect`. Press **T** or **Take over** while the policy is running. The follower holds
 its current command. Move the leader by hand until every arm joint is within `run.takeover_align_deg`
-(default 5°). The page shows each difference. The gripper does not enter the alignment check. During
-following, the arm uses the policy's speed and joint limits, and the reBot gripper uses the same force
-clamp as collection. A missing leader reading causes a hold and requires alignment again.
+(default 5°) and the grippers match. With a binary policy, the leader must be above
+`export.gripper_close_above` if the follower is commanded closed, or below `export.gripper_open_below`
+if it is commanded open. A leader reading between the thresholds keeps the follower on hold.
+With a raw gripper, match the follower command within `run.takeover_gripper_align_deg` (default 15°).
+The alignment panel shows what still needs to match.
+
+During following, the arm uses the policy's speed and joint limits, and the gripper command moves
+at most `300 × speed` degrees per second. The reBot gripper retains the collection force clamp.
+A missing leader reading causes a hold and requires alignment again.
 
 Press **T** again to re-plan from the current observation. Pause cancels manual control; **S** then
 resumes the policy. Home, save and quit still work. `--fake` and the simulator use scripted leaders;

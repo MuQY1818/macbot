@@ -195,9 +195,20 @@ function render(s) {
   if (manual) {
     $("align-limit").textContent = t("align_target", s.align_deg);
     const entries = Object.entries(s.alignment || {});
-    $("alignment-values").innerHTML = entries.length ? entries.map(([name, d]) =>
+    const grip = s.gripper_alignment;
+    const angle = d => `${d > 0 ? "+" : ""}${d.toFixed(1)}°`;
+    const arms = entries.map(([name, d]) =>
       `<div><span>${esc(jointLabel(name))}</span><strong class="num ${Math.abs(d) <= s.align_deg ? "aligned" : "outside"}">` +
-      `${d > 0 ? "+" : ""}${d.toFixed(1)}°</strong></div>`).join("") : `<span class="hint">${t("leader_missing")}</span>`;
+      `${angle(d)}</strong></div>`).join("");
+    const gripState = grip ? (grip.leader ? `${t("grip_" + grip.leader)} / ${t("grip_" + grip.follower)}`
+      : `${angle(grip.delta)} / ±${grip.tolerance}°`) : "";
+    const gripHint = grip && !grip.ready && s.mode === "aligning" ? (grip.follower
+      ? t(grip.follower === "closed" ? "grip_close_leader" : "grip_open_leader")
+      : t("grip_match_leader", grip.tolerance)) : "";
+    const gripper = grip ? `<div class="grip-alignment"><span>${esc(jointLabel(s.gripper))}</span>` +
+      `<strong class="${s.mode === "aligning" ? (grip.ready ? "aligned" : "outside") : ""}">${esc(gripState)}</strong></div>` +
+      (gripHint ? `<p class="hint grip-alignment-hint outside" role="status">${esc(gripHint)}</p>` : "") : "";
+    $("alignment-values").innerHTML = arms + gripper || `<span class="hint">${t("leader_missing")}</span>`;
   }
   $("pol").textContent = s.policy;
   $("exec").textContent = s.executor;
