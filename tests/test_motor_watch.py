@@ -237,3 +237,12 @@ def test_gripper_stall_is_not_a_fault_but_arm_stall_is():
     assert watch.trip is None
     events = watch.update(0.01, [0, 0], [0, 0], (stall, ok))
     assert events and events[0]["kind"] == "fault" and events[0]["joint"] == "a"
+
+
+def test_status_before_the_first_feedback():
+    from macbot.safety import MotorWatch
+
+    w = MotorWatch({"enabled": True, "track_deg": 8, "track_s": .3, "hold_warn_s": 30,
+                    "temp_warn_c": 60, "temp_alarm_c": 70, "temp_resume_c": 55})
+    w.set_joints(["a", "gripper"], "gripper")
+    assert w.status()["levels"] == []      # the console polls before the control loop has read the motors
