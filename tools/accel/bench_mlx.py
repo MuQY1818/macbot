@@ -152,6 +152,17 @@ def run(args, records, joints):
 
     for i in range(args.warmup):
         call(i)
+    extra_warmup = 0
+    if args.trim and args.compile:
+        seen_shapes = set()
+        with policy.torch.inference_mode():
+            for i, (imgs, state, policy.task) in enumerate(records):
+                images, tokens, _, all_valid = policy.prepare(imgs, state)
+                key = (images.shape, tokens.shape, all_valid)
+                if key not in seen_shapes and i >= args.warmup:
+                    call(i)
+                    extra_warmup += 1
+                seen_shapes.add(key)
     times = []
     mx.reset_peak_memory()
     for i in range(args.calls):
@@ -176,7 +187,8 @@ def run(args, records, joints):
         "precompute_adarms": args.precompute_adarms,
         "pack_linears": args.pack_linears, "gelu_fp32": args.gelu_fp32, "pool_images": args.pool_images,
         "stage_drift": stage_drift,
-        "count": len(records), "warmup": args.warmup, "latency_ms": latency, "memory_bytes": memory,
+        "count": len(records), "warmup": args.warmup, "extra_shape_warmup": extra_warmup,
+        "latency_ms": latency, "memory_bytes": memory,
         "fidelity": metrics(actions, np.load(args.reference), joints, binary),
     }
     if args.profile:

@@ -8,6 +8,7 @@ import resource
 import sys
 from collections import defaultdict
 from pathlib import Path
+from threading import Event, Thread
 from time import perf_counter
 from unittest.mock import patch
 
@@ -230,6 +231,7 @@ def run(args):
         "separate_cameras": args.separate_cameras, "count": len(records), "warmup": args.warmup,
         "sdpa": args.sdpa, "share_cache": args.share_cache, "pool_images": args.pool_images,
         "single_readback": args.single_readback, "dynamic_compile": args.dynamic_compile, "trim_text": args.trim_text,
+        "replay_execution": args.replay_execution,
     }
     with ExitStack() as stack:
         torch_variants(args, policy, stack)
@@ -242,6 +244,28 @@ def run(args):
                 lm.forward = torch.compile(lm.forward, dynamic=True)
             else:
                 policy.enable_compile()
+        if args.replay_execution:
+            from macbot.policy.executors import _interp
+
+            old_actions = np.load(args.reference)[0]
+            stop = Event()
+            ticks = 0
+
+            def execute():
+                nonlocal ticks
+                while not stop.wait(0.01):
+                    _interp(old_actions, (ticks % 100) / 2)
+                    ticks += 1
+
+            worker = Thread(target=execute, daemon=True)
+            worker.start()
+
+            def end_execution():
+                stop.set()
+                worker.join()
+                result["simulated_execution_ticks"] = ticks
+
+            stack.callback(end_execution)
         for i in range(args.warmup):
             call(i)
         times, memory = [], []
@@ -311,7 +335,10 @@ def main():
     p.add_argument("--single-readback", action="store_true")
     p.add_argument("--dynamic-compile", action="store_true")
     p.add_argument("--trim-text", action="store_true")
+    p.add_argument("--replay-execution", action="store_true", help="overlap with interpolating an existing chunk at 100 Hz")
     args = parser.parse_args()
+    if args.command == "run" and args.replay_execution and args.reference is None:
+        parser.error("--replay-execution requires --reference")
     (prepare if args.command == "prepare" else run)(args)
 
 

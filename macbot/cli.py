@@ -133,6 +133,13 @@ def cmd_bench(args):
     run(_cfg(args), args)
 
 
+def _backend_args(parser):
+    parser.add_argument("--backend", choices=["torch", "mlx"], help="policy backend (default: torch or YAML setting)")
+    parser.add_argument("--mlx-bits", type=int, choices=[4, 8], help="experimental lossy MLX weight quantization")
+    parser.add_argument("--mlx-quantize", choices=["prefix", "expert", "both"], default="prefix",
+                        help="weight groups to quantize with --mlx-bits")
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="macbot", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--config", help="YAML file overriding the built-in defaults")
@@ -171,7 +178,7 @@ def main(argv=None):
     p = sub.add_parser("run", help="run a policy on the robot (web page)")
     p.add_argument("--policy", required=True, help="pretrained_model folder (ACT or pi0.5)")
     p.add_argument("--mode", choices=["auto", "chunk", "ensemble", "async", "rtc"], default="auto",
-                   help="auto: ACT -> ensemble, pi0.5 -> rtc")
+                   help="auto: ACT -> ensemble, torch pi0.5 -> rtc, MLX pi0.5 -> async")
     p.add_argument("--k", type=int, default=30, help="chunk mode: steps executed per chunk")
     p.add_argument("--te-m", type=float, default=0.01, help="ensemble: weight exp(m * age), as in ACT")
     p.add_argument("--te-hz", type=float, default=30.0, help="ensemble: max inference rate")
@@ -180,7 +187,8 @@ def main(argv=None):
     p.add_argument("--gripper", default="auto", help="auto (find gripper.json), raw, or a path to gripper.json")
     p.add_argument("--grip-debounce", type=float, default=0.6, help="binary gripper: seconds of 'open' before opening")
     p.add_argument("--steps", type=int, help="pi0.5 denoising steps (default from checkpoint)")
-    p.add_argument("--no-compile", action="store_true", help="pi0.5: skip torch.compile")
+    p.add_argument("--no-compile", action="store_true", help="pi0.5: skip backend compilation")
+    _backend_args(p)
     p.add_argument("--speed", type=float, help="0.1-1.0, default from config")
     p.add_argument("--device", default="mps")
     p.add_argument("--port", type=int)
@@ -202,8 +210,11 @@ def main(argv=None):
     p = sub.add_parser("bench", help="time policy inference")
     p.add_argument("--policy", required=True)
     p.add_argument("--device", default="mps")
-    p.add_argument("-n", type=int, default=20)
+    p.add_argument("-n", type=int, default=30)
+    p.add_argument("--steps", type=int, help="pi0.5 denoising steps (default from checkpoint)")
     p.add_argument("--no-compile", action="store_true")
+    p.add_argument("--profile", action="store_true", help="also report synchronized PI05 stage timings")
+    _backend_args(p)
     p.set_defaults(fn=cmd_bench)
 
     args = ap.parse_args(argv)

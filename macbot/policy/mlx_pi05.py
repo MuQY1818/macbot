@@ -422,6 +422,8 @@ class PI05MLX:
             def finish():
                 raw = np.array(x[..., :dim], dtype=np.float32)
                 action = self.post(self.torch.from_numpy(raw)).numpy()
+                if not np.isfinite(action).all():
+                    raise RuntimeError("MLX PI05 produced nonfinite actions")
                 return (action[0], raw[0]) if return_raw else action[0]
 
             return finish() if stage is None else stage("readback_unnormalise", finish)
