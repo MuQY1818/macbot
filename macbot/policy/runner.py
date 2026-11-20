@@ -20,7 +20,7 @@ import re
 import sys
 import threading
 import time
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
@@ -30,7 +30,9 @@ from .. import web
 from ..cameras import open_cameras
 from ..cameras.framing import check_framing, framing, training_framing
 from ..config import Config
+from ..data.motor_health import diagnostic_path, motor_arrays, record_motor_meta
 from ..i18n import tr
+from ..safety import MotorWatch, timed_events
 from ..system import ensure_dir, expand, give_back, start_log
 from ..viz.rollouts import Store, serve_rollouts
 from .executors import AsyncChunk, Ensemble, Step, SyncChunk
@@ -113,6 +115,7 @@ class State:
         self.executor = ""
         self.gripper, self.robot_info, self.limits = None, {}, {}
         self.binary_gripper = False
+        self.watch = MotorWatch(cfg["safety"])
 
     def next_idx(self):
         ids = [int(m.group(1)) for p in self.out.glob("rollout_*.npz") if (m := re.search(r"_(\d+)\.npz$", p.name))]
@@ -176,7 +179,7 @@ class State:
     def log_chunk(self, t_chunk, ms, **extra):
         """Called by executors after every inference."""
         with self.lock:
-            if self.takeover and self.mode != "running":
+            if self.watch.trip or (self.takeover and self.mode != "running"):
                 return
             self.infer_ms.append(ms)
             if extra.get("switched", 1):
@@ -204,12 +207,19 @@ class State:
                     "recording": r is not None, "hand_marks": len(r["hand_marks"]) if r else 0,
                     "takeover_enabled": self.takeover, "align_deg": self.align_deg, "alignment": self.alignment,
                     "gripper_alignment": self.gripper_alignment, "gripper": self.gripper,
-                    "saved_revision": self.saved_revision, "replay_ready": self.replay_ready(), "next": self.next}
+                    "saved_revision": self.saved_revision, "replay_ready": self.replay_ready(), "next": self.next,
+                    "motor_health": self.watch.status()}
+
+    def new_record(self, now):
+        return {"q": [], "cmd": [], "t": [], "chunk": [], "chunk_t": [], "infer_ms": [], "gp": [], "gp_ahead": [],
+                "t0": now, "takeover": [], "leader": [], "takeover_count": 0, "takeover_seconds": 0.0,
+                "hand_marks": [], "motor": [], "watchdog_events": [], **{f"{c}_jpg": [] for c in self.cam_names}}
 
 
 def save_rollout(st: State, rec: dict, result: str):
-    p = st.out / f"rollout_{st.next_idx():03d}.npz"
-    arrs = {}
+    p = (diagnostic_path(st.out, "rollout") if result == "watchdog"
+         else st.out / f"rollout_{st.next_idx():03d}.npz")
+    arrs = motor_arrays(rec["motor"], len(st.joints))
     for c in st.cam_names:
         js = rec[f"{c}_jpg"]
         arrs[f"{c}_offsets"] = np.cumsum([0] + [len(j) for j in js]).astype(np.int64)
@@ -223,7 +233,9 @@ def save_rollout(st: State, rec: dict, result: str):
             "camera_framing": framing(st.cfg["cameras"], fps),
             "saved_at": time.strftime("%Y-%m-%d %H:%M:%S"), "fake": a.fake, "writer": "macbot"}
     meta.update(hand_marks=rec["hand_marks"], takeover_count=rec["takeover_count"],
-                takeover_seconds=round(rec["takeover_seconds"], 3), binary_gripper=st.binary_gripper)
+                takeover_seconds=round(rec["takeover_seconds"], 3), binary_gripper=st.binary_gripper,
+                safety=st.cfg["safety"])
+    record_motor_meta(rec, meta)
     if "grasp_miss" in st.cfg["robot"]:
         meta["grasp_miss_profile"] = st.cfg["robot"]["grasp_miss"]
     if st.takeover:
@@ -232,7 +244,8 @@ def save_rollout(st: State, rec: dict, result: str):
         arrs["leader"] = np.asarray(rec["leader"], np.float32)
     ex = {k: np.asarray(v, np.float64) for k, v in rec.items() if k.startswith("ex_")}
     tmp = p.with_suffix(".tmp.npz")
-    np.savez(tmp, qpos=np.asarray(rec["q"], np.float32), cmd=np.asarray(rec["cmd"], np.float32),
+    shape = (len(rec["t"]), len(st.joints))
+    np.savez(tmp, qpos=np.asarray(rec["q"], np.float32).reshape(shape), cmd=np.asarray(rec["cmd"], np.float32).reshape(shape),
              t=np.asarray(rec["t"], np.float64), chunk_id=np.asarray(rec["chunk"], np.int32),
              chunk_t=np.asarray(rec["chunk_t"], np.float64), infer_ms=np.asarray(rec["infer_ms"], np.float32),
              gp=np.asarray(rec["gp"], np.float32), gp_ahead=np.asarray(rec.get("gp_ahead", []), np.float32), meta=json.dumps(meta, ensure_ascii=False), **ex, **arrs)
@@ -349,10 +362,11 @@ def _control(st, srv, fps, gripper, cleanup):
     robot = (open_robot(cfg["robot"], fake=args.fake, leader=True, fresh_leader=True) if st.takeover
              else open_robot(cfg["robot"], fake=args.fake))
     started = False
-    cleanup.callback(lambda: robot.shutdown(moved=started))
+    cleanup.callback(lambda: robot.shutdown(moved=started and st.watch.trip is None))
     names, n_j = robot.joints, len(robot.joints)
     with st.lock:
         st.joints, st.gripper = names, robot.gripper
+        st.watch.set_joints(names, robot.gripper)
         st.q = st.cmd = [0.0] * n_j
     gi = robot.gripper_index
     backend = policy_backend(cfg, args)
@@ -433,6 +447,7 @@ def _control(st, srv, fps, gripper, cleanup):
     st.limits = {n: list(v) for n, v in robot.limits.items()}
     home = robot.home_pose()
     cmd = robot.read()                                    # start from the measured pose
+    sent_v = list(cmd)
     st.q, st.cmd = list(cmd), list(cmd)
     hz = rc["hz"]
     dt = 1.0 / hz
@@ -469,6 +484,8 @@ def _control(st, srv, fps, gripper, cleanup):
     home_t0 = 0.0
     catch_t0 = None                                       # set while the follower catches up with the leader
     leader_lost = None                                    # when the leader signal dropped while following
+    writer = cleanup.enter_context(ThreadPoolExecutor(max_workers=1, thread_name_prefix="watchdog"))
+    diagnostic = None
 
     def say(en, zh, mode=None):
         with st.lock:
@@ -495,12 +512,55 @@ def _control(st, srv, fps, gripper, cleanup):
                 with st.lock:
                     st.want = auto.pop(0)[1]
             want = st.take_command()
+            if want == "quit" and st.watch.trip:
+                break
+            q = robot.read()
+            motors = robot.motor_telemetry()
+            trip_record = None
+            with st.lock:
+                st.q = q
+                was_tripped = st.watch.trip is not None
+                events = st.watch.update(time.perf_counter(), q, sent_v, motors, home=home,
+                                         holding=st.mode in ("paused", "aligning") or leader_lost is not None)
+                if events and st.rec is not None:
+                    st.rec["watchdog_events"].extend(timed_events(events, now, st.rec["t0"]))
+                if st.watch.trip and not was_tripped:
+                    st.set_mode("paused")
+                    trip_record = st.rec
+                    if trip_record is None:
+                        trip_record = st.new_record(now)
+                        trip_record["watchdog_events"] = timed_events(events, now, now)
+                    trip_record["motor_at_trip"] = motors
+                    st.rec = None
+                    st.msg = st.watch.blocked()
+            if st.watch.trip:
+                # Rebase before archival or any operator command can act on the old target.
+                try:
+                    sent_v = robot.hold(st.watch.pose, q) if not st.sim else list(st.watch.pose)
+                finally:
+                    if trip_record is not None:
+                        print(st.msg["en"], flush=True)
+                        diagnostic = writer.submit(save_rollout, st, trip_record, "watchdog")
+                with st.lock:
+                    st.cmd = sent_v
+                if not was_tripped and getattr(ex, "active", True):
+                    ex.reset(False)
+                if want == "quit":
+                    break
+                time.sleep(max(0.0, dt - (time.perf_counter() - tick)))
+                continue
             if want == "quit":
                 break
+            if (want == "start" or (want == "takeover" and st.mode in TAKEOVER_MODES)) and st.watch.blocked():
+                with st.lock:
+                    st.msg = st.watch.blocked()
+                want = None
             if st.sim and want in ("start", "home"):
                 if st.rec is None:
                     robot.reset_scene()
-                    cmd = robot.read()
+                    q = cmd = robot.read()
+                    motors, sent_v = robot.motor_telemetry(), list(cmd)
+                    st.watch.reset_motion()
                     with st.lock:
                         st.q, st.cmd = list(cmd), list(cmd)
                     now = time.time()
@@ -521,10 +581,7 @@ def _control(st, srv, fps, gripper, cleanup):
                     with st.lock:
                         if st.rec is None:
                             chunk_id, gp_last, gp_ahead, next_rec = -1, float("nan"), float("nan"), now
-                            st.rec = {"q": [], "cmd": [], "t": [], "chunk": [], "chunk_t": [], "infer_ms": [], "gp": [],
-                                      "gp_ahead": [],
-                                      "t0": now, "takeover": [], "leader": [], "takeover_count": 0,
-                                      "takeover_seconds": 0.0, "hand_marks": [], **{f"{c}_jpg": [] for c in st.cam_names}}
+                            st.rec = st.new_record(now)
                         if st.rec["takeover_count"] and gripper is not None:
                             gripper.sync(cmd[gi])
                     restart_policy()
@@ -539,10 +596,6 @@ def _control(st, srv, fps, gripper, cleanup):
                 if stalled or (st.sim and robot.ended):
                     say("Cannot resume the policy. Trial paused.", "暂时无法恢复策略，试验已暂停。", "paused")
                 else:
-                    # Read the current follower pose before allowing a background observation.
-                    q = robot.read()
-                    with st.lock:
-                        st.q = q
                     if gripper is not None:
                         gripper.sync(cmd[gi])
                     say("Policy running. Space pauses.", "策略运行中。空格暂停。", "running")
@@ -583,9 +636,6 @@ def _control(st, srv, fps, gripper, cleanup):
             if mode != "running" and getattr(ex, "active", True):
                 ex.reset(False)
 
-            q = robot.read()
-            with st.lock:
-                st.q = q
             leader = (leader_reader.get() if leader_reader else leader_pose(robot)) if st.takeover and mode in TRIAL_MODES else None
             target = list(cmd)
             if mode == "running":
@@ -674,6 +724,7 @@ def _control(st, srv, fps, gripper, cleanup):
                 rec["chunk"].append(chunk_id)
                 rec["gp"].append(gp_last)
                 rec["gp_ahead"].append(gp_ahead)
+                rec["motor"].append(motors)
                 if st.takeover:
                     # While the follower catches up or holds through a dropout, the motion is not the operator's.
                     rec["takeover"].append(TAKEOVER_MODES["aligning"] if catching else TAKEOVER_MODES.get(mode, 0))
@@ -687,4 +738,7 @@ def _control(st, srv, fps, gripper, cleanup):
         st.quit = True
         if isinstance(ex, threading.Thread):
             ex.join(timeout=2)
+        if diagnostic is not None:
+            name, _ = diagnostic.result()
+            print(f"watchdog diagnostic saved: {st.out / 'watchdog' / name}", flush=True)
         print("done", flush=True)
