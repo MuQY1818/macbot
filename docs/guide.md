@@ -233,6 +233,22 @@ class MyExecutor(Executor):
 `AsyncChunk.accept()` is the hook for deciding whether, and at which step, to switch to a newly inferred
 chunk. Subclass it to try new switching rules without touching the control loop.
 
+### Measuring progress regression at chunk switches
+
+The arm lags its command by a few control steps, so a policy that plans from the measured arm can return a
+chunk that starts behind the current command. To measure this, `chunk`, `async` and `rtc` save every switch in
+the trial: the new chunk (`ex_chunk`), the chunk it replaces (`ex_prev`, NaN for the first chunk), the index of
+the old chunk that the new chunk's first action replaces (`ex_p`), the index at which the new chunk starts to run
+(`ex_entry`) and the measured state the policy saw (`ex_q_obs`). This adds about 1 MB per minute of trial.
+
+```bash
+python tools/chunk_shift.py ~/macbot-data/rollouts/<task>
+```
+
+prints, per trial and per execution scheme, the shift `delta_hat` that best aligns each new chunk with the old
+one (positive: the new chunk starts behind the command), once over the first 10 actions and once after the
+prefix that `rtc` guides onto the old chunk, together with the tracking lag between command and measured arm.
+
 ## 6. Review
 
 ```bash

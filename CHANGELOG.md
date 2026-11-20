@@ -11,6 +11,7 @@ All notable changes to macbot will be documented here. This project follows
 
 ### Added
 
+- `chunk`, `async` and `rtc` runs save the chunks at every switch, and `tools/chunk_shift.py` measures how far each new chunk starts behind the current command.
 - `run` and `collect` record follower motor feedback and show temperatures in the joint panel. The default
   watchdog holds the measured pose on a motor fault, high temperature or sustained arm tracking error, and
   archives the interruption separately. `health` reports motor maxima and watchdog events.
