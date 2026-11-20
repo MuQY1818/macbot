@@ -96,9 +96,9 @@ class UVCCamera(_Latest):
         super().__init__()
         crop = crop or [0, 0, 0, 0]
         uid = unique_id if exact else resolve_uid(unique_id)
-        self.p = subprocess.Popen([str(uvc_helper()), uid, *[str(int(v)) for v in crop], "0.92", str(fps),
-                                   *map(str, mode or ())],
-                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        argv = [str(uvc_helper()), uid, *(str(int(v)) for v in crop), "0.92", str(fps),
+                *(str(int(v)) for v in (mode or ()))]
+        self.p = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         self.th = threading.Thread(target=self._loop, daemon=True)
         self.th.start()
         try:

@@ -88,6 +88,7 @@ final class Out: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
 }
 
 let s = AVCaptureSession()
+// Without an explicit mode, keep the legacy 1080p preset when available.
 do {
     let input = try AVCaptureDeviceInput(device: dev)
     guard s.canAddInput(input) else { fail("cannot open the selected camera", 1) }
@@ -119,6 +120,7 @@ do {
     if let r = dev.activeFormat.videoSupportedFrameRateRanges.min(by: {
         abs($0.maxFrameRate - Double(fps)) < abs($1.maxFrameRate - Double(fps)) }) {
         let rate = Double(fps)
+        // The legacy path uses the fastest duration in the selected range.
         let duration = width == nil || rate >= r.maxFrameRate ? r.minFrameDuration :
             rate <= r.minFrameRate ? r.maxFrameDuration : CMTime(value: 1, timescale: fps)
         dev.activeVideoMinFrameDuration = duration

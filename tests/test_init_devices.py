@@ -1,9 +1,11 @@
+import io
 import sys
 from types import SimpleNamespace
 
 import pytest
 
 from macbot.cameras.discovery import Camera, discover_cameras
+from macbot.config import load
 from macbot.robot.usb import (
     Adapter,
     calibration_id,
@@ -98,6 +100,31 @@ def test_camera_discovery_ignores_iphone_and_uses_reported_modes():
     assert cams[0].config()["expect_size"] == [1280, 720]
     assert cams[0].config()["save_size"] == [640, 360]
     assert cams[1].config()["serial"] == "G1"
+
+
+@pytest.mark.parametrize(("mode_yaml", "mode_args"), [("", []), ("    expect_size: [1920.0, 1080.0]\n", ["1920", "1080"])])
+def test_uvc_helper_accepts_float_crop_and_mode_from_yaml(tmp_path, monkeypatch, mode_yaml, mode_args):
+    from macbot import cameras
+
+    path = tmp_path / "camera.yaml"
+    path.write_text(
+        "cameras:\n  top:\n    type: uvc\n    unique_id: demo\n    exact_id: true\n"
+        "    crop: [625.0, 140.0, 1610.0, 1080.0]\n" + mode_yaml,
+    )
+    calls = []
+
+    def popen(argv, **_):
+        calls.append(argv)
+        return SimpleNamespace(stdout=io.BytesIO(), stderr=io.BytesIO(), poll=lambda: 0)
+
+    monkeypatch.setattr(cameras, "uvc_helper", lambda: "fake-uvc-helper")
+    monkeypatch.setattr(cameras.subprocess, "Popen", popen)
+    monkeypatch.setattr(cameras.UVCCamera, "_wait_first", lambda *a, **kw: None)
+    cam = cameras.open_cameras(load(path)["cameras"], 30, fake=False)["top"]
+    try:
+        assert calls == [["fake-uvc-helper", "demo", "625", "140", "1610", "1080", "0.92", "30", *mode_args]]
+    finally:
+        cam.close()
 
 
 def test_orbbec_inventory_uses_sdk_serials_and_color_modes(monkeypatch):
