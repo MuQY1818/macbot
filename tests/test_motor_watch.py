@@ -65,7 +65,7 @@ def test_collect_start_requires_cooling(tmp_path):
         assert (st.phase == "recording") == (temp < 55)
 
 
-@pytest.mark.parametrize("sample", [MotorSample(71), MotorSample(40, status=16), MotorSample(fault=0x10000)])
+@pytest.mark.parametrize("sample", [MotorSample(71), MotorSample(40, status=4), MotorSample(fault=0x10000)])
 def test_motor_alarm_is_immediate_and_latched(sample):
     w = watch()
     w.update(1, [4, 5], [4, 5], (UNKNOWN, sample))
@@ -163,7 +163,7 @@ def test_run_trips_during_alignment_and_archives(tmp_path, monkeypatch, capsys):
         runner._control(st, offline_server(), 60, None, cleanup)
     assert commands[4][0] > 1
     assert commands[5:] == [[-5., 0.]] * 4
-    assert shutdown == [False]
+    assert shutdown == [True]  # quitting after a trip still returns to zero slowly
     assert not list(tmp_path.glob("rollout_*.npz"))
     diag, = (tmp_path / "watchdog").glob("*.npz")
     with np.load(diag) as z:
@@ -212,7 +212,7 @@ def test_collect_stops_leader_and_archives_interrupted_episode(tmp_path, monkeyp
     monkeypatch.setattr(robots, "open_robot", lambda *a, **k: Arm(JOINTS, {}, "fake"))
     monkeypatch.setattr(server, "open_cameras", lambda *a: {})
     server._control(st, offline_server(), cfg["teleop"])
-    assert shutdown == [False]
+    assert shutdown == [True]  # quitting after a trip still returns to zero slowly
     assert commands[9:] == [[-2., 0.]] * 3
     assert not st.files()
     diag, = (tmp_path / "watchdog").glob("*.npz")
@@ -222,3 +222,18 @@ def test_collect_stops_leader_and_archives_interrupted_episode(tmp_path, monkeyp
         meta = json.loads(str(z["meta"]))
         assert meta["result"] == "watchdog" and not meta["check"]["ok"]
         assert meta["watchdog_events"][0]["status"] == 1
+
+
+def test_gripper_stall_is_not_a_fault_but_arm_stall_is():
+    from macbot.robot.telemetry import MotorSample
+    from macbot.safety import MotorWatch
+
+    cfg = {"enabled": True, "track_deg": 8, "track_s": .3, "hold_warn_s": 30,
+           "temp_warn_c": 60, "temp_alarm_c": 70, "temp_resume_c": 55}
+    watch = MotorWatch(cfg)
+    watch.set_joints(["a", "gripper"], "gripper")
+    ok, stall = MotorSample(40.0, None, 0.0, 0, 0, 0), MotorSample(40.0, None, 0.0, 1 << 4, 0, 0)
+    assert watch.update(0.0, [0, 0], [0, 0], (ok, stall)) == []
+    assert watch.trip is None
+    events = watch.update(0.01, [0, 0], [0, 0], (stall, ok))
+    assert events and events[0]["kind"] == "fault" and events[0]["joint"] == "a"

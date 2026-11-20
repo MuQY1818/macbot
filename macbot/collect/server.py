@@ -450,7 +450,7 @@ def _control(st, srv, T, open_browser=False):
     finally:
         st.quit = True
         try:
-            robot.shutdown(moved=started and st.watch.trip is None)
+            robot.shutdown(moved=started)
         finally:
             for c in st.cams.values():
                 c.close()

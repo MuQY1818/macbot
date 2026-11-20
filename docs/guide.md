@@ -73,8 +73,9 @@ A reported fault bit, temperature above `safety.temp_alarm_c` (70 °C), or arm j
 above `safety.track_deg` (8°) for more than `safety.track_s` (0.3 s) stops the policy or teleoperation.
 The comparison uses the last command actually sent, and excludes the gripper. The watchdog commands
 the measured pose at the time of the trip and locks motion commands for the session. A motor that
-has lost torque may not hold the pose. Support the arm if needed, inspect the cause, then restart;
-quit after a trip disables the follower without the usual return to zero.
+has lost torque may not hold the pose. Support the arm if needed, inspect the cause, then restart.
+Quitting still returns to zero slowly, so the arm does not drop when the motors are disabled. A stalled
+gripper is not a fault: holding an object stalls it by design.
 
 The three temperature settings are conservative macbot thresholds. The
 [RS-06 manual](https://files.seeedstudio.com/products/RobStride/Product%20Literature/RS06/RS06User%20Manual251112.pdf)

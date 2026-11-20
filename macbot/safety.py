@@ -5,6 +5,8 @@ import math
 
 from .i18n import tr
 
+STALL_BIT = 1 << 4                    # MotorBridge RobStride status: bit 4 = stall
+
 
 class MotorWatch:
     def __init__(self, config):
@@ -18,7 +20,7 @@ class MotorWatch:
             setattr(self, key, value)
         if not self.temp_resume_c < self.temp_warn_c < self.temp_alarm_c:
             raise SystemExit("safety temperatures must be ordered: resume < warning < alarm")
-        self.names, self.arm = (), ()
+        self.names, self.arm, self.gripper = (), (), None
         self.samples = ()
         self.above = {}
         self.hot = {}
@@ -30,6 +32,7 @@ class MotorWatch:
     def set_joints(self, names, gripper):
         self.names = tuple(names)
         self.arm = tuple(i for i, n in enumerate(names) if n != gripper)
+        self.gripper = gripper
 
     def reset_motion(self):
         self.above.clear()
@@ -58,7 +61,7 @@ class MotorWatch:
                     else:
                         self.hot[name] = temp
             if self.trip is None:
-                if motor.status or motor.fault:
+                if self.fault_status(name, motor) or motor.fault:
                     trips.append(dict(kind="fault", joint=name, status=motor.status, fault=motor.fault,
                                       warning=motor.warning))
                 if temp is not None and temp > self.temp_alarm_c:
@@ -90,6 +93,11 @@ class MotorWatch:
             events.append(dict(kind="static_hold", sustained_s=tick - self.hold_since))
         return events
 
+    def fault_status(self, name, motor):
+        """RobStride status bits that count as a fault. A gripper holding an object is stalled by design."""
+        status = motor.status or 0
+        return status & ~STALL_BIT if name == self.gripper else status
+
     def blocked(self):
         if self.trip:
             return trip_message(self.trip)
@@ -101,9 +109,9 @@ class MotorWatch:
 
     def status(self):
         temps = [m.hottest for m in self.samples]
-        levels = ["alarm" if m.status or m.fault or (t is not None and t > self.temp_alarm_c)
+        levels = ["alarm" if self.fault_status(n, m) or m.fault or (t is not None and t > self.temp_alarm_c)
                   else "warning" if m.warning or (t is not None and t > self.temp_warn_c)
-                  else "" for m, t in zip(self.samples, temps, strict=True)]
+                  else "" for n, m, t in zip(self.names, self.samples, temps, strict=True)]
         return {"temp_c": temps, "levels": levels, "blocked": self.blocked(), "tripped": self.trip is not None,
                 "rest": tr("Move to the start pose to rest the motors.", "请回到起始姿态，让电机休息。") if self.rest else None}
 
@@ -119,8 +127,8 @@ def trip_message(event):
     else:
         detail = f"{event['error_deg']:.1f}°"
         en, zh = f"sustained tracking error {detail}", f"持续跟踪误差 {detail}"
-    return tr(f"Motor watchdog stopped motion: {name}, {en}. Holding the measured pose. Inspect before restarting.",
-              f"电机监控已停止运动：{name}，{zh}。已切换为保持实测姿态。请检查后重启。")
+    return tr(f"Motor watchdog stopped motion: {name}, {en}. Holding the measured pose. Inspect before restarting; quitting returns to zero slowly.",
+              f"电机监控已停止运动：{name}，{zh}。已切换为保持实测姿态。请检查后重启；退出时仍会慢速回零。")
 
 
 def timed_events(events, now, t0):

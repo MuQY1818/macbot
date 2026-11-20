@@ -362,7 +362,7 @@ def _control(st, srv, fps, gripper, cleanup):
     robot = (open_robot(cfg["robot"], fake=args.fake, leader=True, fresh_leader=True) if st.takeover
              else open_robot(cfg["robot"], fake=args.fake))
     started = False
-    cleanup.callback(lambda: robot.shutdown(moved=started and st.watch.trip is None))
+    cleanup.callback(lambda: robot.shutdown(moved=started))
     names, n_j = robot.joints, len(robot.joints)
     with st.lock:
         st.joints, st.gripper = names, robot.gripper
