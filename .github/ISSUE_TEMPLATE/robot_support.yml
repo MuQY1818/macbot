@@ -1,0 +1,31 @@
+name: Robot support request
+description: Request support for a robot arm or its teleoperator.
+labels: ["enhancement"]
+body:
+  - type: input
+    id: model
+    attributes:
+      label: Robot and leader models
+      description: Include the follower model and the leader or teleoperator, if relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: driver
+    attributes:
+      label: LeRobot driver and control interface
+      description: Link to the upstream driver if one exists. Include device types, connection type, joint action format and calibration requirements.
+    validations:
+      required: true
+  - type: textarea
+    id: workflow
+    attributes:
+      label: Requested workflow
+      description: Which parts should work (collection, inference, or both)? What happens with the generic profile today?
+    validations:
+      required: true
+  - type: checkboxes
+    id: validation
+    attributes:
+      label: Validation
+      options:
+        - label: I can help validate this arm on hardware.

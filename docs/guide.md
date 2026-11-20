@@ -3,6 +3,8 @@
 [中文](guide_zh.md)
 
 All paths below assume the default `data_root: ~/macbot-data` and a task called `cubes_to_box`.
+The commands with `sudo` use the reference Orbbec camera. For generic arms with UVC cameras, use
+`macbot --config my.yaml <command>` as a normal user. See [setup](setup.md#lerobot-arms-with-uvc-cameras).
 
 ```
 ~/macbot-data/
@@ -38,14 +40,15 @@ These problems are flagged as warnings:
 - a joint jumping more than `checks.max_joint_step_deg` in one frame
 - more than `checks.max_late_ratio` late samples
 
-**Quit & home** (or Ctrl-C) brings the follower back to zero in two slow stages, then disables it.
+**Quit & home** (or Ctrl-C) returns the reference reBot to zero in two stages. For a generic
+LeRobot arm it returns to the starting pose, then disconnects.
 
 ### Episode format
 
 | Key | Shape | Content |
 |---|---|---|
-| `qpos` | (N, 7) | measured follower joints, degrees |
-| `action` | (N, 7) | command sent to the follower (gripper: leader reading) |
+| `qpos` | (N, J) | measured follower joints in robot units; J is the joint count |
+| `action` | (N, J) | joint commands (reference reBot gripper: leader reading before the clamp) |
 | `timestamp` | (N,) | k / fps, the fixed sampling grid |
 | `wall_time` | (N,) | actual sampling time |
 | `<cam>_jpeg`, `<cam>_offsets` | | JPEG stream; frame i is `jpeg[off[i]:off[i+1]]` |
@@ -69,7 +72,7 @@ For every episode the report lists:
 ## 3. Export
 
 ```bash
-macbot export                              # gripper action = leader angle
+macbot export                              # keep the recorded actions in robot units
 macbot export --gripper binary             # gripper action = 0 (open) / 1 (closed), writes gripper.json
 ```
 
@@ -142,7 +145,7 @@ Executors live in `macbot/policy/executors.py` and share a four-method interface
 class MyExecutor(Executor):
     def start(self): ...                  # start threads, if any
     def reset(self, active: bool): ...    # drop chunks; active=True: plan from the current observation
-    def target(self, now: float): ...     # -> (joint target (7,), chunk id) or (None, id)
+    def target(self, now: float): ...     # -> (joint target, chunk id) or (None, id)
     def describe(self) -> str: ...
 ```
 
@@ -158,8 +161,31 @@ macbot video ~/macbot-data/rollouts/cubes_to_box/rollout_003.npz --height 720
 
 `macbot bench --policy DIR` times inference on this Mac with blank images.
 
-## Simulated hardware
+## Fake hardware
 
 `collect`, `run` and every page work with `--fake`: a first-order-lag arm and synthetic cameras. With
 `run --fake` the policy is real, so it is a full check of loading, compilation and the executors before
 you touch the robot. `--autostart SECONDS` runs, saves a trial and quits on its own.
+Fake recordings go under `<task>_fake`; pass `export --data` or `health --data` to read that
+directory, and use `replay --dir` for fake rollouts. For unlisted followers, set `robot.joints`
+to the ordered joint names when using `--fake`.
+
+## Simulation
+
+Install the [MuJoCo extra](setup.md#local-mujoco-simulator) and use the same config throughout:
+
+```bash
+macbot --config configs/so101_sim.yaml collect
+macbot --config configs/so101_sim.yaml health
+macbot --config configs/so101_sim.yaml export
+macbot --config configs/so101_sim.yaml run --policy path/to/pretrained_model
+macbot --config configs/so101_sim.yaml replay
+```
+
+Press **S** to reset the scene and record the scripted leader's motion. This is pipeline test data;
+the script does not solve the task. The saved episode can be replayed in the collection console.
+For policy runs, use a checkpoint with six joint state/action values in the same order and units,
+and with matching camera keys and sizes (`front` and `wrist`, both 320×240 for the example).
+**Start** resets the scene for a new trial. **Pause** freezes it; save or discard the trial
+before using **Reset scene**. `--autostart SECONDS` also works in simulation.
+Keep simulated and hardware data in separate task folders.

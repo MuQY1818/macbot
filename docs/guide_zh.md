@@ -3,6 +3,7 @@
 [English](guide.md)
 
 下文默认 `data_root: ~/macbot-data`，任务名为 `cubes_to_box`。
+带 `sudo` 的命令用于 Orbbec 参考配置。通用机械臂只使用 UVC 相机时，可用普通用户运行 `macbot --config my.yaml <command>`，见[安装指南](setup_zh.md#lerobot-机械臂与-uvc-相机)。
 
 ```
 ~/macbot-data/
@@ -35,14 +36,14 @@ sudo -E $(which python) -m macbot.cli --config my.yaml collect
 - 某个关节一帧内跳变超过 `checks.max_joint_step_deg`
 - 迟到采样比例超过 `checks.max_late_ratio`
 
-点“结束并回零”或按 Ctrl-C，从臂会分两段慢速回零，然后失能。
+点“结束并回零”或按 Ctrl-C，参考 reBot 从臂会分两段慢速回零。通用 LeRobot 从臂会回到连接时的姿态，然后断开。
 
 ### 数据格式
 
 | 键 | 形状 | 内容 |
 |---|---|---|
-| `qpos` | (N, 7) | 从臂实测关节角，单位度 |
-| `action` | (N, 7) | 发给从臂的指令（夹爪取主臂读数） |
+| `qpos` | (N, J) | 从臂实测关节位置，采用设备单位；J 为关节数 |
+| `action` | (N, J) | 发给从臂的关节指令（参考 reBot 的夹爪取限制前的主臂读数） |
 | `timestamp` | (N,) | k / fps，固定采样网格 |
 | `wall_time` | (N,) | 实际采样时刻 |
 | `<cam>_jpeg`、`<cam>_offsets` | | JPEG 流，第 i 帧是 `jpeg[off[i]:off[i+1]]` |
@@ -131,7 +132,7 @@ sudo -E $(which python) -m macbot.cli run --policy ~/policies/cubes_pi05/004000 
 class MyExecutor(Executor):
     def start(self): ...                  # 如果有线程，在这里启动
     def reset(self, active: bool): ...    # 清空动作块；active=True 时从当前观测重新规划
-    def target(self, now: float): ...     # 返回 (关节目标 (7,), 块编号)，或 (None, 编号)
+    def target(self, now: float): ...     # 返回 (关节目标, 块编号)，或 (None, 编号)
     def describe(self) -> str: ...
 ```
 
@@ -146,6 +147,22 @@ macbot video ~/macbot-data/rollouts/cubes_to_box/rollout_003.npz --height 720
 
 `macbot bench --policy DIR` 用空白图像测这台 Mac 上的推理耗时。
 
-## 模拟硬件
+## 假硬件模式
 
 `collect`、`run` 和所有网页都支持 `--fake`：机械臂用一阶滞后模型模拟，相机用合成画面代替。`run --fake` 时策略是真的在推理，所以能在碰真机之前完整检查加载、编译和执行器。`--autostart 秒数` 会自动运行一段时间、保存一次试验，然后退出。
+
+假硬件数据写入 `<任务名>_fake`。通过 `export --data`、`health --data` 或 `replay --dir` 指定对应的目录。未内置关节列表的从臂可通过 `robot.joints` 按顺序给出关节名。
+
+## 物理仿真
+
+安装 [MuJoCo 依赖](setup_zh.md#本地-mujoco-仿真)，各步骤使用同一个配置：
+
+```bash
+macbot --config configs/so101_sim.yaml collect
+macbot --config configs/so101_sim.yaml health
+macbot --config configs/so101_sim.yaml export
+macbot --config configs/so101_sim.yaml run --policy path/to/pretrained_model
+macbot --config configs/so101_sim.yaml replay
+```
+
+按 **S** 重置场景并录制脚本主臂的动作。这些数据用于测试流程，脚本不会完成任务。保存后可以在采集控制台回放。运行策略时，checkpoint 的状态和动作必须是同顺序、同单位的六维关节值，相机名称和尺寸也要匹配（示例中 `front` 和 `wrist` 均为 320×240）。**开始**会为新试验重置场景，**暂停**会冻结场景；保存或丢弃当前试验后可点击**重置场景**。仿真也支持 `--autostart 秒数`。仿真与真机数据请存放在不同的任务目录。

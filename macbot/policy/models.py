@@ -1,4 +1,4 @@
-"""Policy wrappers: observation (camera images, measured joints) -> action chunk (H, 7) in degrees.
+"""Policy wrappers: observation (camera images, measured joints) -> action chunk (H, joints).
 
 Both wrappers run on Apple silicon through PyTorch MPS.
 
@@ -156,3 +156,14 @@ def load_policy(path: Path, device: str, task: str, steps: int | None = None):
     if typ == "act":
         return ACT(path, device, task)
     sys.exit(f"unsupported policy type {typ} (ACT and pi0.5 are supported)")
+
+
+def check_joint_dimensions(path: Path, joints):
+    """Check checkpoint metadata before loading weights or normalizing an observation."""
+    cfg = json.loads((path / "config.json").read_text())
+    for section, key, label in (("input_features", "observation.state", "state"),
+                                ("output_features", "action", "action")):
+        shape = ((cfg.get(section) or {}).get(key) or {}).get("shape")
+        if shape is not None and shape != [len(joints)]:
+            sys.exit(f"policy {label} dimension mismatch: checkpoint expects shape {shape}, "
+                     f"but the robot has {len(joints)} joints ({', '.join(joints)})")

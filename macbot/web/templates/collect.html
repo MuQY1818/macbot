@@ -87,8 +87,11 @@ function render(s) {
   if (!camsBuilt) buildViews(s.cam_names, s.cams);
   const rec = s.phase === "recording";
   const b = $("badge");
-  b.className = "badge " + (rec ? "rec" : (!s.ready ? "idle" : (s.fake ? "warn" : "live")));
-  b.textContent = t(rec ? "rec" : (s.ready ? (s.fake ? "simulated" : "ready") : "not_ready"));
+  $("quit").dataset.i18n = s.sim ? "quit_sim" : "quit";
+  $("quit").textContent = t($("quit").dataset.i18n);
+  const simulated = s.fake || s.sim;
+  b.className = "badge " + (rec ? "rec" : (!s.ready ? "idle" : (simulated ? "warn" : "live")));
+  b.textContent = t(rec ? "rec" : (s.ready ? (simulated ? "simulated" : "ready") : "not_ready"));
   $("timer").textContent = rec ? `${fmtTime(s.elapsed)} · ${s.frames} ${t("frames")}` : (s.saving ? t("saving") : "");
   $("views").classList.toggle("hot", rec && !replay);
   $("bStart").disabled = rec || !s.ready;

@@ -5,6 +5,7 @@
   The helper crops, encodes JPEG and stamps the capture time.
 * ``OrbbecColor``: color stream of an Orbbec Gemini 2 through ``pyorbbecsdk`` (needs sudo on macOS).
 * ``FakeCamera``: moving test pattern for ``--fake`` runs.
+* ``RobotCamera``: a rendered frame published by the simulation control loop.
 
 All share one interface: ``latest() -> (BGR image, capture time)`` and ``close()``.
 """
@@ -208,15 +209,55 @@ class FakeCamera(_Latest):
 
 
 def _source_size(c: dict) -> tuple[int, int]:
-    if c.get("crop"):
-        x0, y0, x1, y1 = c["crop"]
+    """Size of the frames a camera delivers: the crop box, or the full frame ([0, 0, 0, 0] = no crop)."""
+    if crop := _crop_box(c):
+        x0, y0, x1, y1 = crop
         return x1 - x0, y1 - y0
-    return tuple(c.get("expect_size") or (1280, 720))
+    if c["type"] == "robot":
+        return tuple(c["save_size"])
+    return tuple(c.get("expect_size") or ((1920, 1080) if c.get("type") == "uvc" else (1280, 720)))
 
 
-def open_cameras(cams_cfg: dict, fps: int, fake: bool) -> dict:
+def _crop_box(c):
+    x0, y0, x1, y1 = c.get("crop") or [0, 0, 0, 0]
+    return [x0, y0, x1, y1] if x1 > x0 and y1 > y0 else None
+
+
+class RobotCamera:
+    def __init__(self, robot, name, cfg):
+        self.robot, self.key, self.crop = robot, cfg.get("key", name), _crop_box(cfg)
+        shapes = getattr(robot, "camera_shapes", {})
+        if self.key not in shapes:
+            raise ValueError(f"camera {name}: robot observation lacks {self.key!r}; available: {', '.join(shapes)}")
+        h, w, channels = shapes[self.key]
+        if channels != 3:
+            raise ValueError(f"camera {name}: expected an HWC RGB observation")
+        if self.crop:
+            x0, y0, x1, y1 = self.crop
+            if not (0 <= x0 < x1 <= w and 0 <= y0 < y1 <= h):
+                raise ValueError(f"camera {name}: crop {self.crop} lies outside {w}x{h}")
+
+    def latest(self):
+        img, stamp = self.robot.camera_frame(self.key)
+        if img is not None and self.crop:
+            x0, y0, x1, y1 = self.crop
+            img = img[y0:y1, x0:x1]
+        return img, stamp
+
+    def age(self):
+        img, stamp = self.latest()
+        return None if img is None else time.time() - stamp
+
+    def close(self):
+        pass
+
+
+def open_cameras(cams_cfg: dict, fps: int, fake: bool, robot=None) -> dict:
     """Open every camera in the ``cameras`` config section. Closes what was opened if one fails."""
     out = {}
+    if getattr(robot, "kind", None) == "sim" and (
+            not cams_cfg or any(c["type"] != "robot" for c in cams_cfg.values())):
+        raise ValueError("simulation requires cameras with type: robot")
     try:
         for name, c in cams_cfg.items():
             if fake:
@@ -225,6 +266,8 @@ def open_cameras(cams_cfg: dict, fps: int, fake: bool) -> dict:
                 out[name] = UVCCamera(c["unique_id"], c.get("crop"), fps, name)
             elif c["type"] == "orbbec":
                 out[name] = OrbbecColor(tuple(c.get("expect_size", (1280, 720))), name)
+            elif c["type"] == "robot":
+                out[name] = RobotCamera(robot, name, c)
             else:
                 raise ValueError(f"camera {name}: unknown type {c['type']}")
     except Exception:
@@ -235,5 +278,6 @@ def open_cameras(cams_cfg: dict, fps: int, fake: bool) -> dict:
 
 
 def camera_info(cams_cfg: dict) -> dict:
-    return {k: {"type": c["type"], "unique_id": c.get("unique_id"), "crop": c.get("crop"), "size": c["save_size"]}
+    return {k: {"type": c["type"], "unique_id": c.get("unique_id"), "crop": _crop_box(c), "size": c["save_size"],
+                **({"key": c.get("key", k)} if c["type"] == "robot" else {})}
             for k, c in cams_cfg.items()}

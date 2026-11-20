@@ -39,10 +39,10 @@ class GravityModel:
     def __init__(self, urdf, sign=None):
         root = ET.parse(urdf).getroot()
         self.links = {}
-        for l in root.findall("link"):
-            i = l.find("inertial")
+        for link in root.findall("link"):
+            i = link.find("inertial")
             if i is not None:
-                self.links[l.get("name")] = (float(i.find("mass").get("value")), _f(i.find("origin").get("xyz")))
+                self.links[link.get("name")] = (float(i.find("mass").get("value")), _f(i.find("origin").get("xyz")))
         self.joints = []   # kinematic chain from base_link (gripper fingers treated as fixed)
         for j in root.findall("joint"):
             o = j.find("origin")
@@ -57,7 +57,7 @@ class GravityModel:
         """(R, p) of every link, and (world axis, world origin) of every arm joint."""
         frames = {"base_link": (np.eye(3), np.zeros(3))}
         jinfo = {}
-        qmap = dict(zip(ARM, q_urdf))
+        qmap = dict(zip(ARM, q_urdf, strict=False))
         pending = list(self.joints)
         while pending:
             for j in list(pending):

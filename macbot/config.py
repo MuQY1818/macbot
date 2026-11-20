@@ -11,15 +11,17 @@ from .system import expand
 PACKAGE = Path(__file__).resolve().parent
 DEFAULT = PACKAGE / "default.yaml"
 
-JOINTS = ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_yaw", "wrist_roll", "gripper"]
-ARM = JOINTS[:6]
 CAMERAS = ("top", "wrist")
 
 
-def _merge(base: dict, over: dict) -> dict:
+REPLACE = {"cameras"}      # sections a user file replaces as a whole instead of merging into
+
+
+def _merge(base: dict, over: dict, top: bool = True) -> dict:
     out = copy.deepcopy(base)
     for k, v in (over or {}).items():
-        out[k] = _merge(out[k], v) if isinstance(v, dict) and isinstance(out.get(k), dict) else v
+        merge = isinstance(v, dict) and isinstance(out.get(k), dict) and not (top and k in REPLACE)
+        out[k] = _merge(out[k], v, top=False) if merge else v
     return out
 
 

@@ -5,6 +5,7 @@ const esc = x => String(x).replace(/[&<>"]/g, m => ({ "&": "&amp;", "<": "&lt;",
 const I18N = {
   en: {
     quit: "Quit & home", collect: "collect", run: "run", replay: "replay", instruction: "instruction",
+    quit_sim: "Quit", reset_scene: "Reset scene", render_hold: "still frame",
     record: "Record", save: "Save", discard: "Discard", set_ins: "Set instruction", progress: "progress",
     joints: "joints", joints_hint: "bar = command · line = measured", episodes: "episodes",
     th_len: "length", th_frames: "frames", th_ins: "instruction", th_saved: "saved", th_check: "check",
@@ -31,6 +32,7 @@ const I18N = {
     th_len: "时长", th_frames: "帧数", th_ins: "指令", th_saved: "保存时间", th_check: "检查",
     no_eps: "还没有保存的数据", play: "播放", pause: "暂停", back_live: "回到实时画面", del: "删除",
     rec: "录制中", ready: "待机", simulated: "模拟", not_ready: "未就绪", connecting: "连接中",
+    quit_sim: "退出", reset_scene: "重置场景", render_hold: "静止画面",
     disconnected: "已断开", saving: "保存中…", live: "实时", no_signal: "没有画面", frames: "帧",
     saved_n: n => `共 ${n} 条`, eps_of: (a, b, f) => `${a} / ${b} 条 · ${f} fps`, data: "数据",
     crop: "裁剪", full: "全幅", ok: "通过", warn: "注意", fail: "不通过",
@@ -74,8 +76,12 @@ const JOINT_LABELS = {
   en: { shoulder_pan: "pan", shoulder_lift: "lift", elbow_flex: "elbow", wrist_flex: "w.flex", wrist_yaw: "w.yaw", wrist_roll: "w.roll", gripper: "gripper" },
   zh: { shoulder_pan: "肩转", shoulder_lift: "肩抬", elbow_flex: "肘", wrist_flex: "腕俯仰", wrist_yaw: "腕偏航", wrist_roll: "腕滚转", gripper: "夹爪" },
 };
-const jointLabel = n => (JOINT_LABELS[LANG] || JOINT_LABELS.en)[n] || n;
+const jointLabel = n => {
+  const labels = JOINT_LABELS[LANG] || JOINT_LABELS.en;
+  return Object.hasOwn(labels, n) ? labels[n] : n;
+};
 const JOINT_COLORS = ["#F2701A", "#1BA9A0", "#6E5BE8", "#D93C3C", "#D9A21B", "#1F9D63", "#8A8597"];
+const jointColor = j => JOINT_COLORS[j] ?? `hsl(${(j * 137.5) % 360} 65% 48%)`;
 const fmtTime = t => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, "0")}`;
 
 async function post(url, body) {
@@ -96,9 +102,9 @@ function layoutViews(el, names, sizeOf) {
 
 function renderJoints(el, names, q, cmd, limits) {
   el.innerHTML = names.map((n, i) => {
-    const [lo, hi] = (limits && limits[n]) || [-180, 180];
+    const [lo, hi] = limits && Object.hasOwn(limits, n) ? limits[n] : [-180, 180];
     const p = v => Math.max(0, Math.min(100, 100 * (v - lo) / (hi - lo)));
-    return `<div class="joint"><span class="name">${jointLabel(n)}</span><div class="meter">` +
+    return `<div class="joint"><span class="name">${esc(jointLabel(n))}</span><div class="meter">` +
       `<span class="cmd" style="left:${p(cmd[i])}%"></span><span class="meas" style="left:${p(q[i])}%"></span></div>` +
       `<span class="val num">${q[i].toFixed(1)}°</span></div>`;
   }).join("");
@@ -116,14 +122,16 @@ function drawTraces(svg, legend, qpos, action, names, extra = "") {
   let s = "";
   for (let j = 0; j < names.length; j++) {
     const v = qpos.map(r => r[j]), a = action.map(r => r[j]);
-    const lo = Math.min(...v, ...a), hi = Math.max(...v, ...a), span = Math.max(hi - lo, 1);
+    let lo = Infinity, hi = -Infinity;
+    for (let i = 0; i < n; i++) { lo = Math.min(lo, v[i], a[i]); hi = Math.max(hi, v[i], a[i]); }
+    const span = Math.max(hi - lo, 1), color = jointColor(j);
     const y = val => (H - 10 - (H - 20) * (val - lo) / span).toFixed(1);
-    s += `<polyline points="${a.map((val, i) => `${x(i)},${y(val)}`).join(" ")}" fill="none" stroke="${JOINT_COLORS[j]}" stroke-width="1.2" stroke-dasharray="5 4" opacity=".55" vector-effect="non-scaling-stroke"/>`;
-    s += `<polyline points="${v.map((val, i) => `${x(i)},${y(val)}`).join(" ")}" fill="none" stroke="${JOINT_COLORS[j]}" stroke-width="2" vector-effect="non-scaling-stroke"/>`;
+    s += `<polyline points="${a.map((val, i) => `${x(i)},${y(val)}`).join(" ")}" fill="none" stroke="${color}" stroke-width="1.2" stroke-dasharray="5 4" opacity=".55" vector-effect="non-scaling-stroke"/>`;
+    s += `<polyline points="${v.map((val, i) => `${x(i)},${y(val)}`).join(" ")}" fill="none" stroke="${color}" stroke-width="2" vector-effect="non-scaling-stroke"/>`;
   }
   s += extra + `<line id="cursor" x1="0" x2="0" y1="0" y2="${H}" stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke"/>`;
   svg.innerHTML = s;
-  legend.innerHTML = names.map((nm, j) => `<span style="--c:${JOINT_COLORS[j]}">${jointLabel(nm)}</span>`).join("") +
+  legend.innerHTML = names.map((nm, j) => `<span style="--c:${jointColor(j)}">${esc(jointLabel(nm))}</span>`).join("") +
     `<span style="--c:transparent">${t("legend")}</span>`;
 }
 

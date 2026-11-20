@@ -63,10 +63,10 @@ def run(args):
         vw = cv2.VideoWriter(str(out), cv2.VideoWriter_fourcc(*"mp4v"), fps, (W, h))
         write = vw.write
     n = 0
-    for imgs in zip(*streams):
+    for imgs in zip(*streams, strict=False):
         canvas = np.full((h, W, 3), BG, np.uint8)
         x = 0
-        for c, im in zip(cams, imgs):
+        for c, im in zip(cams, imgs, strict=False):
             im = _fit(im, h)
             _tag(im, c, "left")
             canvas[:, x:x + im.shape[1]] = im

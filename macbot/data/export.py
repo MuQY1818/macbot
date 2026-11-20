@@ -1,10 +1,10 @@
 """Recorded episodes (``episode_XXX.npz``) -> LeRobot dataset (v3 format, camera streams as video).
 
-Feature names match LeRobot's ``rebot_b601_follower``, so a trained policy plugs straight into
-``macbot run``:
+Feature names follow the LeRobot robot class (``<joint>.pos``), so a trained policy plugs straight
+into ``macbot run`` and into LeRobot's own tools:
 
-    observation.state            (7,)  measured follower joints, degrees
-    action                       (7,)  command sent to the follower (gripper: leader angle, or 0/1)
+    observation.state            (n,)  measured follower joints (n = the robot's joints)
+    action                       (n,)  command sent to the follower (gripper: leader value, or 0/1)
     observation.images.<camera>        one entry per configured camera
 
 ``--gripper binary`` turns the gripper action into 0 (open) / 1 (closed) with hysteresis on the leader
@@ -21,7 +21,7 @@ import sys
 import cv2
 import numpy as np
 
-from ..config import JOINTS, Config
+from ..config import Config
 from ..i18n import text
 from ..system import expand
 
@@ -38,6 +38,16 @@ def binarize(g, close_above: float, open_below: float) -> np.ndarray:
     return out
 
 
+def robot_type(meta: dict) -> str:
+    """LeRobot robot type recorded in the dataset: the follower type for generic LeRobot arms."""
+    r = meta.get("robot") or {}
+    if r.get("robot_type"):
+        return r["robot_type"]
+    if r.get("kind") == "lerobot":
+        return r["follower"]["type"]
+    return "rebot_b601_follower"
+
+
 def frames(d, cam):
     off, blob = d[f"{cam}_offsets"], d[f"{cam}_jpeg"]
     for i in range(len(off) - 1):
@@ -50,6 +60,10 @@ def _msg(items) -> str:
 
 def run(cfg: Config, args):
     binary = args.gripper == "binary"
+    ex = cfg.get("export", {})
+    for k in ("close_above", "open_below", "open_deg", "close_deg"):
+        if getattr(args, k) is None:
+            setattr(args, k, float(ex[f"gripper_{k}"]))
     name = cfg.task + ("_bin" if binary else "")
     data = expand(args.data) if args.data else cfg.raw_dir()
     out = expand(args.out) if args.out else cfg.dataset_dir(name)
@@ -77,30 +91,44 @@ def run(cfg: Config, args):
     m0 = keep[0][1]
     fps, cams = int(m0["fps"]), list(m0["cameras"])
     for p, m in keep[1:]:
-        if int(m["fps"]) != fps or any(m["cameras"].get(c, {}).get("size") != m0["cameras"][c]["size"] for c in cams):
-            sys.exit(f"{p.name}: fps or image size differs from the first episode; they cannot share a dataset")
+        if int(m["fps"]) != fps or {c: v["size"] for c, v in m["cameras"].items()} != {
+                c: v["size"] for c, v in m0["cameras"].items()}:
+            sys.exit(f"{p.name}: fps, cameras or image size differs from the first episode")
+        if (robot_type(m) != robot_type(m0) or bool(m.get("fake")) != bool(m0.get("fake"))
+                or (m.get("robot") or {}).get("semantics") != (m0.get("robot") or {}).get("semantics")):
+            sys.exit(f"{p.name}: robot or observation semantics differ from the first episode")
     with np.load(keep[0][0]) as d:
         shape = {c: next(frames(d, c)).shape for c in cams}
 
-    names = [f"{n}.pos" for n in JOINTS]
+    joints = m0.get("joint_names") or []
+    if any((m.get("joint_names") or []) != joints for _, m in keep[1:]):
+        sys.exit("episodes were recorded with different joint lists; they cannot share a dataset")
+    gi = joints.index(m0["gripper"]) if m0.get("gripper") in joints else (joints.index("gripper") if "gripper" in joints else None)
+    if binary and gi is None:
+        sys.exit("--gripper binary needs a joint named gripper")
+    rtype = robot_type(m0)
+    names = [f"{n}.pos" for n in joints]
+    dim = len(names)
     kind = "image" if args.images else "video"
-    features = {"observation.state": {"dtype": "float32", "shape": (7,), "names": names},
-                "action": {"dtype": "float32", "shape": (7,), "names": names},
+    features = {"observation.state": {"dtype": "float32", "shape": (dim,), "names": names},
+                "action": {"dtype": "float32", "shape": (dim,), "names": names},
                 **{f"observation.images.{c}": {"dtype": kind, "shape": shape[c], "names": ["height", "width", "channels"]}
                    for c in cams}}
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
     ds = LeRobotDataset.create(repo_id=repo_id, fps=fps, features=features, root=out,
-                               robot_type="rebot_b601_follower", use_videos=not args.images)
+                               robot_type=rtype, use_videos=not args.images)
     total = 0
     for p, m in keep:
         with np.load(p) as d:
             q, a = d["qpos"].astype(np.float32), d["action"].astype(np.float32)
+            if q.shape != a.shape or q.shape != (len(q), dim):
+                sys.exit(f"{p.name}: expected matching state and action arrays with {dim} joints")
             if binary:
-                a[:, 6] = binarize(a[:, 6], args.close_above, args.open_below)
+                a[:, gi] = binarize(a[:, gi], args.close_above, args.open_below)
             streams = [frames(d, c) for c in cams]
-            for i, imgs in enumerate(zip(*streams)):
-                ds.add_frame({"observation.state": q[i], "action": a[i], "task": m["instruction"],
-                              **{f"observation.images.{c}": im for c, im in zip(cams, imgs)}})
+            for qi, ai, *imgs in zip(q, a, *streams, strict=True):
+                ds.add_frame({"observation.state": qi, "action": ai, "task": m["instruction"],
+                              **{f"observation.images.{c}": im for c, im in zip(cams, imgs, strict=False)}})
         ds.save_episode()
         total += len(q)
         print(f"  {p.name}: {len(q)} frames  \"{m['instruction']}\"", flush=True)

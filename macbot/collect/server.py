@@ -6,8 +6,8 @@ be replayed (all cameras plus joint traces) or deleted (moved to ``deleted/``, n
 Each save runs quality checks (frame age, repeated frames, joint jumps, late samples).
 
 Episode file ``<data_root>/raw/<task>/episode_XXX.npz``:
-  qpos (N,7)      follower measured joints, degrees
-  action (N,7)    command sent to the follower (gripper: leader value before the force clamp)
+  qpos (N,J)      follower measured joints, in robot units
+  action (N,J)    command sent to the follower (reBot gripper: leader value before the force clamp)
   timestamp (N,)  k / fps (fixed grid); wall_time (N,) actual sampling time
   <cam>_jpeg, <cam>_offsets   JPEG stream per camera, frame i = jpeg[off[i]:off[i+1]]
   <cam>_age, <cam>_repeat     age of the frame at sampling time; same frame as the previous sample
@@ -27,9 +27,9 @@ import numpy as np
 
 from .. import web
 from ..cameras import camera_info, open_cameras
-from ..config import ARM, JOINTS, Config
-from ..system import ensure_dir, give_back, start_log
+from ..config import Config
 from ..i18n import text, tr
+from ..system import ensure_dir, expand, give_back, start_log
 from .checks import check_episode
 
 CAM_STALL_S = 0.5      # a camera without a new frame for this long counts as disconnected
@@ -38,15 +38,18 @@ CAM_STALL_S = 0.5      # a camera without a new frame for this long counts as di
 class State:
     def __init__(self, cfg: Config, out, fake: bool):
         self.cfg, self.out, self.fake = cfg, out, fake
+        self.sim = not fake and cfg["robot"].get("type") == "sim"
+        self.start_requested = False
         self.cam_names = list(cfg["cameras"])
         self.fps = int(cfg["record"]["fps"])
         self.lock = threading.Lock()
         self.phase = "idle"                 # idle | recording
         self.t0 = 0.0
         self.instruction = cfg["task"]["instruction"]
-        self.msg = tr("Put both arms at the zero pose. Teleoperation starts after the alignment check.",
-                      "两臂摆到零位后启动；对齐检查通过才开始遥操作。")
-        self.q, self.cmd = [0.0] * 7, [0.0] * 7
+        self.msg = tr("Loading simulation...", "正在加载仿真…") if self.sim else tr(
+            "Align the arms. Teleoperation starts after the alignment check.", "请对齐两条臂。对齐检查通过才开始遥操作。")
+        self.joints, self.gripper = [], None
+        self.q, self.cmd = [], []
         self.limits, self.ready, self.quit = {}, False, False
         self.buf = None
         self.saving = 0
@@ -97,16 +100,16 @@ class State:
         with self.lock:
             eps = [v[1] for _, v in sorted(self.summaries.items())][::-1]
             rec = self.phase == "recording"
-            return {"phase": self.phase, "ready": self.ready, "fake": self.fake,
+            return {"phase": self.phase, "ready": self.ready, "fake": self.fake, "sim": self.sim,
                     "elapsed": time.time() - self.t0 if rec else 0.0,
                     "frames": len(self.buf["qpos"]) if (rec and self.buf) else 0,
                     "msg": self.msg, "instruction": self.instruction, "task": self.cfg.task,
                     "target": self.cfg["task"]["target_episodes"], "count": len(eps), "saving": self.saving,
-                    "q": self.q, "cmd": self.cmd, "names": JOINTS, "limits": self.limits, "episodes": eps,
+                    "q": self.q, "cmd": self.cmd, "names": self.joints, "limits": self.limits, "episodes": eps,
                     "fps": self.fps, "cams": self.cam_info, "cam_names": self.cam_names, "out": str(self.out),
                     "cam_age": ages, "stall_s": CAM_STALL_S}
 
-    def command(self, c):
+    def command(self, c, *, scene_ready=False):
         a = c.get("action")
         with self.lock:
             if a == "instruction" and self.phase == "idle":
@@ -117,6 +120,9 @@ class State:
             elif a == "start" and self.phase == "idle":
                 if not self.ready:
                     self.msg = tr("Teleoperation has not started yet.", "遥操作还没启动。")
+                    return
+                if self.sim and not scene_ready:
+                    self.start_requested = True
                     return
                 bad = self.stalled()
                 if bad:
@@ -149,18 +155,21 @@ class State:
                     self.msg = tr(f"Episode {p.stem[-3:]} moved to deleted/.", f"第 {p.stem[-3:]} 条已移到 deleted/。")
             elif a == "quit":
                 self.quit = True
-                self.msg = tr("Shutting down: the follower returns to zero slowly, then disables.", "正在结束：从臂慢速回零后失能。")
+                self.msg = (tr("Closing simulation.", "正在关闭仿真。") if self.sim else
+                            tr("Shutting down: the follower returns home, then disables.", "正在结束：从臂慢速回到起始位后失能。"))
 
     def _save(self, idx, buf, instruction):
         try:
             arr = {k: np.asarray(v) for k, v in buf.items() if not k.endswith("_jpg")}
             rc = self.cfg["record"]
-            chk = check_episode(arr, self.cam_names, self.fps, self.cfg["checks"], rc["min_episode_s"])
+            chk = check_episode(arr, self.cam_names, self.fps, self.cfg["checks"], rc["min_episode_s"],
+                                joints=self.joints, gripper=self.gripper)
             n = len(buf["qpos"])
             meta = {"task": self.cfg.task, "instruction": instruction, "fps": self.fps, "frames": n,
-                    "duration_s": round(n / self.fps, 2), "joint_names": JOINTS, "units": "deg",
+                    "duration_s": round(n / self.fps, 2), "joint_names": self.joints, "gripper": self.gripper,
+                    "units": "robot (degrees for most arm joints)",
                     "state": "follower measured position", "action": "command sent to follower (gripper: leader value)",
-                    "cameras": self.cam_info, "follower_ff": self.ff, "fake": self.fake,
+                    "cameras": self.cam_info, "robot": self.ff, "fake": self.fake,
                     "saved_at": time.strftime("%Y-%m-%d %H:%M:%S"), "check": chk, "writer": "macbot"}
             extra = {}
             for k in self.cam_names:
@@ -294,59 +303,75 @@ def make_handler(st: State):
 
 def run(cfg: Config, fake: bool = False, port: int | None = None, out=None):
     start_log(cfg.log_dir, "collect")
-    out = ensure_dir(out or (cfg.raw_dir() if not fake else cfg.raw_dir(cfg.task + "_fake")))
+    out = ensure_dir(expand(out) if out else cfg.raw_dir(cfg.task + "_fake" if fake else cfg.task))
     st = State(cfg, out, fake)
     T = cfg["teleop"]
     port = port or T["port"]
-    srv = ThreadingHTTPServer(("127.0.0.1", port), make_handler(st))   # bind first: fails fast if the port is taken
-    srv.daemon_threads = True
-    st.cams = open_cameras(cfg["cameras"], st.fps, fake)
-    Recorder(st)
-    threading.Thread(target=srv.serve_forever, daemon=True).start()
-    print(f"web page: http://127.0.0.1:{port}   data: {out}", flush=True)
+    with ThreadingHTTPServer(("127.0.0.1", port), make_handler(st)) as srv:
+        srv.daemon_threads = True
+        _control(st, srv, port, T)
 
-    from ..robot.rebot import clip_gripper
-    rcfg = cfg["robot"]
-    if fake:
-        from ..robot import FakeFollower, FakeLeader
-        robot, leader = FakeFollower(), FakeLeader()
-    else:
-        from ..robot.rebot import make_follower, make_leader
-        robot, leader = make_follower(rcfg), make_leader(leader_id=rcfg.get("leader_id", "rebot_arm_102_leader"))
-    st.ff = dict(robot.feedforward, gripper_mode=rcfg.get("gripper_mode"), gripper_lead_deg=rcfg["gripper_lead_deg"])
-    leader.connect(calibrate=False)
-    robot.connect(calibrate=False)
-    lim = robot.config.joint_limits
-    started = False
+
+def _control(st, srv, port, T):
+    from ..robot import open_robot
+    robot = open_robot(st.cfg["robot"], fake=st.fake, leader=True)
+    names = robot.joints
+    with st.lock:
+        st.joints, st.gripper = names, robot.gripper
+        st.q = st.cmd = [0.0] * len(names)
+    started = serving = False
     try:
-        a0, o0 = leader.get_action(), robot.get_observation()
-        bad = [f"{n} leader {a0[f'{n}.pos']:.0f} / follower {o0[f'{n}.pos']:.0f}" for n in ARM
-               if abs(min(max(a0[f"{n}.pos"], lim[n][0]), lim[n][1]) - o0[f"{n}.pos"]) > T["align_max_deg"]]
-        if bad and not fake:
+        if st.sim:
+            robot.check_rate(T["hz"], "teleop.hz")
+        st.cams = open_cameras(st.cfg["cameras"], st.fps, st.fake, robot)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        serving = True
+        print(f"web page: http://127.0.0.1:{port}   data: {st.out}", flush=True)
+        Recorder(st)
+        robot.connect(leader=True)
+        st.ff = robot.info()
+        a0, q0 = robot.read_leader(), robot.read()
+        bad = [f"{n} leader {a:.0f} / follower {q:.0f}" for n, a, q in zip(names, a0, q0, strict=False)
+               if n != robot.gripper and abs(robot.clamp(n, a) - q) > T["align_max_deg"]]
+        if bad and not (st.fake or st.sim):
             with st.lock:
-                st.msg = tr(f"Arms not aligned (more than {T['align_max_deg']} deg): " + "; ".join(bad) + ". Align and restart.",
-                            f"两臂没对齐（差超过 {T['align_max_deg']}°）：" + "；".join(bad) + "。对齐后重启。")
+                st.msg = tr(f"Arms not aligned (more than {T['align_max_deg']}): " + "; ".join(bad) + ". Align and restart.",
+                            f"两臂没对齐（差超过 {T['align_max_deg']}）：" + "；".join(bad) + "。对齐后重启。")
             print(st.msg["en"], flush=True)
             time.sleep(3)                   # let the page show the message
             raise SystemExit(2)
         with st.lock:
-            st.limits = {n: list(lim[n]) for n in JOINTS}
+            st.q = st.cmd = q0
+            st.limits = {n: list(robot.limits[n]) for n in names if n in robot.limits}
             st.ready = True
             st.msg = tr(f"Teleoperation running. Set up the scene and press S. {len(st.summaries)} episodes so far.",
                         f"遥操作已启动。摆好场景后按 S 开始录制。已有 {len(st.summaries)} 条。")
         started = True
-        print("teleoperation running", flush=True)
-        hz, soft, lead = T["hz"], T["soft_start_s"], float(rcfg["gripper_lead_deg"])
+        print(f"teleoperation running ({robot.kind}: {', '.join(names)})", flush=True)
+        hz, soft = T["hz"], max(0.0, T["soft_start_s"])
         t_start = time.perf_counter()
         while not st.quit:
             tick = time.perf_counter()
-            act = leader.get_action()
-            r = min(1.0, (tick - t_start) / soft)              # soft start from the follower's pose
-            act = {key: o0.get(key, v) * (1 - r) + v * r for key, v in act.items()}
-            obs = robot.get_observation()
-            sent = robot.send_action(clip_gripper(act, float(obs["gripper.pos"]), lead))
-            q = [float(obs[f"{n}.pos"]) for n in JOINTS]
-            cmd = [float(sent.get(f"{n}.pos", act[f"{n}.pos"])) for n in ARM] + [float(act["gripper.pos"])]
+            if st.sim:
+                with st.lock:
+                    reset, st.start_requested = st.start_requested, False
+                if reset:
+                    robot.reset_scene()
+                    q0, t_start = robot.read(), time.perf_counter()
+                    with st.lock:
+                        st.q = st.cmd = q0
+                    st.command({"action": "start"}, scene_ready=True)
+                    tick = t_start
+                if robot.ended:
+                    # Save the terminal frame sequence once; the next Start resets the scene.
+                    st.command({"action": "save"})
+                    time.sleep(1 / hz)
+                    continue
+            act = robot.read_leader()
+            r = min(1.0, (tick - t_start) / soft) if soft else 1.0
+            act = [q * (1 - r) + a * r for q, a in zip(q0, act, strict=False)]
+            q = robot.read()
+            cmd = robot.send(act, q)
             with st.lock:
                 st.q, st.cmd = q, cmd
             time.sleep(max(0.0, 1 / hz - (time.perf_counter() - tick)))
@@ -355,17 +380,13 @@ def run(cfg: Config, fake: bool = False, port: int | None = None, out=None):
     finally:
         st.quit = True
         try:
-            if not fake:
-                from ..robot.rebot import safe_disconnect
-                try:
-                    leader.disconnect()
-                finally:
-                    safe_disconnect(robot, go_zero=started)
+            robot.shutdown(moved=started)
         finally:
             for c in st.cams.values():
                 c.close()
             t = time.time()
             while st.saving and time.time() - t < 10:      # wait for background saves
                 time.sleep(0.1)
-            srv.shutdown()
+            if serving:
+                srv.shutdown()
             print("done", flush=True)

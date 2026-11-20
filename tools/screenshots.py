@@ -21,7 +21,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from macbot import web  # noqa: E402
-from macbot.config import JOINTS  # noqa: E402
+from macbot.robot.rebot import JOINTS  # noqa: E402
 
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 CAPTURE = True

@@ -32,7 +32,13 @@ dependencies = [
 [project.optional-dependencies]
 orbbec = ["pyorbbecsdk2"]
 pi = ["lerobot[pi]==0.7.0"]
-dev = ["pytest"]
+sim = ["mujoco==3.3.7"]
+dev = ["pytest", "pyflakes", "ruff==0.14.14", "build", "pre-commit"]
+
+[dependency-groups]
+# The hardware and model stacks are unnecessary for the default CI suite.
+test = ["numpy", "opencv-python-headless", "pyyaml", "pytest"]
+lint = ["pyflakes", "ruff==0.14.14"]
 
 [project.urls]
 Homepage = "https://github.com/MuQY1818/macbot"
@@ -48,3 +54,12 @@ include = ["macbot*"]
 
 [tool.setuptools.package-data]
 macbot = ["default.yaml", "cameras/swift/*.swift", "web/static/*", "web/static/fonts/*", "web/templates/*.html"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+# Keep existing line wrapping; use the line length above as a target for new code.
+ignore = ["E501"]

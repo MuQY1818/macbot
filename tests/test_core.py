@@ -6,11 +6,12 @@ import numpy as np
 import pytest
 
 from macbot.collect.checks import check_episode
-from macbot.config import JOINTS, load
+from macbot.config import load
 from macbot.data.export import binarize
 from macbot.i18n import text, tr
 from macbot.policy.executors import AsyncChunk, Ensemble, SyncChunk, _interp
 from macbot.policy.gripper import BinaryGripper
+from macbot.robot.rebot import JOINTS
 
 
 def test_config_defaults_and_overlay(tmp_path):
@@ -109,3 +110,22 @@ def test_threaded_executors_produce_targets(cls):
         assert ex.target(time.time())[0] is None or cls is Ensemble
     finally:
         stop.set()
+
+
+def test_cameras_section_is_replaced(tmp_path):
+    p = tmp_path / "c.yaml"
+    p.write_text("cameras: {top: {type: uvc, unique_id: '0x1', crop: [0, 0, 0, 0], save_size: [640, 360]}}\n")
+    assert list(load(p)["cameras"]) == ["top"]
+
+
+def test_fake_arm_follows_config():
+    from macbot.robot.fake import fake_for
+    r = fake_for({"type": "rebot_b601"})
+    assert r.joints == JOINTS and r.gripper == "gripper" and r.gripper_index == 6
+    r = fake_for({"type": "lerobot", "follower": {"type": "so101_follower"}, "limits": {"gripper": [0, 50]}})
+    assert len(r.joints) == 6 and r.limits["gripper"] == (0, 50)
+    r.connect(leader=True)
+    q = r.read()
+    sent = r.send([1.0] * 5 + [80.0], q)
+    assert sent[-1] == 50.0                        # clamped to the configured limit
+    assert len(r.read_leader()) == 6

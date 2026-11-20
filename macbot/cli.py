@@ -1,8 +1,9 @@
 """Command line entry point: ``macbot <command>``.
 
-    macbot doctor                 check the Mac: Python packages, MPS, PCAN driver, cameras, sudo
+    macbot doctor                 check dependencies, the configured robot and cameras
     macbot cameras                list video devices with their uniqueIDs
     macbot joints                 read leader and follower joint angles without powering anything
+    macbot robots                 list the LeRobot arm types macbot can drive (robot.type: lerobot)
     macbot collect [--fake]       teleoperate and record episodes (web page)
     macbot export                 convert recorded episodes to a LeRobot dataset
     macbot health                 per-episode tracking and timing report of recorded data
@@ -11,14 +12,13 @@
     macbot video ROLLOUT          export a rollout as a side-by-side MP4
     macbot bench --policy DIR     time policy inference on this Mac
 
-Robot commands need ``sudo -E`` on macOS (the Orbbec SDK requires root). Everything that does not
-touch the hardware runs as a normal user, and ``--fake`` simulates robot and cameras.
+On macOS the Orbbec SDK requires ``sudo -E``. Simulation, fake mode and UVC-only setups run
+without sudo when the robot driver permits it.
 """
 from __future__ import annotations
 
 import argparse
 import sys
-
 
 
 def _cfg(args):
@@ -42,28 +42,62 @@ def cmd_cameras(args):
 
 
 def cmd_joints(args):
-    from .system import preload_pcan
-    preload_pcan()
-    from .config import JOINTS
-    from .robot.rebot import make_leader, read_joints_passive
     cfg = _cfg(args)
-    leader = make_leader(leader_id=cfg["robot"].get("leader_id", "rebot_arm_102_leader"))
-    leader.connect(calibrate=False)        # leader: unlock (torque off) and reset turn counters; it does not move
-    act = leader.get_action()
-    leader.disconnect()
-    fol = read_joints_passive(cfg["robot"])
-    print(f"{'joint':14s} {'leader':>8s} {'follower':>9s} {'diff':>8s}")
-    for n in JOINTS:
-        a, f = act[f"{n}.pos"], fol[n]
-        print(f"{n:14s} {a:8.1f} {f:9.1f} {a - f:+8.1f}")
+    rcfg = cfg["robot"]
+    if rcfg.get("type") == "sim":
+        raise SystemExit("use collect or run to see simulated joints")
+    if rcfg.get("type", "rebot_b601") == "rebot_b601":
+        _preload(cfg)
+        from .robot.rebot import JOINTS, make_leader, read_joints_passive
+        leader = make_leader(leader_id=rcfg.get("leader_id", "rebot_arm_102_leader"))
+        leader.connect(calibrate=False)    # leader: unlock (torque off) and reset turn counters; it does not move
+        act = leader.get_action()
+        leader.disconnect()
+        fol = read_joints_passive(rcfg)
+        print(f"{'joint':14s} {'leader':>8s} {'follower':>9s} {'diff':>8s}")
+        for n in JOINTS:
+            a, f = act[f"{n}.pos"], fol[n]
+            print(f"{n:14s} {a:8.1f} {f:9.1f} {a - f:+8.1f}")
+        return
+    # Generic LeRobot arms: only the leader is read. Connecting a follower enables its torque, and
+    # disconnecting it again would let the arm drop, so it is not touched here.
+    from .robot.lerobot_generic import joint_names, make_leader, require_calibration
+    if not rcfg.get("leader"):
+        raise SystemExit("robot.leader is not set")
+    leader = make_leader(rcfg["leader"])
+    require_calibration(leader)
+    try:
+        leader.connect(calibrate=False)
+        act = leader.get_action()
+    finally:
+        if leader.is_connected:
+            leader.disconnect()
+    for n in joint_names(leader):
+        print(f"{n:16s} {act[f'{n}.pos']:8.1f}")
+
+
+def cmd_robots(args):
+    from .robot.lerobot_generic import known_types
+    robots, teleops = known_types()
+    print("robot.type: rebot_b601 (reference profile), sim (local simulation), or lerobot:\n")
+    print("registered follower types:", ", ".join(r for r in robots if r != "sim"))
+    print("leaders:  ", ", ".join(teleops))
+    print("\nInstall the driver extra for your robot; e.g. pip install 'lerobot[feetech]==0.7.0' for SO-100/101.")
+
+
+def _preload(cfg):
+    """reBot talks CAN through PCBUSB, which must be preloaded before anything else (may re-exec)."""
+    if cfg["robot"].get("type", "rebot_b601") == "rebot_b601":
+        from .system import preload_pcan
+        preload_pcan()
 
 
 def cmd_collect(args):
+    cfg = _cfg(args)
     if not args.fake:
-        from .system import preload_pcan
-        preload_pcan()
+        _preload(cfg)
     from .collect.server import run
-    run(_cfg(args), fake=args.fake, port=args.port, out=args.out)
+    run(cfg, fake=args.fake, port=args.port, out=args.out)
 
 
 def cmd_export(args):
@@ -77,11 +111,11 @@ def cmd_health(args):
 
 
 def cmd_run(args):
+    cfg = _cfg(args)
     if not args.fake:
-        from .system import preload_pcan
-        preload_pcan()
+        _preload(cfg)
     from .policy.runner import run
-    run(_cfg(args), args)
+    run(cfg, args)
 
 
 def cmd_replay(args):
@@ -104,9 +138,10 @@ def main(argv=None):
     ap.add_argument("--config", help="YAML file overriding the built-in defaults")
     sub = ap.add_subparsers(dest="cmd", required=True, metavar="command")
 
-    sub.add_parser("doctor", help="check this Mac").set_defaults(fn=cmd_doctor)
+    sub.add_parser("doctor", help="check the configured robot and cameras without connecting").set_defaults(fn=cmd_doctor)
     sub.add_parser("cameras", help="list video devices and uniqueIDs").set_defaults(fn=cmd_cameras)
     sub.add_parser("joints", help="read joint angles without powering motors").set_defaults(fn=cmd_joints)
+    sub.add_parser("robots", help="list the LeRobot robot and leader types available here").set_defaults(fn=cmd_robots)
 
     p = sub.add_parser("collect", help="teleoperate and record (web page)")
     p.add_argument("--fake", action="store_true", help="simulate robot, leader and cameras")
@@ -119,10 +154,10 @@ def main(argv=None):
     p.add_argument("--out", help="dataset folder (default <data_root>/datasets/<task>[_bin])")
     p.add_argument("--repo-id")
     p.add_argument("--gripper", choices=["raw", "binary"], default="raw", help="gripper action: leader angle, or 0/1")
-    p.add_argument("--close-above", type=float, default=-40.0, help="binary: leader angle above this = closed")
-    p.add_argument("--open-below", type=float, default=-80.0, help="binary: once closed, below this = open")
-    p.add_argument("--open-deg", type=float, default=-150.0, help="binary: gripper angle commanded for 'open'")
-    p.add_argument("--close-deg", type=float, default=0.0, help="binary: gripper angle commanded for 'closed'")
+    p.add_argument("--close-above", type=float, help="binary: leader value above this = closed (default: export.gripper_close_above)")
+    p.add_argument("--open-below", type=float, help="binary: once closed, below this = open (default: export.gripper_open_below)")
+    p.add_argument("--open-deg", type=float, help="binary: gripper value commanded for 'open' (default: export.gripper_open_deg)")
+    p.add_argument("--close-deg", type=float, help="binary: gripper value commanded for 'closed' (default: export.gripper_close_deg)")
     p.add_argument("--skip-warnings", action="store_true", help="also skip episodes with warnings")
     p.add_argument("--images", action="store_true", help="store PNG frames instead of video (debugging)")
     p.add_argument("--overwrite", action="store_true")
@@ -150,7 +185,7 @@ def main(argv=None):
     p.add_argument("--device", default="mps")
     p.add_argument("--port", type=int)
     p.add_argument("--fake", action="store_true", help="simulate robot and cameras (policy runs for real)")
-    p.add_argument("--autostart", type=float, default=0, help="with --fake: run this many seconds, save, quit")
+    p.add_argument("--autostart", type=float, default=0, help="in fake or sim mode: run this many seconds, save, quit")
     p.set_defaults(fn=cmd_run)
 
     p = sub.add_parser("replay", help="browse recorded rollouts")

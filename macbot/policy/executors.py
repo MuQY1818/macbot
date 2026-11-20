@@ -5,7 +5,7 @@ control loop:
 
     ex.start()                    start background threads (if any)
     ex.reset(active)              drop all chunks; active=True starts inferring from the current observation
-    ex.target(now) -> (a, id)     joint target (7,) for wall time ``now``, or (None, id) if nothing yet
+    ex.target(now) -> (a, id)     joint target for wall time ``now``, or (None, id) if nothing yet
     ex.err                        set to a message if inference failed (the loop pauses)
 
 Executors receive ``observe() -> (images, q)`` and ``log(t_chunk, infer_ms, **extra)``; time runs at
@@ -29,6 +29,8 @@ import numpy as np
 
 
 def _interp(ch: np.ndarray, f: float) -> np.ndarray:
+    if len(ch) == 1:
+        return ch[0]
     f = min(max(f, 0.0), len(ch) - 1.0)
     i = min(int(f), len(ch) - 2)
     w = f - i
@@ -104,14 +106,14 @@ class Ensemble(Executor, threading.Thread):
     def target(self, now):
         with self.lk:
             live = [((now - t) * self.rate, ch) for t, ch in self.buf]
-            self.buf = [b for b, (f, ch) in zip(self.buf, live) if f < len(ch) - 1]
+            self.buf = [b for b, (f, ch) in zip(self.buf, live, strict=False) if f < len(ch) - 1]
             n = self.n
         live = [(f, ch) for f, ch in live if 0 <= f < len(ch) - 1]
         if not live:
             return None, n - 1
         fs = np.array([f for f, _ in live])
         w = np.exp(self.m * (fs - fs.max()))                 # older chunks weigh more, as in ACT
-        a = sum(wi * _interp(ch, f) for wi, (f, ch) in zip(w, live)) / w.sum()
+        a = sum(wi * _interp(ch, f) for wi, (f, ch) in zip(w, live, strict=False)) / w.sum()
         return a, n - 1
 
     def run(self):
