@@ -16,12 +16,43 @@ func fail(_ msg: String, _ code: Int32) -> Never {
 }
 
 let a = CommandLine.arguments
+func dimensions(_ format: AVCaptureDevice.Format) -> CMVideoDimensions {
+    CMVideoFormatDescriptionGetDimensions(format.formatDescription)
+}
+
+if a.count == 2 && a[1] == "--list" {
+    var types: [AVCaptureDevice.DeviceType] = [.builtInWideAngleCamera]
+    if #available(macOS 14.0, *) {
+        types += [.external, .continuityCamera]
+    } else {
+        types.append(.externalUnknown)
+    }
+    let devices = AVCaptureDevice.DiscoverySession(deviceTypes: types, mediaType: .video, position: .unspecified).devices
+    let rows: [[String: Any]] = devices.map { dev in
+        var continuity = false
+        if #available(macOS 14.0, *) { continuity = dev.isContinuityCamera || dev.deviceType == .continuityCamera }
+        let modes = dev.formats.flatMap { format in
+            let d = dimensions(format)
+            return format.videoSupportedFrameRateRanges.compactMap { r -> [Int]? in
+                let fps = Int(floor(min(30.001, r.maxFrameRate) + 0.05))
+                return fps > 0 && Double(fps) >= r.minFrameRate - 0.05 ? [Int(d.width), Int(d.height), fps] : nil
+            }
+        }
+        return ["name": dev.localizedName, "unique_id": dev.uniqueID, "model": dev.modelID,
+                "continuity": continuity, "builtin": dev.deviceType == .builtInWideAngleCamera, "modes": modes]
+    }
+    FileHandle.standardOutput.write(try! JSONSerialization.data(withJSONObject: rows))
+    exit(0)
+}
+
 guard a.count >= 6, let x0 = Int(a[2]), let y0 = Int(a[3]), let x1 = Int(a[4]), let y1 = Int(a[5]) else {
     fail("usage: uvc_stream <uniqueID> <x0> <y0> <x1> <y1> [quality] [fps]", 2)
 }
 let quality = a.count > 6 ? Double(a[6])! : 0.9
 let fps = a.count > 7 ? Int32(a[7])! : 30
 guard let dev = AVCaptureDevice(uniqueID: a[1]) else { fail("camera not found: \(a[1])", 1) }
+let width = a.count > 9 ? Int(a[8]) : nil
+let height = a.count > 9 ? Int(a[9]) : nil
 
 final class Out: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     let x0: Int, y0: Int, x1: Int, y1: Int, quality: Double
@@ -57,8 +88,23 @@ final class Out: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
 }
 
 let s = AVCaptureSession()
-if s.canSetSessionPreset(.hd1920x1080) { s.sessionPreset = .hd1920x1080 }
-s.addInput(try! AVCaptureDeviceInput(device: dev))
+do {
+    let input = try AVCaptureDeviceInput(device: dev)
+    guard s.canAddInput(input) else { fail("cannot open the selected camera", 1) }
+    s.addInput(input)
+} catch { fail("cannot open the selected camera: \(error)", 1) }
+if let w = width, let h = height {
+    guard let format = dev.formats.first(where: { f in
+        let d = dimensions(f)
+        return Int(d.width) == w && Int(d.height) == h &&
+            f.videoSupportedFrameRateRanges.contains { $0.minFrameRate - 0.05 <= Double(fps) && $0.maxFrameRate + 0.05 >= Double(fps) }
+    }) else { fail("camera does not support \(w)x\(h) at \(fps) fps", 1) }
+    do {
+        try dev.lockForConfiguration()
+        dev.activeFormat = format
+        dev.unlockForConfiguration()
+    } catch { fail("cannot select camera format: \(error)", 1) }
+} else if s.canSetSessionPreset(.hd1920x1080) { s.sessionPreset = .hd1920x1080 }
 let o = AVCaptureVideoDataOutput()
 o.alwaysDiscardsLateVideoFrames = true
 o.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
@@ -72,8 +118,11 @@ do {
     try dev.lockForConfiguration()
     if let r = dev.activeFormat.videoSupportedFrameRateRanges.min(by: {
         abs($0.maxFrameRate - Double(fps)) < abs($1.maxFrameRate - Double(fps)) }) {
-        dev.activeVideoMinFrameDuration = r.minFrameDuration
-        dev.activeVideoMaxFrameDuration = r.minFrameDuration
+        let rate = Double(fps)
+        let duration = width == nil || rate >= r.maxFrameRate ? r.minFrameDuration :
+            rate <= r.minFrameRate ? r.maxFrameDuration : CMTime(value: 1, timescale: fps)
+        dev.activeVideoMinFrameDuration = duration
+        dev.activeVideoMaxFrameDuration = duration
     }
     dev.unlockForConfiguration()
 } catch {
