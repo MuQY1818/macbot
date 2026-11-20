@@ -42,7 +42,7 @@ HOME_RAMP_S = 0.6                                         # homing speeds up ove
 MOTION_COMMANDS = ("start", "home", "quit")
 TAKEOVER_MODES = {"aligning": 2, "following": 1}
 LEADER_STALE_S = 0.25                                     # older leader samples hold the follower
-CATCHUP_DONE_DEG = 1.0                                    # catch-up ends when every arm joint is this close
+CATCHUP_DONE_DEG = 0.5                                    # catch-up ends when every arm joint is this close
 TRIAL_MODES = ("running", *TAKEOVER_MODES)
 
 
@@ -656,7 +656,8 @@ def _control(st, srv, fps, gripper, cleanup):
                 rec["chunk"].append(chunk_id)
                 rec["gp"].append(gp_last)
                 if st.takeover:
-                    rec["takeover"].append(TAKEOVER_MODES.get(mode, 0))
+                    # While the follower is still catching up, the motion is not the operator's: label it 2 too.
+                    rec["takeover"].append(TAKEOVER_MODES["aligning"] if catching else TAKEOVER_MODES.get(mode, 0))
                     rec["leader"].append(leader if leader is not None else [float("nan")] * n_j)
                 for c in st.cam_names:
                     rec[f"{c}_jpg"].append(prep_image(frames[c], sizes[c], jq)[1])

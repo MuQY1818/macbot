@@ -141,7 +141,8 @@ Add `--takeover` to `run`, or set `run.takeover: true` in YAML. This connects th
 configured for `collect`. Press **T** or **Take over** while the policy is running. The follower holds
 its current command. Move the leader by hand until every arm joint is roughly in place, within
 `run.takeover_align_deg` (default 30°), and the grippers match. The follower then catches up with the leader at
-`run.home_vel` along a straight line, with a short ramp, and follows at the normal limit once every joint is within 1°. With a binary policy, the leader must be above
+`run.home_vel` along a straight line, with a short ramp, and follows at the normal limit once every joint is
+within 0.5°. Frames are labelled human (1) only from then on; the catch-up is labelled like alignment (2), so corrections start where the operator's own motion starts. With a binary policy, the leader must be above
 `export.gripper_close_above` if the follower is commanded closed, or below `export.gripper_open_below`
 if it is commanded open. A leader reading between the thresholds keeps the follower on hold.
 With a raw gripper, match the follower command within `run.takeover_gripper_align_deg` (default 15°).
