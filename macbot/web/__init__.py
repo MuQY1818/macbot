@@ -12,7 +12,7 @@ from pathlib import Path
 
 import cv2
 
-from ..config import ConsolePortError
+from ..config import CONSOLES, ConsolePortError
 
 HERE = Path(__file__).resolve().parent
 STATIC = HERE / "static"
@@ -55,7 +55,11 @@ def bind_console(cfg, section, handler, port=None):
     if type(requested) is not int or not 0 <= requested <= 65535:
         raise ConsolePortError(f"Invalid port {requested!r}; {hint}.")
     last = requested if explicit else min(65535, requested + PORT_ATTEMPTS - 1)
+    # Fall forward past the other consoles' defaults so one busy port does not push every console along.
+    siblings = {cfg[other]["port"] for other in CONSOLES if other != section and other in cfg} - {requested}
     for candidate in range(requested, last + 1):
+        if candidate in siblings:
+            continue
         try:
             return ConsoleServer((HOST, candidate), handler)
         except OSError as exc:

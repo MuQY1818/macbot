@@ -63,3 +63,12 @@ def test_cli_port_collision_is_one_line(tmp_path, busy_port, command, args):
         args = [*args, "--dir", str(tmp_path)]
     with pytest.raises(SystemExit, match=rf"\APort {busy_port} [^\n]+--port[^\n]+\Z"):
         main(["--config", str(path), command, "--port", str(busy_port), *args])
+
+
+def test_fallback_skips_the_other_consoles_defaults(busy_port):
+    cfg = load()
+    cfg["teleop"]["port"] = busy_port
+    cfg["run"]["port"] = busy_port + 1
+    cfg["replay"]["port"] = busy_port + 2
+    with web.bind_console(cfg, "teleop", web.Handler) as server:
+        assert server.server_port not in {busy_port, busy_port + 1, busy_port + 2}
