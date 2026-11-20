@@ -40,8 +40,11 @@ All notable changes to macbot will be documented here. This project follows
 
 ### Fixed
 
-- Takeover starts from a rough match (every arm joint within 30°, gripper state matching) and the follower catches up
-  with the leader slowly. The first version required all six joints within 5° at once, which nobody can hold by hand.
+- Takeover starts from a rough match (every arm joint within 30°, gripper state matching) and follows the leader with
+  a one-second soft start. The first version required all six joints within 5° at once, which nobody can hold by
+  hand. Brief leader dropouts (under 0.5 s) no longer end the takeover, and a leader joint that misses one read
+  keeps its last reading for up to 0.15 s; before, any single servo miss dropped the whole sample (30 % of takeover
+  frames on the reBot 102).
 - **Home** in the run console now moves at `run.home_vel` (default 25 deg/s) along a straight line in joint space
   with a short ramp. It used the policy limit `max_vel × speed` (96 deg/s at speed 0.8), far too fast.
 - Console pages no longer break after an upgrade because the browser kept an older cached `common.js`.

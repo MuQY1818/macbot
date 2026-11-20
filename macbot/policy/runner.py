@@ -42,7 +42,9 @@ HOME_RAMP_S = 0.6                                         # homing speeds up ove
 MOTION_COMMANDS = ("start", "home", "quit")
 TAKEOVER_MODES = {"aligning": 2, "following": 1}
 LEADER_STALE_S = 0.25                                     # older leader samples hold the follower
-CATCHUP_DONE_DEG = 0.5                                    # catch-up ends when every arm joint is this close
+CATCHUP_S = 1.0                                           # takeover soft start: home_vel -> max_vel over this time
+CATCHUP_DONE_DEG = 2.0                                    # ...or earlier, once every arm joint is this close
+LEADER_GRACE_S = 0.5                                      # a shorter leader dropout holds, then keeps following
 TRIAL_MODES = ("running", *TAKEOVER_MODES)
 
 
@@ -466,6 +468,7 @@ def _control(st, srv, fps, gripper, cleanup):
     home_vmax = rc.get("home_vel", 25.0) * dt             # homing is slow regardless of speed
     home_t0 = 0.0
     catch_t0 = None                                       # set while the follower catches up with the leader
+    leader_lost = None                                    # when the leader signal dropped while following
 
     def say(en, zh, mode=None):
         with st.lock:
@@ -603,25 +606,30 @@ def _control(st, srv, fps, gripper, cleanup):
                 with st.lock:
                     st.alignment = errors
                     st.gripper_alignment = grip
-                if leader is None:
+                if leader is None and mode == "following" and now - (leader_lost or now) < LEADER_GRACE_S:
+                    leader_lost = leader_lost or now      # brief dropout: hold the command, keep the takeover
+                elif leader is None:
+                    leader_lost = None
                     say("Leader signal lost. Holding the follower; align again when the signal returns.",
                         "领臂信号丢失。从臂保持当前位置，信号恢复后请重新对齐。", "aligning")
                     mode = "aligning"
+                elif mode == "following" and leader_lost is not None:
+                    leader_lost, catch_t0 = None, now     # signal back: soft start again, no re-alignment
                 elif mode == "aligning":
                     clamped_errors = robot.alignment_errors(leader, q)
                     if (want != "takeover" and all(abs(d) <= st.align_deg for d in errors.values())
                             and all(abs(d) <= st.align_deg for d in clamped_errors.values())
                             and (grip is None or grip["ready"])):
-                        # Nobody can hold six joints within a few degrees by hand: start from a rough match and
-                        # let the follower close the gap slowly, as when homing.
-                        say("Following the leader (catching up slowly).", "正在跟随领臂（从臂先慢速追上）。", "following")
+                        # Nobody can hold six joints within a few degrees by hand: start from a rough match. The
+                        # follower starts at home_vel along a straight line and reaches max_vel within CATCHUP_S.
+                        say("Following the leader.", "正在跟随领臂。", "following")
                         mode = "following"
-                        catch_t0 = now
+                        catch_t0, leader_lost = now, None
                     else:
                         say("Holding the follower. Align the leader to take control.",
                             "从臂保持当前指令。请对齐领臂以接管。")
                 if mode == "following":
-                    target = leader
+                    target = leader if leader is not None else list(cmd)
             elif mode == "homing":
                 target = list(home)
                 if all(abs(cmd[j] - home[j]) < 0.5 for j in range(n_j) if j != gi):
@@ -631,17 +639,18 @@ def _control(st, srv, fps, gripper, cleanup):
                 ramp = min(1.0, 0.2 + (now - home_t0) / HOME_RAMP_S)
                 steps = homing_steps(cmd, home, gi, home_vmax * ramp)
             elif mode == "following" and catch_t0 is not None:
-                if all(abs(target[j] - cmd[j]) <= CATCHUP_DONE_DEG for j in range(n_j) if j != gi):
+                ramp = (now - catch_t0) / CATCHUP_S
+                if ramp >= 1 or all(abs(target[j] - cmd[j]) <= CATCHUP_DONE_DEG for j in range(n_j) if j != gi):
                     catch_t0 = None                       # caught up: follow at the normal limit
                 else:
-                    ramp = min(1.0, 0.2 + (now - catch_t0) / HOME_RAMP_S)
-                    steps = homing_steps(cmd, target, gi, home_vmax * ramp)
-            catching = mode == "following" and catch_t0 is not None
+                    steps = homing_steps(cmd, target, gi, home_vmax + (vmax - home_vmax) * max(0.0, ramp))
+            ramping = mode == "following" and catch_t0 is not None
+            catching = ramping or (mode == "following" and leader_lost is not None)
             for j, n in enumerate(names):                 # velocity limit (arm joints) + joint limits
                 if j == gi:
                     step = grip_step if mode in ("homing", "following") else 1e9
                 else:
-                    step = steps[j] if mode == "homing" or catching else vmax
+                    step = steps[j] if mode == "homing" or ramping else vmax
                 cmd[j] = robot.clamp(n, cmd[j] + max(-step, min(step, target[j] - cmd[j])))
             with st.lock:
                 rec = st.rec if st.mode in TRIAL_MODES else None
@@ -666,7 +675,7 @@ def _control(st, srv, fps, gripper, cleanup):
                 rec["gp"].append(gp_last)
                 rec["gp_ahead"].append(gp_ahead)
                 if st.takeover:
-                    # While the follower is still catching up, the motion is not the operator's: label it 2 too.
+                    # While the follower catches up or holds through a dropout, the motion is not the operator's.
                     rec["takeover"].append(TAKEOVER_MODES["aligning"] if catching else TAKEOVER_MODES.get(mode, 0))
                     rec["leader"].append(leader if leader is not None else [float("nan")] * n_j)
                 for c in st.cam_names:
