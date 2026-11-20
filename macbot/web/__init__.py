@@ -6,9 +6,11 @@ import json
 import mimetypes
 import os
 import re
+import secrets
 import socket
 import subprocess
 import sys
+import threading
 import time
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -25,6 +27,11 @@ BRAND = ('<a class="brand" href="/"><img class="logo-light" src="/static/logo.sv
          '<img class="logo-dark" src="/static/logo-dark.svg" alt="macbot"></a>')
 HOST = "127.0.0.1"
 PORT_ATTEMPTS = 10
+# Identifies this process to open console pages; a page that sees a new value reloads itself.
+BOOT = secrets.token_hex(6)
+# An open console page polls every 200 ms and retries while the console is down. Background tabs poll about once
+# a second, so a page that has not reached a new console within this time is assumed to be closed.
+PAGE_WAIT = 2.5
 
 
 def open_browser(url: str) -> bool:
@@ -46,7 +53,26 @@ def open_browser(url: str) -> bool:
         return False
 
 
+def show(server: ConsoleServer, wait: float = PAGE_WAIT) -> threading.Thread:
+    """Open the console unless a page left open from an earlier session reconnects (and reloads) first."""
+    def run():
+        if not server.page_seen.wait(wait):
+            open_browser(server.url)
+
+    thread = threading.Thread(target=run, daemon=True)
+    thread.start()
+    return thread
+
+
 class ConsoleServer(ThreadingHTTPServer):
+    def __init__(self, *args, **kwargs):
+        self.page_seen = threading.Event()
+        super().__init__(*args, **kwargs)
+
+    def process_request(self, request, client_address):
+        self.page_seen.set()
+        super().process_request(request, client_address)
+
     @property
     def url(self):
         return f"http://{HOST}:{self.server_port}"
@@ -117,6 +143,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Macbot-Boot", BOOT)
         self.end_headers()
         self.wfile.write(body)
 

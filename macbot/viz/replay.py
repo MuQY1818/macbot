@@ -31,7 +31,7 @@ def run(cfg: Config, args):
     with web.bind_console(cfg, "replay", make_handler(Store(folder), cfg.task), args.port) as srv:
         print(f"rollouts: {folder}\nopen {srv.url}  (Ctrl-C to stop)", flush=True)
         if not getattr(args, "no_browser", True):
-            web.open_browser(srv.url)
+            web.show(srv)
         try:
             srv.serve_forever()
         except KeyboardInterrupt:

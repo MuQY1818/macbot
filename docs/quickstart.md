@@ -62,8 +62,9 @@ the existing config** selected. Exports store `meta/camera_framing.json`; the tr
 checkpoints. `macbot run` stops before connecting to the robot if known framing differs, unless you explicitly
 pass `--allow-framing-mismatch`. With older checkpoints that lack this information, verify the framing printed at startup.
 
-Each console opens in your default browser, also under `sudo`. Pass `--no-browser` or set `MACBOT_NO_BROWSER=1`
-to only print the URL.
+Each console opens in your default browser, also under `sudo`. A console page left open from an earlier session
+reloads itself instead, so repeated `macbot run` sessions share one tab. Pass `--no-browser` or set
+`MACBOT_NO_BROWSER=1` to only print the URL.
 
 The consoles default to ports 8765 (init), 8766 (collect), 8767 (run), and 8768 (replay). A busy default
 falls back to the next available port, up to nine ports higher. To fix the port, pass `--port` or set

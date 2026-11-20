@@ -99,6 +99,17 @@ const JOINT_COLORS = ["#F2701A", "#1BA9A0", "#6E5BE8", "#D93C3C", "#D9A21B", "#1
 const jointColor = j => JOINT_COLORS[j] ?? `hsl(${(j * 137.5) % 360} 65% 48%)`;
 const fmtTime = t => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, "0")}`;
 
+// Status polls carry the console process id. A page left open across sessions reloads when a new one starts,
+// so `macbot run` reuses this tab instead of opening another.
+let BOOT = null;
+async function pollStatus(url = "/api/status") {
+  const r = await fetch(url);
+  const boot = r.headers.get("X-Macbot-Boot");
+  if (boot && BOOT && boot !== BOOT) { location.reload(); return new Promise(() => {}); }
+  BOOT = boot || BOOT;
+  return r.json();
+}
+
 async function post(url, body) {
   const r = await fetch(url, { method: "POST", body: JSON.stringify(body) });
   return r.json();
