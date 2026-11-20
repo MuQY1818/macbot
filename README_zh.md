@@ -29,6 +29,7 @@
 | 项目 | 实测 |
 |---|---|
 | π0.5 推理（动作块 50 步，去噪 10 步） | **约 280 ms**（bf16 + `torch.compile`） |
+| π0.5 走可选的 MLX 后端（`--backend mlx`，fp16，动作误差 0.1° 以内） | **约 165 ms** |
 | π0.5 加 Real-Time Chunking 引导 | **约 350 ms** |
 | ACT 推理（动作块 100 步） | **约 25 ms** |
 | 遥操作控制频率 / 录制采样频率 | 60 Hz / 30 fps |
@@ -87,7 +88,7 @@ macbot replay                                          # 5. 回放试验；macbo
 - **sudo 下的 CAN。** Orbbec SDK 要 root 权限，而 root 进程的 dyld 不搜索 `/usr/local/lib`，所以要在 CAN 后端加载之前手动预载 `libPCBUSB.dylib`。
 - **打开正确的相机。** 按名字或编号打开 UVC 相机，可能会抓到通过“连续互通相机”连上的 iPhone。macbot 用一个 Swift 小程序按 AVFoundation uniqueID 打开相机，相机换了 USB 口也能找到。
 - **π0.5 跑在 MPS 上。** 权重用 bf16 并开 autocast；跳过被遮掉的第三个相机槽（输出完全一致，省约 70 ms）；对去噪步和语言模型做 `torch.compile`，减少逐个 kernel 派发的开销（约 410 → 280 ms）；跳过反正会被权重覆盖的随机初始化，每次加载省约 80 秒。
-- **可选的 π0.5 MLX 后端。** 录制观测上的延迟、动作误差和 checkpoint 要求见[推理基准](docs/acceleration_zh.md)。
+- **可选的 π0.5 MLX 后端。** 录制观测上的延迟、动作误差和 checkpoint 要求见[推理基准](https://github.com/MuQY1818/macbot/blob/main/docs/acceleration_zh.md)。
 - **root 写出的文件**会交还给运行 `sudo` 的用户。
 
 ## 参与贡献

@@ -32,6 +32,7 @@ Measured on a MacBook Pro (M5 Pro, 48 GB), PyTorch MPS:
 | Measurement | Result |
 |---|---|
 | π0.5 inference, 50-step action chunk, 10 denoising steps | **~280 ms** (bf16 + `torch.compile`) |
+| π0.5 on the optional MLX backend (`--backend mlx`, fp16, same actions within 0.1°) | **~165 ms** |
 | π0.5 with Real-Time Chunking guidance | **~350 ms** |
 | ACT inference, 100-step chunk | **~25 ms** |
 | Teleoperation loop / recording grid | 60 Hz / 30 fps |
@@ -104,7 +105,7 @@ back to [macbot/default.yaml](https://github.com/MuQY1818/macbot/blob/main/macbo
   ~70 ms saved); `torch.compile` on the denoising step and the language model cuts per-kernel dispatch
   overhead (~410 → ~280 ms); the random weight initialization that the checkpoint overwrites anyway is
   skipped, which saves about 80 s per load.
-- **Optional π0.5 on MLX.** See the [inference benchmarks](docs/acceleration.md) for recorded-observation
+- **Optional π0.5 on MLX.** See the [inference benchmarks](https://github.com/MuQY1818/macbot/blob/main/docs/acceleration.md) for recorded-observation
   latency, action fidelity, and the checkpoint requirements.
 - **Files written as root** are handed back to the user who ran `sudo`.
 
