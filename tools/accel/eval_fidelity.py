@@ -7,7 +7,6 @@ import json
 import resource
 import sys
 from collections import defaultdict
-from functools import wraps
 from pathlib import Path
 from time import perf_counter
 from unittest.mock import patch
@@ -16,6 +15,7 @@ import cv2
 import numpy as np
 
 from macbot.policy.models import PI05, _to_obs
+from macbot.policy.profile import TorchStages
 
 
 def prepare(args):
@@ -96,52 +96,6 @@ def metrics(a, b, joints, binary_gripper):
     return result
 
 
-class Stages:
-    """Measure separately from uninstrumented throughput; barriers can inflate timings."""
-
-    def __init__(self, sync):
-        self.sync = sync
-        self.samples = defaultdict(list)
-        self.counts = defaultdict(int)
-
-    def wrap(self, fn, name, indexed=False):
-        @wraps(fn)
-        def timed(*args, **kwargs):
-            key = name
-            if indexed:
-                key = f"{name}_{self.counts[name]:02d}"
-                self.counts[name] += 1
-            self.sync()
-            start = perf_counter()
-            value = fn(*args, **kwargs)
-            self.sync()
-            self.samples[key].append((perf_counter() - start) * 1e3)
-            return value
-
-        return timed
-
-    def instrument(self, policy, stack):
-        from macbot.policy import models
-
-        m = policy.pol.model
-        v = m.paligemma_with_expert
-        prefix = v.paligemma.model.language_model
-        for obj, attr, name, indexed in (
-            (models, "_to_obs", "rgb_to_host_tensors", False),
-            (policy.pol, "_preprocess_images", "image_resize_normalize", False),
-            (v, "embed_image", "vision_and_projection", True),
-            (prefix, "forward", "prefix_and_kv", False),
-            (m, "denoise_step", "denoise", True),
-            (m, "sample_noise", "noise", False),
-            (policy.torch.Tensor, "cpu", "explicit_cpu_copy", True),
-            (policy.torch.mps, "synchronize", "explicit_mps_sync", True),
-        ):
-            stack.enter_context(patch.object(obj, attr, self.wrap(getattr(obj, attr), name, indexed)))
-        for stem, pipeline in (("pre", policy.pre), ("post", policy.post)):
-            steps = [self.wrap(step, f"{stem}_{type(step).__name__}") for step in pipeline.steps]
-            stack.enter_context(patch.object(pipeline, "steps", steps))
-
-
 def load_torch(args, task):
     import torch
     from lerobot.policies.pi05.modeling_pi05 import PI05Policy
@@ -208,6 +162,18 @@ def torch_variants(args, policy, stack):
             return [pool(x) for x in embed(images, masks)]
 
         stack.enter_context(patch.object(m, "_embed_images", embed_pooled))
+    if args.trim_text:
+        embed_prefix = m.embed_prefix
+
+        def trim_text(images, image_masks, tokens, token_mask, *a, **kw):
+            # The standard LeRobot tokenizer puts valid tokens first and pads only on the right.
+            # This experiment reads one host scalar; include it in end-to-end timing.
+            length = int(token_mask.sum())
+            if bool(token_mask[:, :length].all()):
+                tokens, token_mask = tokens[:, :length], token_mask[:, :length]
+            return embed_prefix(images, image_masks, tokens, token_mask, *a, **kw)
+
+        stack.enter_context(patch.object(m, "embed_prefix", trim_text))
 
 
 def run(args):
@@ -263,7 +229,7 @@ def run(args):
         "steps": m.config.num_inference_steps, "compile": not args.eager and args.dtype != "fp32",
         "separate_cameras": args.separate_cameras, "count": len(records), "warmup": args.warmup,
         "sdpa": args.sdpa, "share_cache": args.share_cache, "pool_images": args.pool_images,
-        "single_readback": args.single_readback, "dynamic_compile": args.dynamic_compile,
+        "single_readback": args.single_readback, "dynamic_compile": args.dynamic_compile, "trim_text": args.trim_text,
     }
     with ExitStack() as stack:
         torch_variants(args, policy, stack)
@@ -303,7 +269,7 @@ def run(args):
         if args.reference:
             result["fidelity"] = metrics(actions, np.load(args.reference), joints, binary)
         if args.profile:
-            stages = Stages(sync)
+            stages = TorchStages(sync)
             with ExitStack() as profile_stack:
                 stages.instrument(policy, profile_stack)
                 for i in range(args.calls):
@@ -344,6 +310,7 @@ def main():
     p.add_argument("--pool-images", action="store_true")
     p.add_argument("--single-readback", action="store_true")
     p.add_argument("--dynamic-compile", action="store_true")
+    p.add_argument("--trim-text", action="store_true")
     args = parser.parse_args()
     (prepare if args.command == "prepare" else run)(args)
 
