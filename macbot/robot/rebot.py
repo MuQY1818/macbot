@@ -25,6 +25,7 @@ import time
 import numpy as np
 
 from .base import Robot
+from .telemetry import UNKNOWN, MotorSample
 
 JOINTS = ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_yaw", "wrist_roll", "gripper"]
 ARM = JOINTS[:6]
@@ -56,10 +57,24 @@ def find_leader_port() -> str:
     return ports[0]
 
 
-def _make_ff_class():
+def _make_feedback_class():
     _, RebotB601Follower, GRIPPER_MOTOR, ArmControlMode = _lerobot()
 
-    class FeedforwardFollower(RebotB601Follower):
+    class FeedbackFollower(RebotB601Follower):
+        motor_states = None
+
+        def _read_feedback(self):
+            # Reuse LeRobot's position feedback. No new requests or poll calls.
+            self.motor_states = super()._read_feedback()
+            return self.motor_states
+
+    return FeedbackFollower, GRIPPER_MOTOR, ArmControlMode
+
+
+def _make_ff_class():
+    FeedbackFollower, GRIPPER_MOTOR, ArmControlMode = _make_feedback_class()
+
+    class FeedforwardFollower(FeedbackFollower):
         """Stock follower plus velocity and gravity feedforward in the MIT command. Same interface."""
 
         def __init__(self, config, vel_ff: float, grav_comp: float, urdf=None):
@@ -72,6 +87,10 @@ def _make_ff_class():
             self._prev_goal = self._prev_t = self._t_first = None
             self._vel = {n: 0.0 for n in ARM}
             self._ff = {}
+
+        def reset_velocity_feedforward(self):
+            self._prev_goal = None
+            self._vel = dict.fromkeys(ARM, 0.0)
 
         def send_action(self, action):
             now = time.perf_counter()
@@ -143,7 +162,7 @@ def apply_gripper_offset(robot, rcfg: dict) -> float:
 
 def make_follower(rcfg: dict):
     """Build (not connect) the follower described by the ``robot`` section of the config."""
-    Cfg, RebotB601Follower, _, _ = _lerobot()
+    Cfg, _, _, _ = _lerobot()
     extra = {}
     if rcfg.get("gripper_mode", "mit") == "mit":
         extra["gripper_control_mode"] = "mit"
@@ -157,7 +176,7 @@ def make_follower(rcfg: dict):
         print("gravity compensation needs robot.urdf; running without it", flush=True)
         grav = 0.0
     if vel_ff == 0 and grav == 0:
-        robot = RebotB601Follower(cfg)
+        robot = _make_feedback_class()[0](cfg)
     else:
         from ..system import expand
         robot = _make_ff_class()(cfg, vel_ff, grav, expand(rcfg["urdf"]) if grav > 0 else None)
@@ -268,6 +287,28 @@ class RebotArm(Robot):
                                    leader_id=rcfg.get("leader_id", "rebot_arm_102_leader")) if need_leader else None)
         self.limits = {n: tuple(v) for n, v in self.follower.config.joint_limits.items()}
         self.lead = float(rcfg.get("gripper_lead_deg", 20.0))
+
+    def motor_telemetry(self):
+        states = self.follower.motor_states or {}
+        samples = []
+        for n in self.joints:
+            state = states.get(n)
+            if state is None:
+                samples.append(UNKNOWN)
+                continue
+            read_report = getattr(self.follower.motors[n], "robstride_get_fault_report", None)
+            fault, warning = read_report() if read_report else (None, None)
+            # MotorBridge 0.5.6 maps the sole RS temperature to t_mos and hardcodes t_rotor=0.
+            samples.append(MotorSample(state.t_mos if math.isfinite(state.t_mos) else None, None,
+                                       state.torq if math.isfinite(state.torq) else None,
+                                       state.status_code, fault, warning))
+        return tuple(samples)
+
+    def hold(self, pose, measured):
+        reset = getattr(self.follower, "reset_velocity_feedforward", None)
+        if reset:
+            reset()
+        return super().hold(pose, measured)
 
     def send(self, target, measured=None):
         a = self._dict(target)

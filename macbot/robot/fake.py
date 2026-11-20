@@ -5,6 +5,7 @@ import math
 import time
 
 from .base import Robot
+from .telemetry import synthetic
 
 REBOT_LIMITS = {"shoulder_pan": (-145, 145), "shoulder_lift": (-170, 0), "elbow_flex": (-200, 0),
                 "wrist_flex": (-90, 80), "wrist_yaw": (-90, 90), "wrist_roll": (-90, 90), "gripper": (-270, 0)}
@@ -77,6 +78,10 @@ class FakeArm(Robot):
         self.limits = dict(limits)
         self.robot_type = robot_type
         self.follower, self.leader = _Follower(self.joints, self.limits), _Leader(self.joints, self.limits)
+        self._telemetry = synthetic(self.joints)
+
+    def motor_telemetry(self):
+        return self._telemetry
 
     def info(self):
         return {"kind": self.kind, "joints": self.joints, "robot_type": self.robot_type}

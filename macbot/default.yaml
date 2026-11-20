@@ -57,6 +57,15 @@ checks:                                     # run on every saved episode, shown 
   max_joint_step_deg: 15
   max_late_ratio: 0.05
 
+safety:
+  enabled: true
+  track_deg: 8.0                           # arm joints only; consecutive error against the last applied command
+  track_s: 0.3
+  hold_warn_s: 30.0
+  temp_warn_c: 60.0                        # application limits, not motor firmware limits
+  temp_alarm_c: 70.0
+  temp_resume_c: 55.0
+
 run:
   port: 8767
   hz: 60

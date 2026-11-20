@@ -8,6 +8,7 @@ import cv2
 
 from .base import Robot
 from .lerobot_generic import _config, joint_names
+from .telemetry import synthetic
 
 
 def sim_config(spec, task_id):
@@ -41,6 +42,7 @@ class SimArm(Robot):
         try:
             desc = self.follower.descriptor
             self.joints = joint_names(self.follower)
+            self._telemetry = synthetic(self.joints)
             keys = {f"{n}.pos" for n in self.joints}
             if (desc.control_mode != "position" or not keys or keys != set(self.follower.action_features)
                     or not keys <= set(self.follower.observation_features)):
@@ -88,6 +90,9 @@ class SimArm(Robot):
 
     def read(self):
         return list(self._q)
+
+    def motor_telemetry(self):
+        return self._telemetry
 
     def read_leader(self):
         elapsed = time.monotonic() - self._t0
