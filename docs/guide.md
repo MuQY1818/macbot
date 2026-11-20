@@ -117,6 +117,8 @@ Open the URL printed in Terminal (port 8767 when available). The page starts **p
 | **Space** | pause (holds the current command) |
 | **H** | move slowly to the start pose |
 | **Y** / **N** | save the trial as success / failure |
+| **T** | request manual takeover or return to the policy (`--takeover` only) |
+| **M** | mark when a hand enters the scene; control stays as it was |
 
 Each trial is saved to `rollouts/<task>/` with all frames, the command and measured joints, chunk start
 times and inference times.
@@ -127,9 +129,30 @@ Scrub or play the synchronized cameras and joint traces. The position readout sh
 and its inference time. Use **Back to live** to return to the cameras. Starting or homing closes
 the player; pause again to review another trial.
 
-Change the trial's **Result**, enter an optional one-line **Note**, then click **Save** in the replay
-panel. Edits live in `rollout_XXX.review.json` beside the recording. Keep the two files together when
-copying a reviewed trial. The original recording is unchanged.
+Change the trial's **Result**, enter an optional one-line **Note**, or select **Exclude trial**
+and enter a reason (for example, GPU contention). Click **Save** in the replay panel. Excluded trials
+stay viewable but are omitted from success totals, health summaries and export. Edits live in
+`rollout_XXX.review.json` beside the recording. Keep the two files together when copying a reviewed
+trial. The original recording is unchanged.
+
+### Manual takeover
+
+Add `--takeover` to `run`, or set `run.takeover: true` in YAML. This connects the calibrated leader
+configured for `collect`. Press **T** or **Take over** while the policy is running. The follower holds
+its current command. Move the leader by hand until every arm joint is within `run.takeover_align_deg`
+(default 5°). The page shows each difference. The gripper does not enter the alignment check. During
+following, the arm uses the policy's speed and joint limits, and the reBot gripper uses the same force
+clamp as collection. A missing leader reading causes a hold and requires alignment again.
+
+Press **T** again to re-plan from the current observation. Pause cancels manual control; **S** then
+resumes the policy. Home, save and quit still work. `--fake` and the simulator use scripted leaders;
+they must pass the same alignment check.
+
+With takeover enabled, the trial adds arrays `takeover` (`0` policy, `1` following, `2` aligning and
+holding) and `leader` (one reading per joint and frame, `NaN` when unavailable). Metadata records
+`takeover_count` (requests) and `takeover_seconds` (time actually following). **M** or **Mark hand in
+scene** adds a timestamp to `hand_marks` while a trial is open, even without takeover. Replay shades
+aligning and following on the timeline and traces, and marks each hand entry.
 
 ### Execution schemes (`--mode`)
 
@@ -172,7 +195,44 @@ macbot health --data ~/macbot-data/rollouts/cubes_to_box
 ```
 
 Standalone replay uses the same player and annotations as the run console. When `health --data`
-points to a rollout folder, each trial's report includes its reviewed result and note.
+points to a rollout folder, it shows the reviewed result, note and grasp misses per trial. Replay
+marks the start of each detected empty close.
+
+The detector compares the measured gripper near the end of a commanded close, before it reopens, with
+two calibrated levels. It skips a close already in progress when recording begins and a last close
+that never reopens. A partial or unsettled close is inconclusive. The built-in profile applies to real
+reBot recordings with binary endpoints near −120° and 0° (the reference soft gripper). On other setups,
+set `robot.grasp_miss: {held: ..., empty: ..., tolerance: ...}` in the gripper's units. Set it to `false`
+to disable detection. Define `close_above` and `open_below` inside that profile if the command thresholds
+differ from the export config. Without calibration or with overlapping tolerance bands, the result is
+unknown.
+
+### Export reviewed trials for fine-tuning
+
+```bash
+macbot export --rollouts --data ~/macbot-data/rollouts/cubes_to_box --out ~/data/cubes_rollouts
+macbot export --with-rollout-labels --data ~/macbot-data/raw/cubes_to_box --out ~/data/cubes_demos
+```
+
+Rollouts use the same `observation.state`, `action`, camera keys, image sizes and framing metadata as
+demonstrations. Arm actions are the saved follower commands. For binary policies, the gripper is
+`1` when `gp ≥ 0.5` and `0` otherwise. During human control, use the leader reading with the same
+`--close-above` and `--open-below` hysteresis as demonstration export (defaults from `export`).
+Holding frames and frames without valid policy output use the saved gripper command; raw policies also
+use command hysteresis. The exported label expresses policy intent when `gp` is available, so it can
+differ briefly from the physical command while the deploy-time open debounce is active.
+
+Each frame gets `takeover`, `grasp_miss` (inside a detected empty close) and `hand_mark` (within ±0.5 s
+of a mark). Episode Parquet metadata stores reviewed `success`, `source="rollout"` and the grasp
+counts. A zero frame label means no miss was flagged; `grasp_miss_count=null` means the trial has no
+usable calibration. Excluded trials are skipped. The export keeps successes, failures and corrections.
+
+`--with-rollout-labels` gives binary demonstration exports matching columns with zero frame labels,
+`source="demonstration"` and `success=true`; it leaves the standard demonstration export unchanged.
+Before merging with LeRobot, match fps, robot and joint order, camera keys, image sizes and
+`meta/camera_framing.json`. Older trials may lack framing fields; verify their setup before merging.
+Keep the verified framing and `gripper.json` sidecars with the merged dataset. Compute advantages on
+the training machine.
 
 `macbot bench --policy DIR` times inference on this Mac with blank images.
 

@@ -51,6 +51,8 @@ def test_takeover_holds_then_follows_and_replans(tmp_path, monkeypatch, sim):
                 return [1.9, 0.0, 60.0]    # arm is aligned; gripper alone cannot block
             if step == 5:
                 raise OSError("disconnected")
+            if step == 8:
+                return self.read()
             return [80.0, -6.0, -85.0]
 
         def send(self, target, measured=None):
@@ -84,8 +86,9 @@ def test_takeover_holds_then_follows_and_replans(tmp_path, monkeypatch, sim):
     ))
     want = iter([
         "start", None, "takeover", None, "mark_hand", None, "takeover",
-        "takeover", "pause", "save_fail", "quit",
+        "takeover", None, "home", "pause", "save_fail", "quit",
     ])
+
     def tick():
         action = next(want)
         if action:
@@ -102,14 +105,18 @@ def test_takeover_holds_then_follows_and_replans(tmp_path, monkeypatch, sim):
         assert follow_types[:7] == ["running", "running", "aligning", "following", "following", "aligning", "running"]
         assert commands[2] == commands[1]
         assert commands[5] == commands[4]
+        assert follow_types[9] == "homing"
+        assert commands[9][0] < commands[8][0]
+    else:
+        assert len(follow_types) == 6  # no simulation steps while keeping still or asking to reset this trial
     assert observations[4][0] == pytest.approx(2.9)
     assert max(abs(x) for x in np.diff(np.asarray(commands)[:, 0])) <= 1
     assert commands[4 if not sim else 3][2] == -85.0
     assert cleanup_calls == [True]
     with np.load(tmp_path / "rollout_000.npz") as d:
-        np.testing.assert_array_equal(d["takeover"], [0, 0, 2, 1, 1, 2, 0, 2])
+        np.testing.assert_array_equal(d["takeover"], [0, 0, 2, 1, 1, 2, 0, 2, 1])
         assert np.isnan(d["leader"][5]).all()
         meta = json.loads(str(d["meta"]))
         assert meta["hand_marks"] == pytest.approx([4 / 60])
         assert meta["takeover_count"] == 2
-        assert meta["takeover_seconds"] == pytest.approx(.033)
+        assert meta["takeover_seconds"] == pytest.approx(.05)

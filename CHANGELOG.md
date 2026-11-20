@@ -11,6 +11,9 @@ All notable changes to macbot will be documented here. This project follows
 
 ### Added
 
+- Opt-in leader takeover in `run`, with joint alignment, recorded control states and hand-in-scene marks.
+- Replay shows calibrated grasp-miss flags, and reviews can exclude trials from summaries and exports.
+- `macbot export --rollouts` writes LeRobot v3 trials with frame labels and reviewed outcomes.
 - Review saved trials from current and earlier sessions in the paused run console, with synchronized
   cameras, joint traces and per-chunk timing. Result and note edits are shared with `replay` and `health`.
 - `macbot init` guides USB arm selection, live camera assignment and manual LeRobot calibration.

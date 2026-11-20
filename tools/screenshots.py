@@ -45,7 +45,7 @@ window.fetch = async (url, opt) => {{
   const image = Object.hasOwn(__I, p) ? p : Object.keys(__I).find(k => p.startsWith(k + "/"));
   if (image) return nativeFetch(__I[image]);
   const key = Object.keys(__R).find(k => p === k) ?? (p === "/api/cmd" ? "/api/status" : null);
-  return {{ ok: true, json: async () => JSON.parse(JSON.stringify(__R[key] ?? {{}})) }};
+  return {{ ok: true, headers: new Headers(), json: async () => JSON.parse(JSON.stringify(__R[key] ?? {{}})) }};
 }};
 const __src = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, "src");
 Object.defineProperty(HTMLImageElement.prototype, "src", {{
@@ -56,7 +56,7 @@ Object.defineProperty(HTMLImageElement.prototype, "src", {{
 
 
 def render(name: str, routes: dict, images: dict, lang: str, out: Path, size=(1440, 1180), after: str = "",
-           chrome_args=(), **vars):
+           chrome_args=(), expect="", **vars):
     html = web.page(name, **vars).decode()
     html = html.replace('href="/static/', f'href="{web.STATIC.as_uri()}/').replace('src="/static/', f'src="{web.STATIC.as_uri()}/')
     html = html.replace('url("/static/', f'url("{web.STATIC.as_uri()}/')
@@ -75,11 +75,14 @@ def render(name: str, routes: dict, images: dict, lang: str, out: Path, size=(14
         print("wrote", page_file)
         return
     with tempfile.TemporaryDirectory(prefix="macbot_chrome_") as profile:
-        subprocess.run([CHROME, "--headless=new", "--hide-scrollbars", "--allow-file-access-from-files",
+        result = subprocess.run([CHROME, "--headless=new", "--hide-scrollbars", "--allow-file-access-from-files",
                         "--disable-background-networking", "--host-resolver-rules=MAP * ~NOTFOUND",
                         f"--user-data-dir={profile}", "--no-first-run", *chrome_args,
+                        *(("--dump-dom",) if expect else ()),
                         f"--window-size={size[0]},{size[1]}", "--virtual-time-budget=2500", f"--screenshot={out}",
                         page_file.as_uri()], check=True, capture_output=True, timeout=25)
+    if expect and expect.encode() not in result.stdout:
+        raise RuntimeError(f"{out}: did not render the expected state ({expect})")
     print("wrote", out)
 
 
@@ -109,8 +112,13 @@ POLICY = "pi05_cubes_to_box/004000"
 EXECUTOR = "real-time chunking (guided)"
 
 
-def run_mock(r, meta, store, name, opened=False):
+def run_mock(r, meta, store, name, opened=False, takeover=None):
     k = len(r["t"]) // 2
+    if takeover is not None:
+        matches = np.flatnonzero(r["takeover"] == (1 if takeover == "following" else 2))
+        if not len(matches):
+            raise ValueError(f"{name} has no {takeover} frames")
+        k = int(matches[len(matches) // 2])
     status = {"mode": "paused" if opened else "running",
               "msg": {"en": "Paused (holding the current command).", "zh": "已暂停（保持当前指令）。"} if opened else
               {"en": "Policy running. Space pauses.", "zh": "策略运行中。空格暂停。"},
@@ -119,6 +127,17 @@ def run_mock(r, meta, store, name, opened=False):
               "chunks": int((r["chunk_t"] < r["t"][k]).sum()), "infer_ms": 284.0, "executor": EXECUTOR, "speed": 0.5,
               "fake": False, "policy": POLICY, "task": meta["task"], "rec_s": round(float(r["t"][k]), 1), "next": 3,
               "saved_revision": 0, "replay_ready": opened}
+    if takeover:
+        status.update(mode=takeover, takeover_enabled=True, align_deg=5, recording=True, fake=meta["fake"],
+                      executor=meta["executor"], policy="/".join(Path(meta["policy"]).parts[-2:]),
+                      next=int(name.rsplit("_", 1)[-1]), speed=meta["speed"],
+                      infer_ms=round(float(np.median(r["infer_ms"][r["chunk_t"] <= r["t"][k]])), 1),
+                      hand_marks=sum(t <= float(r["t"][k]) for t in meta.get("hand_marks", [])),
+                      alignment={n: float(a - q) for n, a, q in zip(JOINTS, r["leader"][k], r["qpos"][k], strict=True)
+                                 if n != meta["gripper"]},
+                      msg=({"en": "Following the leader.", "zh": "正在跟随领臂。"} if takeover == "following" else
+                           {"en": "Holding the follower. Align every arm joint to take control.",
+                            "zh": "从臂保持当前位置。请对齐所有臂关节以接管。"}))
     routes, images, _ = replay_mock(store, name)
     routes["/api/status"] = status
     images.update({f"/stream/{c}": rollout_frame_uri(store, name, c, k) for c in ("top", "wrist")})
@@ -143,7 +162,7 @@ def replay_mock(store, name):
     m = s["meta"]
     for key in list(m):
         if key not in ("task", "instruction", "fps", "frames", "joint_names", "cameras", "result", "speed",
-                       "saved_at", "note", "policy", "executor", "mode"):
+                       "saved_at", "note", "policy", "executor", "mode", "hand_marks", "exclude", "exclude_reason"):
             m.pop(key)
     items = store.index()
     items.sort(key=lambda item: item["name"] != name)
@@ -195,7 +214,9 @@ def main():
     ap.add_argument("--pages", default="collect,run,replay")
     ap.add_argument("--html-only", action="store_true", help="only write the mocked pages; capture them with any browser")
     ap.add_argument("--mobile-dark", action="store_true", help="render setup at a narrow viewport with a dark theme")
-    ap.add_argument("--run-replay", action="store_true", help="open a saved trial in the run screenshots")
+    run_view = ap.add_mutually_exclusive_group()
+    run_view.add_argument("--run-replay", action="store_true", help="open a saved trial in the run screenshots")
+    run_view.add_argument("--run-takeover", choices=("aligning", "following"), help="show a recorded frame in a takeover state")
     ap.add_argument("--dark", action="store_true", help="render with a dark color scheme")
     args = ap.parse_args()
     global CAPTURE
@@ -223,10 +244,12 @@ def main():
             routes, images = collect_mock(d, meta)
             render("collect", routes, images, lang, out / f"collect_{lang}.png", task=meta["task"])
         if args.rollout and "run" in pages:
-            routes, images, after = run_mock(r, rmeta, store, name, opened=args.run_replay)
-            suffix = ("_replay" if args.run_replay else "") + ("_dark" if args.dark else "")
+            routes, images, after = run_mock(r, rmeta, store, name, opened=args.run_replay, takeover=args.run_takeover)
+            state = args.run_takeover or ("replay" if args.run_replay else None)
+            suffix = (f"_{state}" if state else "") + ("_dark" if args.dark else "")
             render("run", routes, images, lang, out / f"run_{lang}{suffix}.png", after=after, task=rmeta["task"],
                    size=(1440, 1240 if args.run_replay else 1180),
+                   expect=f'data-run-mode="{args.run_takeover}"' if args.run_takeover else "",
                    chrome_args=("--force-dark-mode",) if args.dark else ())
         if args.rollout and "replay" in pages:
             routes, images, _ = replay_mock(store, name)
