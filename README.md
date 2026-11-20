@@ -18,7 +18,12 @@ Teleoperate, record, export to LeRobot and run ACT or π0.5 on the robot, all fr
 
 <p align="center"><b>English</b> · <a href="https://github.com/MuQY1818/macbot/blob/main/README_zh.md">中文</a></p>
 
-<p align="center"><img src="https://raw.githubusercontent.com/MuQY1818/macbot/main/docs/img/collect_en.jpg" alt="The macbot collection console" width="100%"></p>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/MuQY1818/macbot/main/assets/scene-dark.svg">
+    <img src="https://raw.githubusercontent.com/MuQY1818/macbot/main/assets/scene.svg" alt="Collect on the robot, export a LeRobot dataset, train on a GPU, bring the checkpoint back and run it on the MacBook" width="100%">
+  </picture>
+</p>
 
 ## Why
 
@@ -61,6 +66,8 @@ Data collection:
 - **`macbot doctor`** checks packages, MPS and the configured robot and cameras before you start.
 - **`--fake`** on `collect` and `run` substitutes a fake arm and cameras; `run` still runs the policy.
 - English and Chinese in every web page (toggle in the top bar), light and dark mode.
+
+<p align="center"><img src="https://raw.githubusercontent.com/MuQY1818/macbot/main/docs/img/collect_en.jpg" alt="The macbot collection console" width="100%"></p>
 
 | Run a policy | Replay a trial |
 |---|---|
