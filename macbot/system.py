@@ -26,7 +26,8 @@ def preload_pcan() -> bool:
         return False
     if "/usr/local/lib" not in os.environ.get("DYLD_FALLBACK_LIBRARY_PATH", ""):
         os.environ["DYLD_FALLBACK_LIBRARY_PATH"] = "/usr/local/lib:/usr/lib"
-        os.execv(sys.executable, [sys.executable] + sys.argv)
+        # Preserve interpreter options such as -m on the init-to-collect handoff.
+        os.execv(sys.executable, [sys.executable, *sys.orig_argv[1:]])
     import ctypes
 
     ctypes.CDLL(str(PCBUSB), mode=ctypes.RTLD_GLOBAL)

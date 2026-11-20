@@ -8,7 +8,6 @@ import threading
 import time
 import webbrowser
 from dataclasses import asdict
-from http.server import ThreadingHTTPServer
 
 import cv2
 
@@ -28,6 +27,7 @@ class State:
         self.preview_errors = {}
         self.result = None
         self.launch = threading.Event()
+        self.collect_server = None
 
     def refresh(self):
         self.close_previews()
@@ -94,7 +94,8 @@ class State:
         if path == "/api/collect":
             if self.result is None or self.setup.path.read_bytes() != self.result:
                 raise ValueError("Save the configuration and pass doctor before starting collection.")
-            return {"port": load(self.setup.path)["teleop"]["port"]}
+            self.collect_server = web.bind_console(load(self.setup.path), "teleop", web.Handler)
+            return {"port": self.collect_server.server_port}
         raise ValueError("Unknown action.")
 
 
@@ -146,15 +147,16 @@ def make_handler(state, host):
     return H
 
 
-def serve(setup, port, open_browser=True):
+def serve(setup, port=None, open_browser=True):
     state = State(setup)
-    state.refresh()
-    with ThreadingHTTPServer(("127.0.0.1", port), web.Handler) as server:
-        host = f"127.0.0.1:{server.server_port}"
+    cfg = load(setup.path if setup.path.is_file() else None)
+    with web.bind_console(cfg, "init", web.Handler, port) as server:
+        state.refresh()
+        host = f"{web.HOST}:{server.server_port}"
         server.RequestHandlerClass = make_handler(state, host)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
-        url = f"http://{host}"
+        url = server.url
         print(f"Setup: {url}", flush=True)
         try:
             if open_browser:
@@ -167,4 +169,4 @@ def serve(setup, port, open_browser=True):
             thread.join()
             with state.lock:
                 state.close_previews()
-    return state.launch.is_set()
+    return state.collect_server

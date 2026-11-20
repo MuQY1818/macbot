@@ -57,8 +57,12 @@ def cmd_init(args):
         launch = serve(setup, args.port, open_browser=not args.no_browser)
     except (OSError, ValueError, RuntimeError) as exc:
         raise SystemExit(str(exc)) from exc
-    if launch:
-        os.execv(sys.executable, [sys.executable, "-m", "macbot.cli", "--config", str(setup.path), "collect"])
+    if launch is not None:
+        with launch:
+            # Keep the chosen URL reserved until collect takes ownership.
+            launch.socket.set_inheritable(True)
+            os.execv(sys.executable, [sys.executable, "-m", "macbot.cli", "--config", str(setup.path),
+                                      "collect", "--listen-fd", str(launch.fileno())])
 
 
 def cmd_cameras(args):
@@ -132,7 +136,7 @@ def cmd_collect(args):
     if not args.fake:
         _preload(cfg)
     from .collect.server import run
-    run(cfg, fake=args.fake, port=args.port, out=args.out)
+    run(cfg, fake=args.fake, port=args.port, out=args.out, listen_fd=args.listen_fd)
 
 
 def cmd_export(args):
@@ -180,6 +184,7 @@ def _backend_args(parser):
 
 
 def main(argv=None):
+    from .config import ConsolePortError
     from .robot.usb import FAMILIES
 
     ap = argparse.ArgumentParser(prog="macbot", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -191,7 +196,7 @@ def main(argv=None):
     p.add_argument("--family", choices=FAMILIES, help="confirm a robot model for scripted setup")
     p.add_argument("--leader-serial", help="confirm the leader's USB serial for scripted setup")
     p.add_argument("--follower-serial", help="confirm the follower's USB serial for scripted setup")
-    p.add_argument("--port", default=8765, type=int, help="local setup console port (default: 8765)")
+    p.add_argument("--port", type=int, help="local setup console port (default: 8765 or init.port)")
     p.add_argument("--no-browser", action="store_true", help="print the local setup URL without opening it")
     p.set_defaults(fn=cmd_init)
 
@@ -203,7 +208,9 @@ def main(argv=None):
 
     p = sub.add_parser("collect", help="teleoperate and record (web page)")
     p.add_argument("--fake", action="store_true", help="simulate robot, leader and cameras")
-    p.add_argument("--port", type=int)
+    port_args = p.add_mutually_exclusive_group()
+    port_args.add_argument("--port", type=int, help="collection console port (default: 8766 or teleop.port)")
+    port_args.add_argument("--listen-fd", type=int, help=argparse.SUPPRESS)
     p.add_argument("--out", help="episode folder (default <data_root>/raw/<task>)")
     p.set_defaults(fn=cmd_collect)
 
@@ -242,14 +249,14 @@ def main(argv=None):
     _backend_args(p)
     p.add_argument("--speed", type=float, help="0.1-1.0, default from config")
     p.add_argument("--device", default="mps")
-    p.add_argument("--port", type=int)
+    p.add_argument("--port", type=int, help="policy console port (default: 8767 or run.port)")
     p.add_argument("--fake", action="store_true", help="simulate robot and cameras (policy runs for real)")
     p.add_argument("--autostart", type=float, default=0, help="in fake or sim mode: run this many seconds, save, quit")
     p.set_defaults(fn=cmd_run)
 
     p = sub.add_parser("replay", help="browse recorded rollouts")
     p.add_argument("--dir", help="rollout folder (default <data_root>/rollouts/<task>)")
-    p.add_argument("--port", type=int, default=8768)
+    p.add_argument("--port", type=int, help="replay console port (default: 8768 or replay.port)")
     p.set_defaults(fn=cmd_replay)
 
     p = sub.add_parser("video", help="rollout -> side-by-side MP4")
@@ -269,7 +276,10 @@ def main(argv=None):
     p.set_defaults(fn=cmd_bench)
 
     args = ap.parse_args(argv)
-    return args.fn(args)
+    try:
+        return args.fn(args)
+    except ConsolePortError as exc:
+        raise SystemExit(str(exc)) from None
 
 
 if __name__ == "__main__":

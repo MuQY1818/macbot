@@ -1,5 +1,6 @@
 import io
 import json
+import os
 import sys
 import time
 from types import SimpleNamespace
@@ -13,6 +14,7 @@ from macbot.cli import main
 from macbot.config import load, load_cli
 from macbot.init_wizard import Setup, calibration_info
 from macbot.robot.usb import Adapter
+from macbot.web import ConsoleServer, Handler
 from macbot.web.init_wizard import State, make_handler
 
 CHOICE = {"family": "so101", "leader": 1, "follower": 0, "cameras": {"top": 0}}
@@ -105,8 +107,13 @@ def drive(handler_class, method, path, data=None, token=None, host=HOST):
     return status, json.loads(body) if content == "application/json" else body
 
 
-def test_wizard_handlers_in_process(wizard):
+def test_wizard_handlers_in_process(wizard, busy_port, monkeypatch):
     setup, calls = wizard
+    from macbot.web import init_wizard
+
+    cfg = load()
+    cfg["teleop"]["port"] = busy_port
+    monkeypatch.setattr(init_wizard, "load", lambda _: cfg)
     state = State(setup)
     state.refresh()
     handler = make_handler(state, HOST)
@@ -129,7 +136,28 @@ def test_wizard_handlers_in_process(wizard):
     assert drive(handler, "POST", "/api/collect", {"revision": rev}, token)[0] == 422
     setup.check = lambda _: (0, "fake doctor passed")
     assert drive(handler, "POST", "/api/save", {**move, "overwrite": True}, token)[1]["ok"] is True
-    assert drive(handler, "POST", "/api/collect", {"revision": rev}, token) == (200, {"port": 8766})
-    assert state.launch.is_set()
-    state.close_previews()
+    cfg.explicit_ports = {"teleop"}
+    status, error = drive(handler, "POST", "/api/collect", {"revision": rev}, token)
+    assert status == 422 and f"Port {busy_port}" in error["error"]
+    assert not state.launch.is_set()
+    cfg.explicit_ports = frozenset()
+    try:
+        status, handoff = drive(handler, "POST", "/api/collect", {"revision": rev}, token)
+        assert status == 200 and handoff["port"] > busy_port
+        assert state.launch.is_set()
+        with ConsoleServer.from_listener(os.dup(state.collect_server.fileno()), Handler) as collect:
+            assert collect.server_port == handoff["port"]
+    finally:
+        if state.collect_server is not None:
+            state.collect_server.server_close()
+        state.close_previews()
     assert calls[-1] == "closed"
+
+
+def test_replacing_a_profile_keeps_explicit_console_ports(wizard):
+    setup, _ = wizard
+    setup.path.write_text("init: {port: 8765}\nteleop: {port: 9000}\n")
+    setup.save(CHOICE, overwrite=True)
+    cfg = load(setup.path)
+    assert cfg.explicit_ports == {"init", "teleop"}
+    assert cfg["init"]["port"] == 8765 and cfg["teleop"]["port"] == 9000

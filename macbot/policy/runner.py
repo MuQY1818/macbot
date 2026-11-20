@@ -18,7 +18,6 @@ import sys
 import threading
 import time
 from contextlib import ExitStack
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 import numpy as np
@@ -146,6 +145,11 @@ def make_handler(st: State):
 
 
 def run(cfg: Config, args):
+    with web.bind_console(cfg, "run", web.Handler, args.port) as srv, ExitStack() as cleanup:
+        _run(cfg, args, srv, cleanup)
+
+
+def _run(cfg, args, srv, cleanup):
     start_log(cfg.log_dir, "run")
     rc = cfg["run"]
     args.speed = args.speed if args.speed is not None else rc["speed"]
@@ -160,13 +164,11 @@ def run(cfg: Config, args):
     fps = int(cfg["record"]["fps"])
     out = ensure_dir(cfg.rollout_dir(cfg.task + ("_fake" if args.fake else "")))
     st = State(cfg, out, args)
-    port = args.port or rc["port"]
-    with ThreadingHTTPServer(("127.0.0.1", port), make_handler(st)) as srv, ExitStack() as cleanup:
-        srv.daemon_threads = True
-        _control(st, srv, port, fps, gripper, cleanup)
+    srv.RequestHandlerClass = make_handler(st)
+    _control(st, srv, fps, gripper, cleanup)
 
 
-def _control(st, srv, port, fps, gripper, cleanup):
+def _control(st, srv, fps, gripper, cleanup):
     cfg, args, rc = st.cfg, st.args, st.cfg["run"]
     from ..robot import open_robot
     robot = open_robot(cfg["robot"], fake=args.fake)
@@ -277,7 +279,7 @@ def _control(st, srv, port, fps, gripper, cleanup):
     st.executor = ex.describe()
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     cleanup.callback(srv.shutdown)
-    print(f"executor: {st.executor}\nweb page: http://127.0.0.1:{port}   rollouts: {st.out}", flush=True)
+    print(f"executor: {st.executor}\nweb page: {srv.url}   rollouts: {st.out}", flush=True)
 
     hz = rc["hz"]
     dt = 1.0 / hz
