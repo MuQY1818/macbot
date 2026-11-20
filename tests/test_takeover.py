@@ -390,17 +390,14 @@ def test_takeover_rides_through_brief_dropouts_and_stops_on_long_ones(tmp_path, 
     assert (labels[40:46] == 2).all() and labels[140] == 1
 
 
-def test_fresh_leader_angles_tolerate_single_servo_misses():
+def test_fresh_leader_angles_use_held_angles_until_every_servo_answered():
     from macbot.robot.rebot import fresh_leader_angles
 
     def sample(angle, reliable=True):
         return SimpleNamespace(angle_deg=angle, reliable=reliable)
 
-    ids, good = {"a": 1, "b": 2}, {}
-    assert fresh_leader_angles(good, ids, {1: sample(10), 2: None}, 0.0) is None          # b never read
-    assert fresh_leader_angles(good, ids, {1: sample(10), 2: sample(5)}, 0.01) == {"a": 10, "b": 5}
-    # b goes silent for seconds, as reBot 102 servos do: keep its last reliable angle, as collect does
-    assert fresh_leader_angles(good, ids, {1: sample(11), 2: sample(99, reliable=False)}, 2.5) == {"a": 11, "b": 5}
-    # silent for longer than the limit: no sample
-    assert fresh_leader_angles(good, ids, {1: sample(12), 2: sample(99, reliable=False)}, 3.1) is None
-    assert fresh_leader_angles(good, ids, {1: sample(12), 2: sample(6)}, 3.2) == {"a": 12, "b": 6}
+    ids = {"a": 1, "gripper": 2}
+    assert fresh_leader_angles(ids, {1: sample(10), 2: None}) is None          # the gripper never answered
+    assert fresh_leader_angles(ids, {1: sample(10), 2: sample(0.0)}) == {"a": 10, "gripper": 0.0}
+    # held near 0 deg by the library's glitch filter: the held angle is the real one
+    assert fresh_leader_angles(ids, {1: sample(11), 2: sample(0.0, reliable=False)}) == {"a": 11, "gripper": 0.0}

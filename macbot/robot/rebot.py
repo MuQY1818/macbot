@@ -169,26 +169,20 @@ def make_follower(rcfg: dict):
     return robot
 
 
-LEADER_FRESH_S = 3.0
+def fresh_leader_angles(ids: dict, samples: dict):
+    """Leader angles for takeover, or None until every servo has answered at least once.
 
-
-def fresh_leader_angles(good: dict, ids: dict, samples: dict, now: float, max_age: float = LEADER_FRESH_S):
-    """Leader angles for takeover, or None when any joint has no fresh reading within ``max_age`` seconds.
-
-    Upstream get_action falls back to cached angles on errors, and the bus returns a cached angle for a servo
-    that did not answer. On the reBot 102 single servos go silent for up to about 3 s at a time (measured with
-    the arm in use: shoulder_pan, elbow_flex and the gripper, 9-13 % of reads each), while the others keep
-    answering. `collect` uses the cached angle and works well, so takeover does the same; the follower's
-    velocity limit bounds the catch-up when a joint answers again. Only a joint silent for longer than
-    ``max_age`` makes the sample stale. ``good`` keeps each joint's last reliable reading between calls.
+    The servo library marks a reading ``reliable=False`` and holds the last good angle when it suspects a
+    power-cycle glitch, which it detects as a jump to 0 deg. On the reBot 102 the calibrated zero is a pose
+    the operator uses: the closed gripper and the start pose read about 0 deg, so those servos are marked
+    unreliable for seconds at a time (every takeover dropout in rollouts 034 and 036 began with the leader
+    gripper at 0.0). The held angle is the true angle there, and `collect` uses it without problems, so
+    takeover uses it too. A servo that really stops answering raises an error from the bus after a few
+    missed reads, which makes the whole read stale.
     """
-    for n, i in ids.items():
-        sample = samples.get(i)
-        if sample is not None and sample.reliable:
-            good[n] = (now, sample.angle_deg)
-    if all(n in good and now - good[n][0] <= max_age for n in ids):
-        return {n: good[n][1] for n in ids}
-    return None
+    if any(samples.get(i) is None for i in ids.values()):
+        return None
+    return {n: samples[i].angle_deg for n, i in ids.items()}
 
 
 def make_leader(port: str | None = None, leader_id: str = "rebot_arm_102_leader", *, fresh=False):
@@ -198,8 +192,7 @@ def make_leader(port: str | None = None, leader_id: str = "rebot_arm_102_leader"
     class FreshLeader(RebotArm102Leader):
         def _read_raw_positions(self):
             ids = self.config.joint_ids
-            angles = fresh_leader_angles(self.__dict__.setdefault("_good", {}), ids,
-                                         self.bus.sync_monitor(list(ids.values())), time.monotonic())
+            angles = fresh_leader_angles(ids, self.bus.sync_monitor(list(ids.values())))
             self.fresh = angles is not None
             return angles if self.fresh else self._last_raw_positions
 
