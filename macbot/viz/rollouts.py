@@ -2,11 +2,14 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import struct
 import threading
+from collections import OrderedDict
 from contextlib import contextmanager, nullcontext
 from datetime import datetime
+from functools import lru_cache
 from zipfile import ZIP_STORED, ZipFile
 
 import cv2
@@ -15,8 +18,22 @@ import numpy as np
 from ..data.rollouts import READ_ERRORS, ROLLOUT, array_header, metadata, read_array, rollout_files, write_annotation
 
 MAX_FRAME = 4 * 1024 * 1024
+MAX_CACHED_SUMMARY = 1024 * 1024
+SUMMARY_CACHE_SIZE = 4
 # A ZIP local header can have different extra fields from its central directory entry (e.g. ZIP64).
 LOCAL_HEADER = struct.Struct("<4s22xHH")
+
+
+def version_of(stat):
+    return stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns
+
+
+def stored_start(fp, info, start):
+    fp.seek(info.header_offset)
+    sig, filename_len, extra_len = LOCAL_HEADER.unpack(fp.read(LOCAL_HEADER.size))
+    if sig != b"PK\x03\x04":
+        raise ValueError("Invalid ZIP header")
+    return info.header_offset + LOCAL_HEADER.size + filename_len + extra_len + start
 
 
 @contextmanager
@@ -30,12 +47,7 @@ def byte_array(fp, archive, key):
             raise ValueError("Invalid rollout camera array")
 
         if info.compress_type == ZIP_STORED:
-            fp.seek(info.header_offset)
-            sig, filename_len, extra_len = LOCAL_HEADER.unpack(fp.read(LOCAL_HEADER.size))
-            if sig != b"PK\x03\x04":
-                raise ValueError("Invalid ZIP header")
-            base = info.header_offset + LOCAL_HEADER.size + filename_len + extra_len + start
-            stream = fp
+            base, stream = stored_start(fp, info, start), fp
         else:
             # Older externally compressed trials still work. ZipExtFile seeks with bounded
             # buffers, though it may have to decompress the prefix of the member.
@@ -66,10 +78,47 @@ def jpeg_frame(fp, archive, camera, frame):
         return read(first, last - first)
 
 
+@lru_cache(maxsize=16)
+def stored_camera(path, version, camera):
+    """Cache member locations and dtypes, never JPEG data or open file handles."""
+    with path.open("rb") as fp:
+        if version_of(os.fstat(fp.fileno())) != version:
+            return None
+        with ZipFile(fp) as archive:
+            parts = []
+            for key in ("offsets", "jpeg"):
+                info = archive.getinfo(f"{camera}_{key}.npy")
+                if info.compress_type != ZIP_STORED:
+                    return None
+                with archive.open(info) as member:
+                    shape, _, dtype = array_header(member, info.file_size)
+                    if len(shape) != 1:
+                        raise ValueError("Invalid rollout camera array")
+                    parts.append((stored_start(fp, info, member.tell()), shape[0], dtype))
+            return tuple(parts)
+
+
+def read_stored_frame(fp, camera, frame):
+    (offset_base, n, dtype), (jpeg_base, jpeg_size, jpeg_dtype) = camera
+    if dtype.kind not in "iu" or not 0 <= frame < n - 1:
+        raise KeyError("Unknown frame")
+    fp.seek(offset_base + frame * dtype.itemsize)
+    first, last = map(int, np.frombuffer(fp.read(2 * dtype.itemsize), dtype=dtype))
+    if jpeg_dtype != np.uint8 or not (0 <= first < last <= jpeg_size and last - first <= MAX_FRAME):
+        raise ValueError("Invalid rollout JPEG range")
+    fp.seek(jpeg_base + first)
+    data = fp.read(last - first)
+    if len(data) != last - first:
+        raise ValueError("Truncated rollout frame")
+    return data
+
+
 class Store:
     def __init__(self, folder):
         self.folder = folder
         self.slots = threading.BoundedSemaphore(4)
+        self.summary_lock = threading.Lock()
+        self.summaries = OrderedDict()
 
     def path(self, name):
         if not ROLLOUT.fullmatch(name):
@@ -114,8 +163,33 @@ class Store:
                 "infer_ms": round(float(np.median(ims)), 1) if len(ims) else None, "chunks": len(ct)}
 
     def frame(self, name, camera, frame):
-        with self.path(name).open("rb") as fp, ZipFile(fp) as z:
-            return jpeg_frame(fp, z, camera, frame)
+        path = self.path(name)
+        with path.open("rb") as fp:
+            if layout := stored_camera(path, version_of(os.fstat(fp.fileno())), camera):
+                return read_stored_frame(fp, layout, frame)
+            with ZipFile(fp) as z:
+                return jpeg_frame(fp, z, camera, frame)
+
+    def summary_payload(self, name):
+        path = self.path(name)
+        try:
+            review = version_of(path.with_suffix(".review.json").stat())
+        except FileNotFoundError:
+            review = None
+        key = (name, version_of(path.stat()), review)
+        with self.summary_lock:
+            if cached := self.summaries.get(key):
+                self.summaries.move_to_end(key)
+                return cached
+            # Use the incremental encoder on a cold read so other threads can run between
+            # pieces of a large trace. Cache bytes to avoid encoding again on later opens.
+            encoder = json.JSONEncoder(ensure_ascii=False, allow_nan=False)
+            payload = "".join(encoder.iterencode(self.summary(name))).encode()
+            if len(payload) <= MAX_CACHED_SUMMARY:
+                self.summaries[key] = payload
+                if len(self.summaries) > SUMMARY_CACHE_SIZE:
+                    self.summaries.popitem(last=False)
+            return payload
 
     def annotate(self, name, body):
         if not isinstance(body, dict):
@@ -150,13 +224,13 @@ def serve_rollouts(handler, store, path, *, method="GET", lease=nullcontext):
                 elif index:
                     response = {"folder": str(store.folder), "items": store.index()}
                 elif trial:
-                    response = store.summary(trial[1])
+                    response = store.summary_payload(trial[1])
                 elif frame:
                     response = store.frame(frame[1], frame[2], int(frame[3]))
                     ctype = "image/jpeg"
                 else:
                     response = store.annotate(edit[1], payload)
-                if ctype == "application/json":
+                if ctype == "application/json" and not isinstance(response, bytes):
                     response = json.dumps(response, ensure_ascii=False, allow_nan=False).encode()
         except (FileNotFoundError, KeyError):
             status, response = 404, b'{"error":"replay_missing"}'

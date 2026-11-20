@@ -79,6 +79,29 @@ def test_stored_jpeg_reads_only_selected_range(tmp_path):
         assert fp.count < 32 * 1024
 
 
+def test_replay_caches_follow_archive_and_review_replacements(tmp_path):
+    path = tmp_path / "rollout_000.npz"
+    first, last = trial(path)
+    store = Store(tmp_path)
+    name = path.stem
+    assert store.frame(name, "top", 1) == last
+    initial = store.summary_payload(name)
+    assert json.loads(initial)["meta"]["result"] == "failure"
+    assert store.summary_payload(name) is initial
+    store.annotate(name, {"result": "success", "note": "reviewed"})
+    edited = json.loads(store.summary_payload(name))
+    assert edited["meta"]["note"] == "reviewed"
+    assert edited["meta"]["result"] == "success"
+
+    # A new stored layout has the same trial name but a different camera offset table.
+    replacement = tmp_path / "replacement.npz"
+    trial(replacement, saved="2024-01-05 08:31:22", pad=8192)
+    replacement.replace(path)
+    assert store.frame(name, "top", 0) == first
+    assert store.frame(name, "top", 2) == last
+    assert json.loads(store.summary_payload(name))["meta"]["saved_at"] == "2024-01-05 08:31:22"
+
+
 def test_review_is_shared_by_run_replay_and_health(tmp_path, capsys):
     path = tmp_path / "rollout_1001.npz"
     frames = trial(path, compressed=True)
