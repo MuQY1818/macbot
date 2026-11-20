@@ -9,6 +9,11 @@ macbot 的主要变更记录在这里。本项目遵循
 
 ## [Unreleased]
 
+### 新增
+
+- 使用 LeRobot 保存的处理器加载兼容的 checkpoint。`macbot policies` 可查实测覆盖范围，
+  `bench --profile` 可分段计时；ACT 和 π0.5 的默认路径不变。
+
 ## [0.3.1] - 2026-11-20
 
 ### 新增

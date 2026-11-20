@@ -28,9 +28,9 @@ from ..cameras import open_cameras
 from ..config import Config
 from ..i18n import tr
 from ..system import ensure_dir, expand, give_back, start_log
-from .executors import AsyncChunk, Ensemble, SyncChunk
+from .executors import AsyncChunk, Ensemble, Step, SyncChunk
 from .gripper import BinaryGripper, find_gripper_config
-from .models import check_joint_dimensions, load_policy, policy_backend, prep_image
+from .models import check_joint_dimensions, load_generic, load_policy, policy_backend, prep_image, use_generic
 
 CAM_STALL_S = 0.5
 
@@ -177,24 +177,41 @@ def _control(st, srv, port, fps, gripper, cleanup):
         st.joints, st.gripper = names, robot.gripper
         st.q = st.cmd = [0.0] * n_j
     gi = robot.gripper_index
-    check_joint_dimensions(args.policy, names)
+    backend = policy_backend(cfg, args)
+    metadata = json.loads((args.policy / "config.json").read_text())
+    generic = use_generic(metadata.get("type", "act"), getattr(args, "policy_impl", "auto"), backend)
+    if generic:
+        if not (args.fake or st.sim) and cfg.get("policy", {}).get("action_space") != "joint_position":
+            sys.exit("Generic policies require policy.action_space: joint_position for hardware. "
+                     "First verify absolute joint order and units with --fake.")
+    else:
+        check_joint_dimensions(args.policy, names)
     if st.sim:
         robot.check_rate(rc["hz"], "run.hz")
     if gripper is not None and gi is None:
         sys.exit("gripper.json found but the robot has no joint named gripper; use --gripper raw")
     print(f"loading policy {args.policy} on {args.device}", flush=True)
-    backend = policy_backend(cfg, args)
-    if backend == "mlx":
+    if generic:
+        pol = load_generic(args.policy, cfg, args, n_j)
+        mode = "step" if pol.stepwise else "chunk"
+        if args.mode not in {"auto", mode}:
+            sys.exit(f"Generic {pol.kind} requires --mode {mode} (or auto)")
+        args.mode = mode
+        if mode == "chunk" and args.k < 1:
+            sys.exit("--k must be positive")
+    elif backend == "mlx":
         pol = load_policy(args.policy, args.device, cfg["task"]["instruction"], args.steps, backend="mlx",
                           mlx_bits=args.mlx_bits, mlx_quantize=args.mlx_quantize, mlx_time_grid=args.mlx_time_grid)
     else:
         pol = load_policy(args.policy, args.device, cfg["task"]["instruction"], args.steps)
-    if pol.kind == "pi05" and not args.no_compile:
+    if not generic and pol.kind == "pi05" and not args.no_compile:
         pol.enable_compile()
         compiler = "mx.compile" if backend == "mlx" else "torch.compile"
         print(f"pi0.5: {compiler} on; the first inference compiles.", flush=True)
     if args.mode == "auto":
         args.mode = "async" if backend == "mlx" else "rtc" if pol.kind == "pi05" else "ensemble"
+    if args.mode == "step" and not generic:
+        sys.exit("--mode step requires a generic policy that uses select_action")
     if args.mode == "rtc" and not pol.supports_rtc:
         sys.exit("--mode rtc needs pi0.5")
     sizes = {c: tuple(cfg["cameras"][c]["save_size"]) for c in st.cam_names}
@@ -208,10 +225,18 @@ def _control(st, srv, port, fps, gripper, cleanup):
     dummy = {c: np.zeros((sizes[c][1], sizes[c][0], 3), np.uint8) for c in st.cam_names}
     for _ in range(3):                                   # warm-up (MPS is slow at first; compile happens here)
         t = time.perf_counter()
-        a = pol(dummy, [0.0] * n_j)
+        try:
+            a = pol(dummy, [0.0] * n_j)
+        except Exception as exc:
+            if not generic:
+                raise
+            sys.exit(f"{pol.kind} warm-up failed on {args.device}: {exc}")
+    if generic:
+        pol.reset()
     if a.shape[-1] != n_j:
         sys.exit(f"policy outputs {a.shape[-1]} values per step, but {robot.kind} has {n_j} joints ({', '.join(names)})")
-    print(f"policy ready ({pol.kind}, chunk {pol.H}): {(time.perf_counter() - t) * 1e3:.0f} ms per inference", flush=True)
+    execution = "step" if generic and pol.stepwise else f"chunk {pol.H}"
+    print(f"policy ready ({pol.kind}, {execution}): {(time.perf_counter() - t) * 1e3:.0f} ms per inference", flush=True)
     if args.mode == "rtc":
         pol.enable_rtc(args.rtc_beta)
         pol(dummy, [0.0] * n_j)                          # unguided call (first chunk) compiles separately
@@ -240,8 +265,10 @@ def _control(st, srv, port, fps, gripper, cleanup):
 
     rate = fps * args.speed
     stop = lambda: st.quit  # noqa: E731
-    if args.mode == "chunk":
-        ex = SyncChunk(pol, observe, rate, st.log_chunk, args.k)
+    if args.mode == "step":
+        ex = Step(pol, observe, rate, st.log_chunk)
+    elif args.mode == "chunk":
+        ex = SyncChunk(pol, observe, rate, st.log_chunk, min(args.k, pol.H) if generic else args.k)
     elif args.mode == "ensemble":
         ex = Ensemble(pol, observe, rate, st.log_chunk, args.te_m, args.te_hz, stop)
     else:
@@ -305,6 +332,8 @@ def _control(st, srv, port, fps, gripper, cleanup):
                             chunk_id, gp_last, next_rec = -1, float("nan"), now
                             st.rec = {"q": [], "cmd": [], "t": [], "chunk": [], "chunk_t": [], "infer_ms": [], "gp": [],
                                       "t0": now, **{f"{c}_jpg": [] for c in st.cam_names}}
+                    if generic and args.mode == "chunk":
+                        pol.reset()
                     ex.reset(True)                        # every start re-plans from the current observation
             elif want == "pause":
                 say("Paused (holding the current command).", "已暂停（保持当前指令）。", "paused")

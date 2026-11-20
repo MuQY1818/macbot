@@ -12,6 +12,7 @@ Executors receive ``observe() -> (images, q)`` and ``log(t_chunk, infer_ms, **ex
 ``rate`` policy steps per second (fps x speed). Within a chunk, targets are linearly interpolated.
 
 * ``SyncChunk``: infer, execute the first K steps, infer again (the robot waits during inference).
+* ``Step``: give the policy a fresh observation on each policy tick and hold its selected action.
 * ``Ensemble``: temporal ensembling as in ACT. A thread infers continuously; each target is the
   exp(m * age)-weighted mean of all chunks that cover the current time.
 * ``AsyncChunk``: a thread infers while the current chunk keeps executing. The new chunk is aligned in
@@ -85,6 +86,36 @@ class SyncChunk(Executor):
 
     def describe(self):
         return f"chunk (K={self.k}, synchronous)"
+
+
+class Step(Executor):
+    name = "step"
+
+    def __init__(self, policy, observe, rate, log):
+        super().__init__(policy, observe, rate, log)
+        self.active, self.action, self.next_tick, self.id = False, None, 0.0, -1
+
+    def reset(self, active: bool):
+        self.pol.reset()
+        self.active, self.action, self.next_tick = active, None, 0.0
+
+    def target(self, now):
+        if not self.active or now < self.next_tick:
+            return self.action, self.id
+        start = time.perf_counter()
+        try:
+            imgs, q = self.observe()
+            self.action = self.pol(imgs, q)[0]
+        except Exception as exc:
+            self.err, self.action = repr(exc), None
+            return None, self.id
+        self.next_tick = now + 1.0 / self.rate  # Do not replay missed ticks after a slow inference.
+        self.id += 1
+        self.log(time.time(), (time.perf_counter() - start) * 1e3)
+        return self.action, self.id
+
+    def describe(self):
+        return "step (LeRobot select_action)"
 
 
 class Ensemble(Executor, threading.Thread):

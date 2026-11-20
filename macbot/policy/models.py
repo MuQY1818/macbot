@@ -156,6 +156,27 @@ def policy_backend(cfg, args):
     return backend
 
 
+def use_generic(policy_type, implementation, backend):
+    if implementation == "generic" and backend != "torch":
+        sys.exit("--policy-impl generic requires the torch backend")
+    return backend == "torch" and (implementation == "generic" or policy_type not in {"act", "pi05"})
+
+
+def load_generic(path, cfg, args, joint_count=None):
+    from .generic import GenericPolicy
+
+    if getattr(args, "steps", None) is not None:
+        sys.exit("--steps is only supported by the built-in pi0.5 wrappers")
+    try:
+        return GenericPolicy(
+            path, args.device, cfg["task"]["instruction"],
+            cameras={k: v["save_size"] for k, v in cfg["cameras"].items()},
+            camera_map=cfg.get("policy", {}).get("camera_map", {}), joint_count=joint_count,
+        )
+    except (ImportError, OSError, ValueError, RuntimeError) as exc:
+        sys.exit(f"Cannot load generic policy: {exc}")
+
+
 def load_policy(path: Path, device: str, task: str, steps: int | None = None, *,
                 backend: str = "torch", mlx_bits: int | None = None, mlx_quantize: str = "prefix",
                 mlx_time_grid: str = "uniform"):

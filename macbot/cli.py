@@ -4,10 +4,11 @@
     macbot cameras                list video devices with their uniqueIDs
     macbot joints                 read leader and follower joint angles without powering anything
     macbot robots                 list the LeRobot arm types macbot can drive (robot.type: lerobot)
+    macbot policies               list LeRobot policy types and their macOS support
     macbot collect [--fake]       teleoperate and record episodes (web page)
     macbot export                 convert recorded episodes to a LeRobot dataset
     macbot health                 per-episode tracking and timing report of recorded data
-    macbot run --policy DIR       run a trained ACT or pi0.5 policy on the robot (web page)
+    macbot run --policy DIR       run a trained LeRobot policy on the robot (web page)
     macbot replay                 browse recorded rollouts in the browser
     macbot video ROLLOUT          export a rollout as a side-by-side MP4
     macbot bench --policy DIR     time policy inference on this Mac
@@ -85,6 +86,11 @@ def cmd_robots(args):
     print("\nInstall the driver extra for your robot; e.g. pip install 'lerobot[feetech]==0.7.0' for SO-100/101.")
 
 
+def cmd_policies(args):
+    from .policy.support import run
+    run()
+
+
 def _preload(cfg):
     """reBot talks CAN through PCBUSB, which must be preloaded before anything else (may re-exec)."""
     if cfg["robot"].get("type", "rebot_b601") == "rebot_b601":
@@ -135,6 +141,8 @@ def cmd_bench(args):
 
 def _backend_args(parser):
     parser.add_argument("--backend", choices=["torch", "mlx"], help="policy backend (default: torch or YAML setting)")
+    parser.add_argument("--policy-impl", choices=["auto", "generic"], default="auto",
+                        help="use the generic LeRobot adapter even for ACT or pi0.5 (torch only)")
     parser.add_argument("--mlx-bits", type=int, choices=[4, 8], help="experimental lossy MLX weight quantization")
     parser.add_argument("--mlx-time-grid", choices=["uniform", "quadratic"], default="uniform",
                         help="MLX Euler schedule; quadratic is an opt-in lossy experiment")
@@ -151,6 +159,7 @@ def main(argv=None):
     sub.add_parser("cameras", help="list video devices and uniqueIDs").set_defaults(fn=cmd_cameras)
     sub.add_parser("joints", help="read joint angles without powering motors").set_defaults(fn=cmd_joints)
     sub.add_parser("robots", help="list the LeRobot robot and leader types available here").set_defaults(fn=cmd_robots)
+    sub.add_parser("policies", help="list LeRobot policy types and their macOS support").set_defaults(fn=cmd_policies)
 
     p = sub.add_parser("collect", help="teleoperate and record (web page)")
     p.add_argument("--fake", action="store_true", help="simulate robot, leader and cameras")
@@ -178,9 +187,9 @@ def main(argv=None):
     p.set_defaults(fn=cmd_health)
 
     p = sub.add_parser("run", help="run a policy on the robot (web page)")
-    p.add_argument("--policy", required=True, help="pretrained_model folder (ACT or pi0.5)")
-    p.add_argument("--mode", choices=["auto", "chunk", "ensemble", "async", "rtc"], default="auto",
-                   help="auto: ACT -> ensemble, torch pi0.5 -> rtc, MLX pi0.5 -> async")
+    p.add_argument("--policy", required=True, help="LeRobot pretrained_model folder")
+    p.add_argument("--mode", choices=["auto", "chunk", "ensemble", "async", "rtc", "step"], default="auto",
+                   help="auto: ACT -> ensemble, torch pi0.5 -> rtc, MLX pi0.5 -> async, generic -> chunk or step")
     p.add_argument("--k", type=int, default=30, help="chunk mode: steps executed per chunk")
     p.add_argument("--te-m", type=float, default=0.01, help="ensemble: weight exp(m * age), as in ACT")
     p.add_argument("--te-hz", type=float, default=30.0, help="ensemble: max inference rate")
@@ -215,7 +224,7 @@ def main(argv=None):
     p.add_argument("-n", type=int, default=30)
     p.add_argument("--steps", type=int, help="pi0.5 denoising steps (default from checkpoint)")
     p.add_argument("--no-compile", action="store_true")
-    p.add_argument("--profile", action="store_true", help="also report synchronized PI05 stage timings")
+    p.add_argument("--profile", action="store_true", help="also report synchronized generic or pi0.5 stage timings")
     _backend_args(p)
     p.set_defaults(fn=cmd_bench)
 
