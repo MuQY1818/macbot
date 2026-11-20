@@ -1,0 +1,42 @@
+# Architecture
+
+[简体中文](architecture_zh.md)
+
+```text
+Robot + cameras -> collect -> raw NPZ -> export -> LeRobot dataset
+                                                       |
+                                                     train
+                                                       |
+Robot + cameras <-> run <- policy checkpoint <---------+
+                     |
+                 rollout NPZ -> replay / video
+```
+
+`macbot/cli.py` selects a command and `macbot/config.py` overlays a YAML file on `macbot/default.yaml`.
+The `cameras` map is replaced as a whole. `macbot/web/` supplies the HTTP handlers, templates and
+shared assets for collect, run and replay.
+
+| Module | Responsibility |
+|---|---|
+| `robot/` | Opens the reBot profile, a generic LeRobot arm, a simulator or a fake arm. |
+| `cameras/` | Provides UVC (Swift/AVFoundation), Orbbec, fake and robot-observation camera sources. |
+| `collect/` | Drives the leader-to-follower loop, records joint commands and observations on a fixed time grid, and checks each episode. |
+| `data/`, `train/` | Inspects and exports raw episodes to LeRobot v3; example training scripts produce policy checkpoints. |
+| `policy/`, `viz/` | Loads ACT or π0.5, controls the arm and records trials; replays those rollout files or exports them as MP4. |
+
+The [`Robot`](../macbot/robot/base.py) interface exposes ordered joint names, optional gripper and
+limits, `connect(leader=...)`, `read()`, `read_leader()`, `send()`, `home_pose()` and `shutdown()`.
+`send()` returns the commanded values, after any robot-specific limiting. Episode metadata records
+the joint layout and robot type. Joint units are defined by the driver.
+
+The [camera interface](../macbot/cameras/__init__.py) is structural: `latest()` returns a BGR frame
+and timestamp (or `None` before the first frame), `age()` exposes staleness, and `close()` cleans
+up resources. A `type: robot` camera reads a named simulator observation; the rest of the pipeline
+uses it like any other camera.
+
+The runner separates inference from the control loop through an
+[`Executor`](../macbot/policy/executors.py). Synchronous chunks predict on demand, temporal
+ensembling combines overlapping predictions, and asynchronous chunks predict in a background
+thread. Real-Time Chunking adds guidance to the asynchronous path. `AsyncChunk.accept()`
+decides when a new chunk takes effect. The runner handles start/pause, velocity limits and
+recording independently of the executor.

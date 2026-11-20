@@ -1,0 +1,41 @@
+# 变更日志
+
+[English](CHANGELOG.md)
+
+macbot 的主要变更记录在这里。本项目遵循
+[Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 和
+[语义化版本](https://semver.org/lang/zh-CN/)。
+
+## [Unreleased]（未发布）
+
+### 新增
+
+- 统一的机械臂接口，包含 reBot B601 专用配置和通用 LeRobot 主从臂配置，面向兼容的关节位置控制
+  机械臂，包括 SO-100/101、Koch、OMX、OpenArm 和 YAM。
+- SO-101 UVC 配置、`macbot robots` 命令和可配置的 fake 关节布局。
+- 本地 SO-101 MuJoCo 模拟器，提供脚本主臂、场景重置和机械臂观测相机（`type: robot`）。
+- 进程内采集驱动脚本，以及覆盖通用机械臂、模拟相机、导出和诊断的测试。
+- 双语贡献指南、架构、机械臂支持和路线图，社区政策，GitHub 议题和 PR 模板，以及每月更新
+  GitHub Actions 依赖的配置。
+- Ruff 和 pre-commit 开发工具；CI 覆盖 macOS 和 Ubuntu 上的 Python 3.12 和 3.13。
+
+### 变更
+
+- 采集、检查、试验控制和导出使用配置的关节布局和机械臂元信息。策略启动时检查检查点的状态与动作维度；
+  导出保留机械臂类型并支持保存完整画面。
+- `macbot doctor` 按所选配置检查环境，包括通用机械臂的驱动、串口和标定，以及内置模拟器的本地依赖。
+- 补充 PyPI 软件包元数据和使用 Trusted Publishing 的发布工作流。
+
+## [0.1.0] - 2026-11-19
+
+### 新增
+
+- Apple 芯片上使用 reBot B601-RS 和 Arm 102 的首套参考流程，配备 PCAN-USB、UVC 和 Orbbec
+  相机，以及用于无硬件测试的 fake 机械臂和相机。
+- 浏览器采集，支持语言指令、逐条检查和回放；导出 LeRobot v3 数据集，可选二值夹爪标签，提供训练脚本示例。
+- 在 MPS 上运行 ACT 和 π0.5，支持同步分块、时间集成、异步分块和 Real-Time Chunking，
+  以及试验回放、MP4 导出和推理测速。
+- 设备诊断、安装和使用指南，以及英文与简体中文控制台。
+
+[Unreleased]: https://github.com/MuQY1818/macbot/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/MuQY1818/macbot/releases/tag/v0.1.0

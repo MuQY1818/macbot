@@ -48,8 +48,8 @@ Measured on a MacBook Pro (M5 Pro, 48 GB), PyTorch MPS:
   slow two-stage return to zero, and every trial saved with video and timing.
 - **Replay** of saved trials (all cameras in sync, command vs. measured traces, chunk boundaries) and
   side-by-side **MP4** export.
-- **`macbot doctor`** checks packages, MPS, the CAN driver, cameras and calibration before you start.
-- **`--fake`** on every robot command: simulated arm and cameras, so the whole pipeline runs on any Mac.
+- **`macbot doctor`** checks packages, MPS and the configured robot and cameras before you start.
+- **`--fake`** on `collect` and `run` substitutes a fake arm and cameras; `run` still runs the policy.
 - English and Chinese in every web page (toggle in the top bar), light and dark mode.
 
 | Run a policy | Replay a trial |
@@ -58,26 +58,10 @@ Measured on a MacBook Pro (M5 Pro, 48 GB), PyTorch MPS:
 
 ## Hardware
 
-| | Used here | Notes |
-|---|---|---|
-| Follower arm | Seeed reBot B601-RS | driven through LeRobot's `rebot_b601_follower` |
-| Leader arm | Seeed reBot Arm 102 | USB serial |
-| CAN adapter | PEAK PCAN-USB | macOS driver: PCBUSB |
-| Scene camera | any UVC webcam (1080p) | opened by AVFoundation uniqueID |
-| Wrist camera | Orbbec Gemini 2 | color stream through `pyorbbecsdk2` |
-| Computer | MacBook Pro, Apple silicon | 32 GB+ memory recommended for π0.5 |
-
-### Supported robots
-
-| Profile | Arms | Validation |
-|---|---|---|
-| `rebot_b601` | reBot B601-RS + Arm 102 | Reference setup tested on hardware; ACT regression also tested with `--fake`. |
-| `lerobot` | SO-100/101, Koch, OMX, OpenArm, YAM and other LeRobot 0.7 followers with joint position actions | SO-101 collection and export tested with `--fake`. Other arms use upstream drivers and have not been hardware tested with macbot. |
-| `sim` | SO-101 tabletop in MuJoCo | Collection, ACT inference and rollout replay tested in simulation on Apple silicon. |
-
-Run `macbot robots` to list registered types. Start with [the SO-101 config](configs/so101.yaml)
-or [the simulator config](configs/so101_sim.yaml). See [setup](docs/setup.md) for driver installation
-and a UVC-only workflow without `sudo`.
+The reBot B601-RS is the reference arm tested on hardware. See [robot support](docs/robots.md)
+for the SO-100/101 and other compatible LeRobot arms, the local simulator, and what has been
+verified. The [setup guide](docs/setup.md) covers drivers and cameras. For π0.5, we recommend
+an Apple silicon Mac with at least 32 GB of memory.
 
 ## Quick start
 
@@ -122,24 +106,10 @@ back to [macbot/default.yaml](https://github.com/MuQY1818/macbot/blob/main/macbo
   skipped, which saves about 80 s per load.
 - **Files written as root** are handed back to the user who ran `sudo`.
 
-## Repository layout
+## Contributing
 
-```
-macbot/
-  cli.py            entry point: macbot <command>
-  default.yaml      every setting, with comments
-  robot/            reBot follower with feedforward, leader, safe shutdown, simulated arm
-  cameras/          UVC (Swift helper), Orbbec, simulated cameras
-  collect/          collection server and episode checks
-  data/             export to LeRobot, data health report
-  policy/           ACT / π0.5 wrappers, execution schemes, binary gripper, runner, benchmark
-  viz/              trial replay server, MP4 export
-  web/              pages, theme, shared scripts (en / zh)
-train/              lerobot-train with openpi-style augmentation, example launch scripts
-scripts/            double-click launchers for Finder
-tools/              logo generator, screenshot renderer
-tests/              fast tests without hardware
-```
+See [CONTRIBUTING](CONTRIBUTING.md) for development and hardware reports,
+[architecture](docs/architecture.md) for the code layout, and the [roadmap](ROADMAP.md) for planned work.
 
 ## Safety
 

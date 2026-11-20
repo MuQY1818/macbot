@@ -40,8 +40,8 @@
 - **导出**为 LeRobot v3 数据集，夹爪动作可以选择二值化（张开或闭合）。
 - **跑策略控制台**：支持 ACT 和 π0.5，提供四种执行方式（同步分块、时间集成、异步分块、Real-Time Chunking）。带速度和关节限位；可以暂停、回起始姿态、结束时分两段慢速回零；每次试验连同画面和时序一起保存。
 - **试验回放**：多路画面同步播放，显示指令与实测曲线和换块位置，也能导出左右并排的 **MP4**。
-- **`macbot doctor`**：开工前检查依赖、MPS、CAN 驱动、相机和标定文件。
-- 所有涉及机械臂的命令都支持 **`--fake`**，用模拟的机械臂和相机跑通整条流程，任何一台 Mac 都能试。
+- **`macbot doctor`**：开工前检查依赖、MPS 和配置中的机械臂与相机。
+- `collect` 和 `run` 支持 **`--fake`**，使用 fake 机械臂和相机；`run` 仍会运行真实策略。
 - 每个网页都有中英文（顶栏切换），支持浅色和深色模式。
 
 | 跑策略 | 回放试验 |
@@ -50,24 +50,9 @@
 
 ## 硬件
 
-| | 我们用的 | 说明 |
-|---|---|---|
-| 从臂 | Seeed reBot B601-RS | 通过 LeRobot 的 `rebot_b601_follower` 驱动 |
-| 主臂 | Seeed reBot Arm 102 | USB 串口 |
-| CAN 适配器 | PEAK PCAN-USB | macOS 驱动用 PCBUSB |
-| 俯视相机 | 任意 UVC 摄像头（1080p） | 按 AVFoundation uniqueID 打开 |
-| 腕部相机 | Orbbec Gemini 2 | 彩色流，经 `pyorbbecsdk2` 读取 |
-| 电脑 | Apple 芯片的 MacBook Pro | 跑 π0.5 建议 32 GB 以上内存 |
-
-### 支持的机械臂
-
-| 配置 | 机械臂 | 验证情况 |
-|---|---|---|
-| `rebot_b601` | reBot B601-RS + Arm 102 | 参考配置已在真机验证；ACT 回归也通过了 `--fake` 验证。 |
-| `lerobot` | SO-100/101、Koch、OMX、OpenArm、YAM，以及 LeRobot 0.7 中接受关节位置指令的其他从臂 | SO-101 采集和导出已用 `--fake` 验证。其他机械臂使用上游驱动，尚未在 macbot 中验证真机。 |
-| `sim` | MuJoCo 中的 SO-101 桌面场景 | 已在 Apple 芯片 Mac 上验证仿真采集、ACT 推理和试验回放。 |
-
-`macbot robots` 列出已注册的类型。可从 [SO-101 配置](configs/so101.yaml) 或[仿真配置](configs/so101_sim.yaml) 开始。驱动安装和仅使用 UVC 相机时的免 `sudo` 流程见[安装指南](docs/setup_zh.md)。
+reBot B601-RS 是已验证真机的参考机械臂。SO-100/101、其他兼容的 LeRobot 机械臂、本地模拟器
+及其验证状态见[机械臂支持](docs/robots_zh.md)；驱动和相机配置见[安装指南](docs/setup_zh.md)。
+运行 π0.5 建议使用至少 32 GB 内存的 Apple 芯片 Mac。
 
 ## 快速开始
 
@@ -104,24 +89,10 @@ macbot replay                                          # 5. 回放试验；macbo
 - **π0.5 跑在 MPS 上。** 权重用 bf16 并开 autocast；跳过被遮掉的第三个相机槽（输出完全一致，省约 70 ms）；对去噪步和语言模型做 `torch.compile`，减少逐个 kernel 派发的开销（约 410 → 280 ms）；跳过反正会被权重覆盖的随机初始化，每次加载省约 80 秒。
 - **root 写出的文件**会交还给运行 `sudo` 的用户。
 
-## 目录结构
+## 参与贡献
 
-```
-macbot/
-  cli.py            命令入口：macbot <命令>
-  default.yaml      全部设置及注释
-  robot/            带前馈的 reBot 从臂、主臂、安全退出、模拟机械臂
-  cameras/          UVC（Swift 助手）、Orbbec、模拟相机
-  collect/          采集服务和逐条检查
-  data/             导出 LeRobot、数据健康报告
-  policy/           ACT / π0.5 封装、执行方式、二值夹爪、运行器、测速
-  viz/              试验回放服务、导出 MP4
-  web/              网页、主题、公共脚本（中英文）
-train/              带 openpi 风格增强的 lerobot-train、示例启动脚本
-scripts/            访达里双击即可运行的启动脚本
-tools/              logo 生成、网页截图
-tests/              不需要硬件的快速测试
-```
+开发与真机报告见[贡献指南](CONTRIBUTING_zh.md)，代码布局见[架构](docs/architecture_zh.md)，
+后续工作见[路线图](ROADMAP_zh.md)。
 
 ## 安全
 
