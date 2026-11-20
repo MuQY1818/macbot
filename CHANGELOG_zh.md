@@ -11,6 +11,8 @@ macbot 的主要变更记录在这里。本项目遵循
 
 ### 新增
 
+- `macbot init` 引导识别 USB 机械臂、预览并分配相机、完成 LeRobot 手动校准和检查。
+  生成的用户配置可由 `collect` 和 `run` 自动读取。已知设备角色时可用 `init --yes`。
 - 使用 LeRobot 保存的处理器加载兼容的 checkpoint。`macbot policies` 可查实测覆盖范围，
   `bench --profile` 可分段计时；ACT 和 π0.5 的默认路径不变。
 

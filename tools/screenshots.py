@@ -16,6 +16,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+import cv2
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -36,9 +37,10 @@ def frame_uri(d, cam, k):
 def mock_script(routes: dict, images: dict, lang: str) -> str:
     return f"""<script>
 try {{ localStorage.setItem("macbot.lang", {json.dumps(lang)}); }} catch (e) {{}}
-const __R = {json.dumps(routes)}, __I = {json.dumps(images)};
+const __R = {json.dumps(routes)}, __I = {json.dumps(images)}, nativeFetch = window.fetch.bind(window);
 window.fetch = async (url, opt) => {{
   const p = String(url).split("?")[0];
+  if (__I[p]) return nativeFetch(__I[p]);
   const key = Object.keys(__R).find(k => p === k) ?? (p === "/api/cmd" ? "/api/status" : null);
   return {{ ok: true, json: async () => JSON.parse(JSON.stringify(__R[key] ?? {{}})) }};
 }};
@@ -50,7 +52,8 @@ Object.defineProperty(HTMLImageElement.prototype, "src", {{
 </script>"""
 
 
-def render(name: str, routes: dict, images: dict, lang: str, out: Path, size=(1440, 1180), after: str = "", **vars):
+def render(name: str, routes: dict, images: dict, lang: str, out: Path, size=(1440, 1180), after: str = "",
+           chrome_args=(), **vars):
     html = web.page(name, **vars).decode()
     html = html.replace('href="/static/', f'href="{web.STATIC.as_uri()}/').replace('src="/static/', f'src="{web.STATIC.as_uri()}/')
     html = html.replace('url("/static/', f'url("{web.STATIC.as_uri()}/')
@@ -59,16 +62,21 @@ def render(name: str, routes: dict, images: dict, lang: str, out: Path, size=(14
         html = html.replace("</body>", f"<script>{after}</script></body>")
     css = (web.STATIC / "theme.css").read_text().replace('url("/static/', f'url("{web.STATIC.as_uri()}/')
     html = html.replace(f'<link rel="stylesheet" href="{web.STATIC.as_uri()}/theme.css">', f"<style>{css}</style>")
+    if name == "init":
+        css = (web.STATIC / "init.css").read_text()
+        html = html.replace(f'<link rel="stylesheet" href="{web.STATIC.as_uri()}/init.css">', f"<style>{css}</style>")
     out.parent.mkdir(parents=True, exist_ok=True)
     page_file = out.with_suffix(".html")
     page_file.write_text(html)
     if not CAPTURE:
         print("wrote", page_file)
         return
-    subprocess.run([CHROME, "--headless=new", "--hide-scrollbars", "--allow-file-access-from-files",
-                    f"--user-data-dir={tempfile.mkdtemp(prefix='macbot_chrome_')}", "--no-first-run",
-                    f"--window-size={size[0]},{size[1]}", "--virtual-time-budget=2500", f"--screenshot={out}",
-                    page_file.as_uri()], check=True, capture_output=True)
+    with tempfile.TemporaryDirectory(prefix="macbot_chrome_") as profile:
+        subprocess.run([CHROME, "--headless=new", "--hide-scrollbars", "--allow-file-access-from-files",
+                        "--disable-background-networking", "--host-resolver-rules=MAP * ~NOTFOUND",
+                        f"--user-data-dir={profile}", "--no-first-run", *chrome_args,
+                        f"--window-size={size[0]},{size[1]}", "--virtual-time-budget=2500", f"--screenshot={out}",
+                        page_file.as_uri()], check=True, capture_output=True, timeout=25)
     print("wrote", out)
 
 
@@ -131,24 +139,67 @@ def replay_mock(r, meta, name):
     return routes, images, k
 
 
+def init_mock():
+    """A fully synthetic inventory and two deterministic preview frames."""
+    from dataclasses import asdict
+
+    from macbot.cameras.discovery import Camera
+    from macbot.robot.usb import FAMILIES, Adapter
+    from macbot.setup import ROLES
+
+    devices = [Adapter(f"/dev/cu.demo-{role}", 0x1A86, 0x7523, f"DEMO-{role}", "USB servo board") for role in ("A", "B")]
+    cams = [Camera("uvc", "USB Camera", "DEMO-UVC", (1280, 720, 30)),
+            Camera("orbbec", "Orbbec Gemini 2", "DEMO-GEMINI", (1280, 720, 30))]
+    inventory = {
+        "revision": 1, "token": "demo", "families": FAMILIES, "roles": ROLES,
+        "devices": [{**asdict(d), "adapter": d.hint[0], "suggestions": d.hint[1]} for d in devices],
+        "cameras": [asdict(c) for c in cams], "notes": [], "exists": False,
+        "remembered": {"family": "so101", "leader": 0, "follower": 1, "cameras": {"top": 0, "wrist": 1}},
+    }
+    images = {}
+    for i in range(2):
+        frame = np.full((180, 320, 3), (204, 208, 211) if i == 0 else (145, 151, 157), dtype=np.uint8)
+        cv2.rectangle(frame, (51, 26), (270, 153), (156, 163, 168) if i == 0 else (99, 108, 118), -1)
+        cv2.rectangle(frame, (62, 35), (258, 143), (182, 189, 194) if i == 0 else (126, 134, 144), -1)
+        for x, y, color in [(100, 75, (52, 126, 225)), (173, 105, (132, 152, 63)), (217, 65, (184, 117, 62))]:
+            cv2.rectangle(frame, (x, y), (x + 30, y + 26), color, -1)
+        if i:
+            cv2.line(frame, (12, 178), (104, 86), (36, 40, 46), 20, cv2.LINE_AA)
+        _, jpeg = cv2.imencode(".jpg", frame)
+        images[f"/api/preview/{i}"] = "data:image/jpeg;base64," + base64.b64encode(jpeg).decode()
+    after = ('window.addEventListener("load", () => setTimeout(() => {'
+             '$("next").click(); setTimeout(() => document.activeElement.blur(), 100); }, 150));')
+    return {"/api/setup": inventory, "/api/calibration": {"files": []}}, images, after
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--episode", required=True, help="a recorded episode_XXX.npz (frames and joints for the mock)")
+    ap.add_argument("--episode", help="a recorded episode_XXX.npz (needed for collect, run and replay)")
     ap.add_argument("--rollout", help="a rollout_XXX.npz for the run and replay pages")
     ap.add_argument("--out", default=str(ROOT / "docs" / "img"))
     ap.add_argument("--pages", default="collect,run,replay")
     ap.add_argument("--html-only", action="store_true", help="only write the mocked pages; capture them with any browser")
+    ap.add_argument("--mobile-dark", action="store_true", help="render setup at a narrow viewport with a dark theme")
     args = ap.parse_args()
     global CAPTURE
     CAPTURE = not args.html_only
     out = Path(args.out).expanduser()
-    d = np.load(Path(args.episode).expanduser(), allow_pickle=True)
-    meta = json.loads(str(d["meta"]))
     pages = args.pages.split(",")
+    if any(p in {"collect", "run", "replay"} for p in pages):
+        if not args.episode:
+            ap.error("--episode is required for collect, run and replay")
+        d = np.load(Path(args.episode).expanduser(), allow_pickle=True)
+        meta = json.loads(str(d["meta"]))
     if args.rollout:
         r = np.load(Path(args.rollout).expanduser(), allow_pickle=True)
         rmeta = json.loads(str(r["meta"]))
     for lang in ("en", "zh"):
+        if "init" in pages:
+            routes, images, after = init_mock()
+            mobile = args.mobile_dark
+            render("init", routes, images, lang, out / f"init_{lang}{'_mobile_dark' if mobile else ''}.png", after=after,
+                   size=(500, 1230) if mobile else (1140, 815),
+                   chrome_args=("--force-dark-mode",) if mobile else ())
         if "collect" in pages:
             routes, images = collect_mock(d, meta)
             render("collect", routes, images, lang, out / f"collect_{lang}.png", task=meta["task"])

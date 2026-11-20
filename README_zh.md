@@ -73,16 +73,15 @@ reBot B601-RS 是已验证真机的参考机械臂。SO-100/101、其他兼容�
 ## 快速开始
 
 ```bash
-conda create -n macbot python=3.12 -y && conda activate macbot
-pip install "macbot[orbbec,pi]"        # 只用 ACT 可以去掉 pi
-# 或者从源码装：git clone https://github.com/MuQY1818/macbot && pip install -e "./macbot[orbbec,pi]"
-
-macbot doctor                          # 看看哪些就绪、缺什么
-macbot collect --fake                  # 用模拟机械臂和相机打开采集控制台
+pip install macbot
+macbot init
+macbot collect
 ```
 
-打开 <http://127.0.0.1:8766>。按 **S** 录制，**回车** 保存，**←** 丢弃。
-使用 MuJoCo 时，在源码目录执行 `pip install -e '.[sim]'`，再运行 `macbot --config configs/so101_sim.yaml collect`。连接真机请参照[安装指南](docs/setup_zh.md)。
+Apple 芯片 Mac 上使用 Python 3.12 或更高版本。使用 UVC 相机前请安装 Xcode 命令行工具。
+在向导里确认机械臂型号和相机角色，再按提示完成校准。
+打开 <http://127.0.0.1:8766>，按 **S** 录制、**回车** 保存、**←** 丢弃。
+从空白 Mac 配置环境、无硬件试用，以及 reBot 和 Orbbec 的额外步骤，见[快速开始](docs/quickstart_zh.md)。
 
 ## 工作流程
 

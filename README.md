@@ -87,17 +87,15 @@ an Apple silicon Mac with at least 32 GB of memory.
 ## Quick start
 
 ```bash
-conda create -n macbot python=3.12 -y && conda activate macbot
-pip install "macbot[orbbec,pi]"        # drop pi if you only use ACT
-# or from source: git clone https://github.com/MuQY1818/macbot && pip install -e "./macbot[orbbec,pi]"
-
-macbot doctor                          # what is ready, what is missing
-macbot collect --fake                  # the collection console with a simulated arm and cameras
+pip install macbot
+macbot init
+macbot collect
 ```
 
+Use Python 3.12+ on Apple silicon and install the Xcode Command Line Tools for UVC cameras.
+Confirm the arms and camera roles in the setup page, then follow its calibration prompts.
 Open <http://127.0.0.1:8766>. Press **S** to record, **Enter** to save, **←** to discard.
-For MuJoCo, use `pip install -e '.[sim]'` in the source checkout, then
-`macbot --config configs/so101_sim.yaml collect`. For hardware, follow [setup](docs/setup.md).
+See the [quickstart](docs/quickstart.md) for a fresh Mac, a hardware-free trial, and reBot and Orbbec setup.
 
 ## Workflow
 

@@ -11,6 +11,9 @@ All notable changes to macbot will be documented here. This project follows
 
 ### Added
 
+- `macbot init` guides USB arm selection, live camera assignment and manual LeRobot calibration.
+  It checks a per-user profile that `collect` and `run` can find automatically. `init --yes`
+  supports setups whose roles are already known.
 - Load compatible LeRobot checkpoints with their saved processors. `macbot policies` lists tested
   coverage, and `bench --profile` breaks down generic inference. ACT and π0.5 keep their defaults.
 
