@@ -11,3 +11,7 @@ lerobot-train --policy.type=act --policy.device="${DEVICE:-cuda}" --policy.push_
   --dataset.repo_id="local/$(basename "$DATASET")" --dataset.root="$DATASET" \
   --batch_size="${BS:-8}" --steps="${STEPS:-40000}" --save_freq="${SAVE:-10000}" \
   --output_dir="runs/$NAME" --job_name="$NAME" "$@"
+if [ -f "$DATASET/meta/camera_framing.json" ]; then
+  find "runs/$NAME/checkpoints" -type d -name pretrained_model \
+    -exec cp "$DATASET/meta/camera_framing.json" '{}/camera_framing.json' \;
+fi

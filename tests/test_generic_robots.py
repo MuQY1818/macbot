@@ -136,6 +136,7 @@ def test_six_joint_episode_export(six_joint_episode, tmp_path):
         assert info["features"][key]["shape"] == [6]
         assert info["features"][key]["names"] == [f"{n}.pos" for n in SO_JOINTS]
     assert info["features"]["observation.images.top"]["shape"] == [12, 16, 3]
+    assert json.loads((out / "meta" / "camera_framing.json").read_text()) == {"top": {"save_size": [16, 12]}}
 
 
 def test_bench_uses_checkpoint_state_dimension(monkeypatch, tmp_path, capsys):

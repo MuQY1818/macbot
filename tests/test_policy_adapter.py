@@ -58,7 +58,9 @@ def test_generic_checkpoint_and_fake_run(tiny_policy, tmp_path, capsys):
     rollout, = data.glob("rollouts/*/rollout_*.npz")
     with np.load(rollout) as r:
         assert len(r["infer_ms"]) > 0 and r["cmd"].shape[1] == 6
-        assert json.loads(str(r["meta"]))["mode"] == ("step" if adapter.stepwise else "chunk")
+        meta = json.loads(str(r["meta"]))
+        assert meta["mode"] == ("step" if adapter.stepwise else "chunk")
+        assert meta["camera_framing"]["top"]["save_size"] == [64, 64]
     if kind == "smolvla":
         with pytest.raises(ValueError, match="needs a language instruction"):
             GenericPolicy(path, "cpu", "", cameras=cameras)

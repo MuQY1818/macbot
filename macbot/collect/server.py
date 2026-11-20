@@ -26,6 +26,7 @@ import numpy as np
 
 from .. import web
 from ..cameras import camera_info, open_cameras
+from ..cameras.framing import framing
 from ..config import Config
 from ..i18n import text, tr
 from ..system import ensure_dir, expand, give_back, start_log
@@ -168,7 +169,8 @@ class State:
                     "duration_s": round(n / self.fps, 2), "joint_names": self.joints, "gripper": self.gripper,
                     "units": "robot (degrees for most arm joints)",
                     "state": "follower measured position", "action": "command sent to follower (gripper: leader value)",
-                    "cameras": self.cam_info, "robot": self.ff, "fake": self.fake,
+                    "cameras": self.cam_info, "camera_framing": framing(self.cfg["cameras"], self.fps),
+                    "robot": self.ff, "fake": self.fake,
                     "saved_at": time.strftime("%Y-%m-%d %H:%M:%S"), "check": chk, "writer": "macbot"}
             extra = {}
             for k in self.cam_names:

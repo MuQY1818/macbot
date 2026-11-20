@@ -24,6 +24,7 @@ import numpy as np
 
 from .. import web
 from ..cameras import open_cameras
+from ..cameras.framing import check_framing, framing, training_framing
 from ..config import Config
 from ..i18n import tr
 from ..system import ensure_dir, expand, give_back, start_log
@@ -99,6 +100,7 @@ def save_rollout(st: State, rec: dict, result: str):
             "executor": st.executor, "mode": a.mode, "k": a.k, "te_m": a.te_m, "rtc_beta": a.rtc_beta,
             "grip_debounce": a.grip_debounce, "speed": a.speed, "max_vel": st.cfg["run"]["max_vel"], "result": result,
             "fps": fps, "frames": len(rec["t"]), "joint_names": st.joints, "gripper": st.gripper, "robot": st.robot_info, "cameras": st.cam_names,
+            "camera_framing": framing(st.cfg["cameras"], fps),
             "saved_at": time.strftime("%Y-%m-%d %H:%M:%S"), "fake": a.fake, "writer": "macbot"}
     ex = {k: np.asarray(v, np.float64) for k, v in rec.items() if k.startswith("ex_")}
     tmp = p.with_suffix(".tmp.npz")
@@ -150,6 +152,13 @@ def run(cfg: Config, args):
 
 
 def _run(cfg, args, srv, cleanup):
+    args.policy = expand(args.policy)
+    current = framing(cfg["cameras"], cfg["record"]["fps"])
+    try:
+        expected = training_framing(args.policy, cfg.root)
+    except (ValueError, OSError) as exc:
+        raise SystemExit(f"Cannot read training camera framing: {exc}") from None
+    check_framing(expected, current, override=args.allow_framing_mismatch)
     start_log(cfg.log_dir, "run")
     rc = cfg["run"]
     args.speed = args.speed if args.speed is not None else rc["speed"]
@@ -157,7 +166,6 @@ def _run(cfg, args, srv, cleanup):
         sys.exit("--speed must be between 0.1 and 1.0")
     if args.autostart and not (args.fake or cfg["robot"].get("type") == "sim"):
         sys.exit("--autostart only works with --fake or robot.type: sim")
-    args.policy = expand(args.policy)
     gcfg = find_gripper_config(args.policy, args.gripper)
     gripper = BinaryGripper(gcfg, args.grip_debounce) if gcfg else None
 

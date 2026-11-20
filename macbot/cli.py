@@ -246,6 +246,7 @@ def main(argv=None):
     p.add_argument("--grip-debounce", type=float, default=0.6, help="binary gripper: seconds of 'open' before opening")
     p.add_argument("--steps", type=int, help="pi0.5 denoising steps (default from checkpoint)")
     p.add_argument("--no-compile", action="store_true", help="pi0.5: skip backend compilation")
+    p.add_argument("--allow-framing-mismatch", action="store_true", help="run despite a known camera framing mismatch")
     _backend_args(p)
     p.add_argument("--speed", type=float, help="0.1-1.0, default from config")
     p.add_argument("--device", default="mps")
