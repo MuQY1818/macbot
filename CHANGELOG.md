@@ -37,6 +37,8 @@ All notable changes to macbot will be documented here. This project follows
 
 ### Fixed
 
+- Takeover starts from a rough match (every arm joint within 30°, gripper state matching) and the follower catches up
+  with the leader slowly. The first version required all six joints within 5° at once, which nobody can hold by hand.
 - **Home** in the run console now moves at `run.home_vel` (default 25 deg/s) along a straight line in joint space
   with a short ramp. It used the policy limit `max_vel × speed` (96 deg/s at speed 0.8), far too fast.
 - Console pages no longer break after an upgrade because the browser kept an older cached `common.js`.

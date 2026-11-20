@@ -64,7 +64,7 @@ run:
   max_vel: 120.0                            # deg/s per arm joint, multiplied by speed
   home_vel: 25.0                            # deg/s of the farthest arm joint when moving to the start pose
   takeover: false                           # connect a leader for manual takeover
-  takeover_align_deg: 5.0                   # every arm joint must be within this distance
+  takeover_align_deg: 30.0                  # leader roughly matches the follower; then the follower catches up at home_vel
   takeover_gripper_align_deg: 15.0          # raw gripper tolerance against the follower command
 
 grasp_miss:                                 # calibrated defaults for the reBot soft gripper only

@@ -139,3 +139,87 @@ def test_binary_takeover_requires_an_open_leader_when_follower_is_open():
     assert takeover_gripper_alignment(0, -120, binary, gate) == {"leader": "closed", "follower": "open", "ready": False}
     assert not takeover_gripper_alignment(-80, -120, binary, gate)["ready"]
     assert takeover_gripper_alignment(-81, -120, binary, gate)["ready"]
+
+
+def test_takeover_catches_up_slowly_and_labels_human_frames_after(tmp_path, monkeypatch):
+    cfg = load()
+    cfg["run"]["takeover"] = True
+    cfg["run"]["home_vel"] = 30
+    cfg["record"]["fps"] = 60
+    cfg["robot"]["type"] = "rebot_b601"
+    cfg["cameras"] = {}
+    path = tmp_path / "policy"
+    path.mkdir()
+    (path / "config.json").write_text('{"type": "act"}')
+    args = SimpleNamespace(fake=True, takeover=True, speed=1.0, policy=path, mode="chunk", k=30, te_m=.01, te_hz=30,
+                           rtc_beta=10, grip_debounce=0, steps=None, device="cpu", autostart=0)
+    st = runner.State(cfg, tmp_path, args)
+    commands = []
+
+    class Arm(FakeArm):
+        ended = False
+
+        def check_rate(self, hz, setting):
+            pass
+
+        def connect(self, leader=False):
+            assert leader
+
+        def read(self):
+            return list(commands[-1]) if commands else [0.0, 0.0, -120.0]
+
+        def read_leader(self):
+            return [20.0, -10.0, -120.0]  # a rough match: 20 deg and 10 deg off, gripper open like the follower
+
+        def send(self, target, measured=None):
+            commands.append(list(target))
+            return list(target)
+
+        def shutdown(self, moved=True):
+            pass
+
+    class Policy:
+        H, kind, shapes = 30, "act", None
+
+        def __call__(self, images, q):
+            return np.tile([0.0, 0.0, -120.0], (self.H, 1))
+
+    arm = Arm(["a", "b", "gripper"], {}, "fake")
+    monkeypatch.setattr(robots, "open_robot", lambda *a, **kw: arm)
+    monkeypatch.setattr(runner, "open_cameras", lambda *a: {})
+    monkeypatch.setattr(runner, "load_policy", lambda *a: Policy())
+    step = 0
+
+    def sleep(_seconds):
+        nonlocal step
+        step += 1
+
+    monkeypatch.setattr(runner, "time", SimpleNamespace(
+        time=lambda: 100 + step / 60 + step * 1e-8, perf_counter=time.perf_counter,
+        monotonic=lambda: step / 60, strftime=time.strftime, sleep=sleep,
+    ))
+    want = {0: "start", 2: "takeover", 140: "save_ok", 141: "quit"}
+    real_command = st.take_command
+
+    def tick():
+        if want.get(step):
+            st.request(want[step])
+        return real_command()
+
+    monkeypatch.setattr(st, "take_command", tick)
+    srv = SimpleNamespace(url="offline", serve_forever=lambda: None, shutdown=lambda: None)
+    with ExitStack() as stack:
+        runner._control(st, srv, cfg["record"]["fps"], None, stack)
+
+    a = np.asarray(commands)[:, 0]
+    assert a[-1] == pytest.approx(20.0)                   # reached the leader
+    assert np.abs(np.diff(a)).max() <= 30 / 60 + 1e-9     # never faster than home_vel
+    assert np.diff(a)[3] < np.abs(np.diff(a)).max()       # ramps up
+    b = np.asarray(commands)[:, 1]
+    reached_a, reached_b = np.argmax(a >= 20 - 1e-6), np.argmax(b <= -10 + 1e-6)
+    assert abs(int(reached_a) - int(reached_b)) <= 1     # both joints arrive together
+    with np.load(tmp_path / "rollout_000.npz") as d:
+        labels = d["takeover"]
+    human = np.flatnonzero(labels == 1)
+    assert len(human) and (labels[2:human[0]] == 2).all()   # catch-up frames are not labelled human
+    assert (labels[human[0]:] == 1).all()
