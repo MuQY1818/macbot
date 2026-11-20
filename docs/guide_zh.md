@@ -124,7 +124,8 @@ sudo -E $(which python) -m macbot.cli run --policy ~/policies/cubes_pi05/004000 
 
 运行时加 `--takeover`，或在 YAML 中设置 `run.takeover: true`。程序会连接 `collect` 使用的已校准领臂。
 策略运行时按 **T** 或点击 **手动接管**，从臂保持当前指令。按页面显示的关节角度差手动移动领臂，
-所有臂关节都在 `run.takeover_align_deg`（默认 5°）以内，而且夹爪也对齐后才开始跟随。使用二值夹爪策略时，
+所有臂关节大致到位，都在 `run.takeover_align_deg`（默认 30°）以内，而且夹爪也对齐后开始跟随：从臂先按
+`run.home_vel` 沿直线慢速追上领臂（起步有短暂加速），所有关节差到 1° 以内后再按正常速度上限跟随。使用二值夹爪策略时，
 若从臂当前指令为闭合，领臂夹爪读数必须高于 `export.gripper_close_above`；若为张开，则必须低于
 `export.gripper_open_below`。读数介于两条阈值之间时，从臂继续保持。使用原始角度时，领臂夹爪与从臂夹爪
 指令的差值须在 `run.takeover_gripper_align_deg`（默认 15°）以内。对齐面板会提示还需调整哪些关节。

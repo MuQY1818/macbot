@@ -41,6 +41,8 @@ CAM_STALL_S = 0.5
 HOME_RAMP_S = 0.6                                         # homing speeds up over this time
 MOTION_COMMANDS = ("start", "home", "quit")
 TAKEOVER_MODES = {"aligning": 2, "following": 1}
+LEADER_STALE_S = 0.25                                     # older leader samples hold the follower
+CATCHUP_DONE_DEG = 1.0                                    # catch-up ends when every arm joint is this close
 TRIAL_MODES = ("running", *TAKEOVER_MODES)
 
 
@@ -62,7 +64,7 @@ class LeaderReader:
 
     def get(self):
         sample = self.sample
-        return sample[1] if sample and time.monotonic() - sample[0] <= 0.1 else None
+        return sample[1] if sample and time.monotonic() - sample[0] <= LEADER_STALE_S else None
 
     def _close(self, worker):
         self.stop.set()
@@ -457,6 +459,7 @@ def _control(st, srv, fps, gripper, cleanup):
     grip_step = 300.0 * args.speed * dt                  # gripper step while following or homing
     home_vmax = rc.get("home_vel", 25.0) * dt             # homing is slow regardless of speed
     home_t0 = 0.0
+    catch_t0 = None                                       # set while the follower catches up with the leader
 
     def say(en, zh, mode=None):
         with st.lock:
@@ -600,8 +603,11 @@ def _control(st, srv, fps, gripper, cleanup):
                     if (want != "takeover" and all(abs(d) <= st.align_deg for d in errors.values())
                             and all(abs(d) <= st.align_deg for d in clamped_errors.values())
                             and (grip is None or grip["ready"])):
-                        say("Following the leader.", "正在跟随领臂。", "following")
+                        # Nobody can hold six joints within a few degrees by hand: start from a rough match and
+                        # let the follower close the gap slowly, as when homing.
+                        say("Following the leader (catching up slowly).", "正在跟随领臂（从臂先慢速追上）。", "following")
                         mode = "following"
+                        catch_t0 = now
                     else:
                         say("Holding the follower. Align the leader to take control.",
                             "从臂保持当前指令。请对齐领臂以接管。")
@@ -615,11 +621,18 @@ def _control(st, srv, fps, gripper, cleanup):
             if mode == "homing":
                 ramp = min(1.0, 0.2 + (now - home_t0) / HOME_RAMP_S)
                 steps = homing_steps(cmd, home, gi, home_vmax * ramp)
+            elif mode == "following" and catch_t0 is not None:
+                if all(abs(target[j] - cmd[j]) <= CATCHUP_DONE_DEG for j in range(n_j) if j != gi):
+                    catch_t0 = None                       # caught up: follow at the normal limit
+                else:
+                    ramp = min(1.0, 0.2 + (now - catch_t0) / HOME_RAMP_S)
+                    steps = homing_steps(cmd, target, gi, home_vmax * ramp)
+            catching = mode == "following" and catch_t0 is not None
             for j, n in enumerate(names):                 # velocity limit (arm joints) + joint limits
                 if j == gi:
                     step = grip_step if mode in ("homing", "following") else 1e9
                 else:
-                    step = steps[j] if mode == "homing" else vmax
+                    step = steps[j] if mode == "homing" or catching else vmax
                 cmd[j] = robot.clamp(n, cmd[j] + max(-step, min(step, target[j] - cmd[j])))
             with st.lock:
                 rec = st.rec if st.mode in TRIAL_MODES else None
