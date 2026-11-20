@@ -19,6 +19,8 @@ from zipfile import ZIP_STORED, ZipFile
 import cv2
 import numpy as np
 
+from ..config import load
+from ..data.grasp import from_archive, settings
 from ..data.rollouts import READ_ERRORS, ROLLOUT, array_header, metadata, read_array, rollout_files, write_annotation
 
 MAX_FRAME = 4 * 1024 * 1024
@@ -125,14 +127,53 @@ def read_stored_frame(fp, camera, frame):
     return data
 
 
-def encode_summary(folder, name):
-    return json.dumps(Store(folder).summary(name), ensure_ascii=False, allow_nan=False).encode()
+def encode_summary(folder, name, grasp_cfg):
+    return json.dumps(Store(folder, grasp_cfg=grasp_cfg).summary(name), ensure_ascii=False, allow_nan=False).encode()
+
+
+def review_version(path):
+    try:
+        return version_of(path.with_suffix(".review.json").stat())
+    except FileNotFoundError:
+        return None
+
+
+def takeover_spans(z, t, fps):
+    if "takeover.npy" not in z.namelist():
+        return []
+    state = read_array(z, "takeover")
+    if state.shape != t.shape:
+        raise ValueError("Invalid takeover array")
+    gaps = np.diff(t) > 2.5 / fps
+    edges = np.r_[0, np.flatnonzero((state[1:] != state[:-1]) | gaps) + 1, len(t)]
+    return [{"kind": int(state[first]), "t": float(t[first]),
+             "until": float(t[end] if end < len(t) and not gaps[end - 1] else t[end - 1] + 1 / fps)}
+            for first, end in zip(edges, edges[1:], strict=False) if end > first and state[first] in (1, 2)]
+
+
+def read_index_item(path, grasp_cfg):
+    with ZipFile(path) as archive:
+        meta = metadata(path, archive)
+        report = from_archive(archive, meta, grasp_cfg)
+    saved = meta.get("saved_at") or datetime.fromtimestamp(path.stat().st_mtime).isoformat(sep=" ", timespec="seconds")
+    return {"name": path.stem, "result": meta.get("result"), "s": round(meta["frames"] / meta["fps"], 1),
+            "saved_at": saved, "mode": meta.get("mode", ""), "exclude": bool(meta.get("exclude")),
+            "miss_count": report["miss_count"], "unknown_closes": report["unknown_closes"]}
+
+
+def index_item(path, grasp_cfg):
+    try:
+        return read_index_item(path, grasp_cfg)
+    except (*READ_ERRORS, ZeroDivisionError):
+        return None
 
 
 class Store:
-    def __init__(self, folder, *, trace_worker=None):
+    def __init__(self, folder, *, trace_worker=None, grasp_cfg=None):
         self.folder = folder
         self.trace_worker = trace_worker
+        self.grasp_cfg = grasp_cfg if grasp_cfg is not None else settings(load())
+        self.index_item = lru_cache(maxsize=256)(self._index_item)
         self.slots = threading.BoundedSemaphore(4)
         self.summary_lock = threading.Lock()
         self.summaries = OrderedDict()
@@ -145,15 +186,18 @@ class Store:
             raise FileNotFoundError(name)
         return path
 
+    def _index_item(self, path, version, review):
+        if self.trace_worker is not None:
+            return self.trace_worker.submit(index_item, path, self.grasp_cfg).result()
+        return index_item(path, self.grasp_cfg)
+
     def index(self):
         items = []
         for path in rollout_files(self.folder):
             try:
-                meta = metadata(path)
-                saved = meta.get("saved_at") or datetime.fromtimestamp(path.stat().st_mtime).isoformat(sep=" ", timespec="seconds")
-                items.append({"name": path.stem, "result": meta.get("result"), "s": round(meta["frames"] / meta["fps"], 1),
-                              "saved_at": saved, "mode": meta.get("mode", "")})
-            except (*READ_ERRORS, ZeroDivisionError):
+                if item := self.index_item(path, version_of(path.stat()), review_version(path)):
+                    items.append(item)
+            except FileNotFoundError:
                 continue
         return sorted(items, key=lambda r: (r["saved_at"], int(r["name"].split("_")[-1])), reverse=True)
 
@@ -175,7 +219,10 @@ class Store:
                       for key, member, precision in (("t", "t", 3), ("q", "qpos", 2), ("cmd", "cmd", 2))}
             ct = read_array(z, "chunk_t") if "chunk_t.npy" in keys else np.zeros(0)
             ims = read_array(z, "infer_ms") if "infer_ms.npy" in keys else np.zeros(0)
+            spans = takeover_spans(z, np.asarray(traces["t"]), meta["fps"])
+            report = from_archive(z, meta, self.grasp_cfg)
         return {"meta": meta, "cams": cams, "sizes": sizes, **traces, "chunk_t": np.round(ct, 3).tolist(),
+                "takeover_spans": spans, **report,
                 "chunk_ms": np.round(ims.astype(float), 1).tolist(),
                 "infer_ms": round(float(np.median(ims)), 1) if len(ims) else None, "chunks": len(ct)}
 
@@ -189,11 +236,7 @@ class Store:
 
     def summary_payload(self, name):
         path = self.path(name)
-        try:
-            review = version_of(path.with_suffix(".review.json").stat())
-        except FileNotFoundError:
-            review = None
-        key = (name, version_of(path.stat()), review)
+        key = (name, version_of(path.stat()), review_version(path))
         with self.summary_lock:
             if cached := self.summaries.get(key):
                 self.summaries.move_to_end(key)
@@ -201,9 +244,9 @@ class Store:
             # The run console encodes cold traces in a separate process; large JSON responses
             # would otherwise hold the GIL shared by the paused control loop and HTTP threads.
             if self.trace_worker is not None:
-                payload = self.trace_worker.submit(encode_summary, self.folder, name).result()
+                payload = self.trace_worker.submit(encode_summary, self.folder, name, self.grasp_cfg).result()
             else:
-                payload = encode_summary(self.folder, name)
+                payload = encode_summary(self.folder, name, self.grasp_cfg)
             if len(payload) <= MAX_CACHED_SUMMARY:
                 self.summaries[key] = payload
                 if len(self.summaries) > SUMMARY_CACHE_SIZE:
@@ -213,7 +256,8 @@ class Store:
     def annotate(self, name, body):
         if not isinstance(body, dict):
             raise ValueError("Expected an annotation object")
-        return write_annotation(self.path(name), body.get("result"), body.get("note", ""))
+        return write_annotation(self.path(name), body.get("result"), body.get("note", ""),
+                                body.get("exclude"), body.get("exclude_reason", ""))
 
 
 def serve_rollouts(handler, store, path, *, method="GET", lease=nullcontext):

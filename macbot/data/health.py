@@ -15,6 +15,7 @@ import numpy as np
 
 from ..config import Config
 from ..system import expand
+from .grasp import detect, settings
 from .rollouts import metadata, rollout_files
 
 
@@ -55,20 +56,36 @@ def run(cfg: Config, args):
         sys.exit(f"no {'episode_*.npz or rollout_*.npz' if rollouts else 'episode_*.npz'} in {data}")
     np.set_printoptions(precision=1, suppress=True, linewidth=200)
     rows = []
+    grasp_cfg = settings(cfg) if rollouts else None
+    excluded = 0
     print(("run " if rollouts else "ep  ") +
           " frames lag  p95 tracking error per arm joint     offset while still               gripper range    dt max  late  repeats" +
-          ("  result / note" if rollouts else ""))
+          ("  misses  result / note" if rollouts else ""))
     for f in files:
         idx = int(f.stem.split("_")[-1])
         meta = metadata(f) if rollouts else None
+        if meta and meta.get("exclude"):
+            print(f"{idx:03d} excluded: {meta['exclude_reason']}")
+            excluded += 1
+            continue
         with np.load(f) as d:
             r = episode_stats(d, rollout_meta=meta)
+            if rollouts:
+                report = detect(meta, d["t"], d["cmd"], d["qpos"], grasp_cfg)
+                r["result"] = meta.get("result")
+                count = report["miss_count"]
+                misses = "unknown" if count is None else str(count)
+                if report["unknown_closes"]:
+                    misses += f" (+{report['unknown_closes']} unknown)"
         r["idx"] = idx
         rows.append(r)
         rep = "/".join(str(v) for v in r["repeat"].values())
         print(f"{idx:03d} {r['n']:6d} {r['lag']:3d}  {r['p95']}  {r['still']}  {r['gmin']:6.1f}/{r['gmax']:6.1f}"
               f"  {r['dt_max'] * 1e3:5.0f}ms {r['dt_late']:4d}  {rep}" + (f"  NaN {r['nan']}" if r["nan"] else "") +
-              (f"  {meta.get('result', '–')}  {meta.get('note', '')}".rstrip() if meta is not None else ""))
+              (f"  {misses}  {meta.get('result', '–')}  {meta.get('note', '')}".rstrip() if meta is not None else ""))
+    if rollouts:
+        reviewed = [r["result"] for r in rows if r["result"] in ("success", "failure")]
+        print(f"\n{len(rows)} included, {excluded} excluded; {reviewed.count('success')}/{len(reviewed)} successful trials")
     if args.split is not None:
         a = [r for r in rows if r["idx"] < args.split]
         b = [r for r in rows if r["idx"] >= args.split]

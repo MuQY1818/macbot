@@ -26,6 +26,13 @@ class RolloutViewer {
       this.seek(this.frameAt(((e.clientX - b.left) / b.width) * this.duration));
     };
     $("rreview").onsubmit = e => { e.preventDefault(); this.save(); };
+    $("rexclude").onchange = () => this.toggleReason();
+    $("rtimeline").onclick = $("rplot").onclick;
+  }
+
+  toggleReason() {
+    $("rreason-field").hidden = !$("rexclude").checked;
+    $("rreason").required = $("rexclude").checked;
   }
 
   close() {
@@ -61,6 +68,9 @@ class RolloutViewer {
       $("rchunk").textContent = "";
       $("rresult").value = r.meta.result || "failure";
       $("rnote").value = r.meta.note || "";
+      $("rexclude").checked = !!r.meta.exclude;
+      $("rreason").value = r.meta.exclude_reason || "";
+      this.toggleReason();
       $("rsave").disabled = false;
       this.translate();
       this.status(null);
@@ -83,8 +93,29 @@ class RolloutViewer {
       return `<line x1="${x}" x2="${x}" y1="182" y2="190" stroke="currentColor" opacity=".45" vector-effect="non-scaling-stroke">` +
         `<title>${t("chunk_at", i + 1)} · ${ts.toFixed(2)} s · ${r.chunk_ms[i] ?? "–"} ms</title></line>`;
     }).join("");
-    drawTraces($("rplot"), $("rlegend"), r.q, r.cmd, r.meta.joint_names, marks, r.t.map(fraction));
+    const spans = height => (r.takeover_spans || []).map(({ kind, t: start, until }) => {
+      const x = Math.min(999, 1000 * fraction(start));
+      const w = Math.max(1, 1000 * fraction(until) - x);
+      const cls = kind === 1 ? "following" : "aligning";
+      return `<rect class="span-${cls}" x="${x}" width="${w}" y="0" height="${height}"><title>${t(cls)}</title></rect>`;
+    }).join("");
+    const events = height => [
+      ...(r.meta.hand_marks || []).map(ts => [ts, "hand_in_scene", "hand"]),
+      ...(r.misses || []).map(m => [m.t, "grasp_miss", "miss"]),
+    ].map(([ts, key, cls]) => {
+      const x = Math.min(998, Math.max(2, 1000 * fraction(ts)));
+      return `<line class="event-${cls}" x1="${x}" x2="${x}" y1="0" y2="${height}" vector-effect="non-scaling-stroke">` +
+        `<title>${t(key)} · ${ts.toFixed(2)} s</title></line>`;
+    }).join("");
+    $("rtimeline").innerHTML = spans(14) + events(14);
+    drawTraces($("rplot"), $("rlegend"), r.q, r.cmd, r.meta.joint_names, marks + events(190), r.t.map(fraction), spans(190));
     $("rlegend").innerHTML += `<span style="--c:transparent">${t("chunk_marks")}</span>`;
+    for (const [show, color, key] of [
+      [r.takeover_spans?.some(s => s.kind === 1), "--ok", "following"],
+      [r.takeover_spans?.some(s => s.kind === 2), "--warn", "aligning"],
+      [r.meta.hand_marks?.length, "--brand-ink", "hand_in_scene"],
+      [r.misses?.length, "--bad", "grasp_miss"],
+    ]) if (show) $("rlegend").innerHTML += `<span style="--c:var(${color})">${t(key)}</span>`;
     for (const c of r.cams) $("r-tag-" + c).textContent = `${camLabel(c)} · ${t("replay")}`;
     if (this.shown != null) this.position(this.shown);
     this.info();
@@ -96,7 +127,8 @@ class RolloutViewer {
     if (this.trialHeading) $("rinfo-title").textContent = t("trial_heading", this.name);
     const tile = (key, value, unit = "") => `<div class="tile"><div class="k">${t(key)}</div><div class="v">${esc(value)}<small> ${unit}</small></div></div>`;
     $("rtiles").innerHTML = tile("length", this.duration.toFixed(1), "s") + tile("chunks", r.chunks) +
-      tile("median_infer", r.infer_ms == null ? "–" : Math.round(r.infer_ms), "ms") + tile("speed", `×${m.speed ?? "–"}`);
+      tile("median_infer", r.infer_ms == null ? "–" : Math.round(r.infer_ms), "ms") + tile("speed", `×${m.speed ?? "–"}`) +
+      tile("grasp_misses", r.miss_count ?? t("grasp_unknown"));
     const values = { policy: String(m.policy || "").split("/").slice(-2).join("/"),
       executor: m.executor || m.mode || "", th_saved: m.saved_at || "", instruction: m.instruction || "" };
     $("rinfo").innerHTML = Object.entries(values).map(([key, value]) => `<dt>${t(key)}</dt><dd>${esc(value)}</dd>`).join("");
@@ -217,11 +249,12 @@ class RolloutViewer {
     try {
       const review = await (await replayFetch(rolloutURL(name) + "/annotation", {
         method: "POST", headers: { "Content-Type": "application/json" }, signal,
-        body: JSON.stringify({ result: $("rresult").value, note: $("rnote").value }),
+        body: JSON.stringify({ result: $("rresult").value, note: $("rnote").value,
+          exclude: $("rexclude").checked, exclude_reason: $("rreason").value }),
       })).json();
       if (signal.aborted) return;
       Object.assign(r.meta, review);
-      this.result(name, review.result);
+      this.result(name, review);
       this.reviewMessage = "review_saved";
     } catch (e) {
       if (!signal.aborted) this.reviewMessage = e.message in I18N.en ? e.message : "review_failed";
@@ -235,11 +268,12 @@ class RolloutViewer {
 }
 
 class RolloutList {
-  constructor(body, open, { toggle = null, timed = false } = {}) {
+  constructor(body, open, { toggle = null, timed = false, rate = null } = {}) {
     this.body = body;
     this.open = open;
     this.toggle = toggle;
     this.timed = timed;
+    this.rate = rate;
     this.items = [];
     this.enabled = true;
     if (toggle) toggle.onclick = () => { this.expanded = !this.expanded; this.render(); };
@@ -253,9 +287,9 @@ class RolloutList {
     return (await (await replayFetch("/api/rollouts", { signal })).json()).items;
   }
 
-  updateResult(name, result) {
+  updateResult(name, review) {
     const item = this.items.find(x => x.name === name);
-    if (item) item.result = result;
+    if (item) Object.assign(item, review);
     this.render();
   }
 
@@ -265,17 +299,24 @@ class RolloutList {
     const key = JSON.stringify([LANG, this.enabled, this.selected, items, this.items.length, this.expanded]);
     if (key === this.key) return;
     this.key = key;
+    if (this.rate) {
+      const included = this.items.filter(r => !r.exclude && ["success", "failure"].includes(r.result));
+      this.rate.hidden = !included.length;
+      this.rate.textContent = t("reviewed_rate", included.filter(r => r.result === "success").length, included.length);
+    }
     this.body.closest("table").setAttribute("aria-disabled", !this.enabled);
     this.body.innerHTML = items.length ? items.map(r => {
       const id = esc(r.name.split("_")[1]), ok = r.result === "success";
-      const result = `<td><span class="pill ${ok ? "ok" : "bad"}">${t(ok ? "success" : "failure")}</span></td>`;
+      const result = `<td><span class="pill ${r.exclude ? "" : ok ? "ok" : "bad"}">${t(r.exclude ? "excluded" : ok ? "success" : "failure")}</span></td>`;
+      const misses = r.miss_count == null ? t("grasp_unknown") : `${r.miss_count}${r.unknown_closes ? " + ?" : ""}`;
+      const uncertain = r.unknown_closes ? ` title="${t("grasp_uncertain", r.unknown_closes)}"` : "";
       const disabled = this.enabled ? "" : " disabled";
       const first = this.timed ? `<button class="ghost num" aria-label="${t("replay_btn")} ${id}"${disabled}>${id}</button>` : id;
       const last = this.timed ? `<td class="num saved-time">${esc(r.saved_at || "–")}</td>` :
         `<td class="acts"><button${disabled}>${t("replay_btn")}</button></td>`;
       return `<tr data-n="${esc(r.name)}" class="${r.name === this.selected ? "sel" : ""}"><td class="num">${first}</td>` +
-        `${result}<td class="num rollout-duration">${esc(r.s)}&nbsp;s</td>${last}</tr>`;
-    }).join("") : `<tr><td colspan="4" class="empty">${t(this.timed ? "no_trials" : "no_rollouts")}</td></tr>`;
+        `${result}<td${uncertain}>${misses}</td><td class="num rollout-duration">${esc(r.s)}&nbsp;s</td>${last}</tr>`;
+    }).join("") : `<tr><td colspan="5" class="empty">${t(this.timed ? "no_trials" : "no_rollouts")}</td></tr>`;
     if (this.toggle) {
       this.toggle.hidden = this.items.length <= 5;
       this.toggle.textContent = this.expanded ? t("show_less") : t("show_all", this.items.length);

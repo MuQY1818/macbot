@@ -39,13 +39,22 @@ def read_array(archive, key, limit=8 * 1024 * 1024):
         return np.frombuffer(f.read(), dtype=dtype).reshape(shape, order="F" if fortran else "C")
 
 
-def annotation(result, note):
-    if result not in RESULTS or not isinstance(note, str) or len(note) > NOTE_LIMIT:
+def single_line(note):
+    if not isinstance(note, str) or len(note) > NOTE_LIMIT or note.splitlines() not in ([], [note]):
+        raise ValueError("Expected a short, single-line note")
+    return note.strip()
+
+
+def annotation(result, note, exclude=None, exclude_reason=""):
+    if result not in RESULTS:
         raise ValueError("Expected success or failure and a single-line note")
-    # splitlines() does not report a trailing line break as a second line.
-    if note.splitlines() not in ([], [note]):
-        raise ValueError("Expected a single-line note")
-    return {"result": result, "note": note.strip()}
+    review = {"result": result, "note": single_line(note)}
+    if exclude is not None:
+        reason = single_line(exclude_reason)
+        if type(exclude) is not bool or (exclude and not reason):
+            raise ValueError("Excluding a trial requires a reason")
+        review.update(exclude=exclude, exclude_reason=reason if exclude else "")
+    return review
 
 
 def metadata(path: Path, archive: ZipFile | None = None):
@@ -58,14 +67,17 @@ def metadata(path: Path, archive: ZipFile | None = None):
     try:
         with path.with_suffix(".review.json").open(encoding="utf-8") as f:
             review = json.loads(f.read(4096))
-        meta.update(annotation(review["result"], review.get("note", "")))
+        meta.update(annotation(review["result"], review.get("note", ""), review.get("exclude"), review.get("exclude_reason", "")))
     except (OSError, ValueError, KeyError, TypeError, AttributeError):
         pass  # An absent or malformed sidecar leaves the original result intact.
     return meta
 
 
-def write_annotation(path: Path, result, note):
-    review = annotation(result, note)
+def write_annotation(path: Path, result, note, exclude=None, exclude_reason=""):
+    if exclude is None:  # Older clients can still edit results without clearing an exclusion.
+        current = metadata(path)
+        exclude, exclude_reason = current.get("exclude"), current.get("exclude_reason", "")
+    review = annotation(result, note, exclude, exclude_reason)
     tmp = None
     try:
         with NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, delete=False) as f:
