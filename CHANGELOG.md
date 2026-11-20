@@ -19,6 +19,8 @@ All notable changes to macbot will be documented here. This project follows
 
 ### Changed
 
+- The base install now includes LeRobot's `feetech` and `dynamixel` extras and `pyserial` for
+  serial arm discovery and support.
 - README: a pixel-art workflow scene replaces the console screenshot at the top, and the tagline and
   package description now cover LeRobot policies in general rather than only ACT and π0.5.
 
