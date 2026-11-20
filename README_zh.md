@@ -5,8 +5,8 @@
   </picture>
 </p>
 
-<p align="center"><b>一台 MacBook 搞定真机学习。</b><br>
-遥操作采数据、导出 LeRobot 数据集、在真机上跑 ACT 和 π0.5，全部在 Apple 芯片的 Mac 上完成。</p>
+<p align="center"><b>在 MacBook 上跑 LeRobot。</b><br>
+一套标准流程完成遥操作采集、导出数据集，以及在真机上运行 ACT、π0.5、SmolVLA、X-VLA 等 LeRobot 策略，推理针对 Apple 芯片加速。</p>
 
 <p align="center">
   <img alt="macOS" src="https://img.shields.io/badge/macOS-Apple%20silicon-18171F">

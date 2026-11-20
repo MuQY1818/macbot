@@ -5,8 +5,9 @@
   </picture>
 </p>
 
-<p align="center"><b>Real-robot learning on a MacBook.</b><br>
-Teleoperate, record, export to LeRobot and run ACT or π0.5 on the robot, all from a Mac on Apple silicon.</p>
+<p align="center"><b>LeRobot on a MacBook.</b><br>
+One standard workflow to teleoperate, record, export and run LeRobot policies such as ACT, π0.5, SmolVLA and X-VLA
+on the robot, with fast inference on Apple silicon.</p>
 
 <p align="center">
   <img alt="macOS" src="https://img.shields.io/badge/macOS-Apple%20silicon-18171F">
