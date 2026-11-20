@@ -21,6 +21,8 @@ All notable changes to macbot will be documented here. This project follows
 
 ### Changed
 
+- `collect`, `run` and `replay` open their console in the default browser like `init`, also under `sudo`
+  (as the user who ran sudo). Pass `--no-browser` or set `MACBOT_NO_BROWSER=1` to only print the URL.
 - Setup can preserve existing camera framing and calibration. Exports and trials record framing, and
   policy runs reject a known mismatch before connecting.
 - Local consoles try nearby ports when a default is busy and print the bound URL. Explicit ports stay fixed.

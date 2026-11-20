@@ -47,7 +47,7 @@ Follow the kit's assembly and motor ID setup first. See [robot support](robots.m
    macbot collect
    ```
 
-   Open the collection link in the wizard or the URL printed in Terminal, and wait for the teleoperation
+   The collection console opens in the browser (or use the link in the wizard). Wait for the teleoperation
    status. Move the leader to verify tracking.
    Press **S**, demonstrate the task for at least two seconds, and press **Enter** to save (**←** discards).
    The first episode appears in the console and under `~/macbot-data/raw/cubes_to_box/`. Use the console's
@@ -61,6 +61,9 @@ image size for each role. When migrating, use `macbot init --from existing.yaml`
 the existing config** selected. Exports store `meta/camera_framing.json`; the training scripts copy it into
 checkpoints. `macbot run` stops before connecting to the robot if known framing differs, unless you explicitly
 pass `--allow-framing-mismatch`. With older checkpoints that lack this information, verify the framing printed at startup.
+
+Each console opens in your default browser, also under `sudo`. Pass `--no-browser` or set `MACBOT_NO_BROWSER=1`
+to only print the URL.
 
 The consoles default to ports 8765 (init), 8766 (collect), 8767 (run), and 8768 (replay). A busy default
 falls back to the next available port, up to nine ports higher. To fix the port, pass `--port` or set

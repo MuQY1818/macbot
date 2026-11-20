@@ -136,7 +136,7 @@ def cmd_collect(args):
     if not args.fake:
         _preload(cfg)
     from .collect.server import run
-    run(cfg, fake=args.fake, port=args.port, out=args.out, listen_fd=args.listen_fd)
+    run(cfg, fake=args.fake, port=args.port, out=args.out, listen_fd=args.listen_fd, open_browser=not args.no_browser)
 
 
 def cmd_export(args):
@@ -213,6 +213,7 @@ def main(argv=None):
     port_args.add_argument("--port", type=int, help="collection console port (default: 8766 or teleop.port)")
     port_args.add_argument("--listen-fd", type=int, help=argparse.SUPPRESS)
     p.add_argument("--out", help="episode folder (default <data_root>/raw/<task>)")
+    p.add_argument("--no-browser", action="store_true", help="print the console URL without opening it")
     p.set_defaults(fn=cmd_collect)
 
     p = sub.add_parser("export", help="recorded episodes -> LeRobot dataset")
@@ -254,11 +255,13 @@ def main(argv=None):
     p.add_argument("--port", type=int, help="policy console port (default: 8767 or run.port)")
     p.add_argument("--fake", action="store_true", help="simulate robot and cameras (policy runs for real)")
     p.add_argument("--autostart", type=float, default=0, help="in fake or sim mode: run this many seconds, save, quit")
+    p.add_argument("--no-browser", action="store_true", help="print the console URL without opening it")
     p.set_defaults(fn=cmd_run)
 
     p = sub.add_parser("replay", help="browse recorded rollouts")
     p.add_argument("--dir", help="rollout folder (default <data_root>/rollouts/<task>)")
     p.add_argument("--port", type=int, help="replay console port (default: 8768 or replay.port)")
+    p.add_argument("--no-browser", action="store_true", help="print the console URL without opening it")
     p.set_defaults(fn=cmd_replay)
 
     p = sub.add_parser("video", help="rollout -> side-by-side MP4")

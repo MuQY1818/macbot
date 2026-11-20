@@ -335,6 +335,8 @@ def _control(st, srv, fps, gripper, cleanup):
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     cleanup.callback(srv.shutdown)
     print(f"executor: {st.executor}\nweb page: {srv.url}   rollouts: {st.out}", flush=True)
+    if not getattr(args, "no_browser", True) and not args.autostart:
+        web.open_browser(srv.url)
 
     hz = rc["hz"]
     dt = 1.0 / hz
