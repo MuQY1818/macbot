@@ -8,7 +8,7 @@ Everything here is one-time. `macbot doctor` tells you which steps are still mis
 
 ```bash
 conda create -n macbot python=3.12 -y && conda activate macbot
-pip install -e ".[orbbec,pi]"      # orbbec: wrist camera SDK, pi: pi0.5 dependencies
+pip install "macbot[orbbec,pi]"    # orbbec: wrist camera SDK, pi: pi0.5 dependencies
 xcode-select --install             # swiftc, used to build the UVC camera helper on first use
 ```
 

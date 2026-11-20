@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.svg">
-    <img src="assets/logo.svg" alt="macbot" height="72">
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/MuQY1818/macbot/main/assets/logo-dark.svg">
+    <img src="https://raw.githubusercontent.com/MuQY1818/macbot/main/assets/logo.svg" alt="macbot" height="72">
   </picture>
 </p>
 
@@ -10,14 +10,15 @@ Teleoperate, record, export to LeRobot and run ACT or π0.5 on the robot, all fr
 
 <p align="center">
   <img alt="macOS" src="https://img.shields.io/badge/macOS-Apple%20silicon-18171F">
-  <img alt="Python" src="https://img.shields.io/badge/python-3.10%2B-F2701A">
+  <img alt="Python" src="https://img.shields.io/badge/python-3.12%2B-F2701A">
   <img alt="LeRobot" src="https://img.shields.io/badge/LeRobot-0.7.0-1F9D63">
   <img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-6B6A75">
+  <a href="https://github.com/MuQY1818/macbot/actions/workflows/test.yml"><img alt="tests" src="https://github.com/MuQY1818/macbot/actions/workflows/test.yml/badge.svg"></a>
 </p>
 
-<p align="center"><b>English</b> · <a href="README_zh.md">中文</a></p>
+<p align="center"><b>English</b> · <a href="https://github.com/MuQY1818/macbot/blob/main/README_zh.md">中文</a></p>
 
-<p align="center"><img src="docs/img/collect_en.jpg" alt="The macbot collection console" width="100%"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/MuQY1818/macbot/main/docs/img/collect_en.jpg" alt="The macbot collection console" width="100%"></p>
 
 ## Why
 
@@ -53,7 +54,7 @@ Measured on a MacBook Pro (M5 Pro, 48 GB), PyTorch MPS:
 
 | Run a policy | Replay a trial |
 |---|---|
-| <img src="docs/img/run_en.jpg" alt="Policy runner"> | <img src="docs/img/replay_en.jpg" alt="Trial replay"> |
+| <img src="https://raw.githubusercontent.com/MuQY1818/macbot/main/docs/img/run_en.jpg" alt="Policy runner"> | <img src="https://raw.githubusercontent.com/MuQY1818/macbot/main/docs/img/replay_en.jpg" alt="Trial replay"> |
 
 ## Hardware
 
@@ -72,16 +73,16 @@ Other arms that LeRobot supports can be added in `macbot/robot/`; the consoles o
 ## Quick start
 
 ```bash
-git clone https://github.com/MuQY1818/macbot && cd macbot
 conda create -n macbot python=3.12 -y && conda activate macbot
-pip install -e ".[orbbec,pi]"          # drop pi if you only use ACT
+pip install "macbot[orbbec,pi]"        # drop pi if you only use ACT
+# or from source: git clone https://github.com/MuQY1818/macbot && pip install -e "./macbot[orbbec,pi]"
 
 macbot doctor                          # what is ready, what is missing
 macbot collect --fake                  # the collection console with a simulated arm and cameras
 ```
 
 Open <http://127.0.0.1:8766>. Press **S** to record, **Enter** to save, **←** to discard.
-For the real robot, install the PCAN driver and set your camera IDs first: see [docs/setup.md](docs/setup.md).
+For the real robot, install the PCAN driver and set your camera IDs first: see [docs/setup.md](https://github.com/MuQY1818/macbot/blob/main/docs/setup.md).
 
 ## Workflow
 
@@ -94,9 +95,9 @@ sudo -E $(which python) -m macbot.cli run --policy runs/my_run/checkpoints/last/
 macbot replay                                          # 5. browse trials;  macbot video <rollout.npz> for an MP4
 ```
 
-The full walkthrough, including the data format and the execution schemes, is in [docs/guide.md](docs/guide.md).
+The full walkthrough, including the data format and the execution schemes, is in [docs/guide.md](https://github.com/MuQY1818/macbot/blob/main/docs/guide.md).
 Put your settings in a YAML file and pass `macbot --config my.yaml <command>`; anything you leave out falls
-back to [macbot/default.yaml](macbot/default.yaml). [configs/example.yaml](configs/example.yaml) is a starting point.
+back to [macbot/default.yaml](https://github.com/MuQY1818/macbot/blob/main/macbot/default.yaml). [configs/example.yaml](https://github.com/MuQY1818/macbot/blob/main/configs/example.yaml) is a starting point.
 
 ## What it took to run this on macOS
 
@@ -145,4 +146,4 @@ Open Font License.
 
 ## License
 
-Apache-2.0. See [LICENSE](LICENSE).
+Apache-2.0. See [LICENSE](https://github.com/MuQY1818/macbot/blob/main/LICENSE).

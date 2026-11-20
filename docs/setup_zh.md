@@ -8,7 +8,7 @@
 
 ```bash
 conda create -n macbot python=3.12 -y && conda activate macbot
-pip install -e ".[orbbec,pi]"      # orbbec：腕部相机 SDK；pi：π0.5 依赖
+pip install "macbot[orbbec,pi]"    # orbbec：腕部相机 SDK；pi：π0.5 依赖
 xcode-select --install             # 提供 swiftc，首次使用 UVC 相机时编译助手程序
 ```
 

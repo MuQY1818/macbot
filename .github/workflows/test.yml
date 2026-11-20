@@ -1,0 +1,19 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # The unit tests need no robot, camera or model, so LeRobot and PyTorch are left out.
+      - run: python -m pip install --no-deps -e . && python -m pip install numpy opencv-python-headless pyyaml pytest pyflakes
+      - run: python -m pyflakes macbot tests train tools
+      - run: python -m pytest -q tests

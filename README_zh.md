@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.svg">
-    <img src="assets/logo.svg" alt="macbot" height="72">
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/MuQY1818/macbot/main/assets/logo-dark.svg">
+    <img src="https://raw.githubusercontent.com/MuQY1818/macbot/main/assets/logo.svg" alt="macbot" height="72">
   </picture>
 </p>
 
@@ -10,14 +10,15 @@
 
 <p align="center">
   <img alt="macOS" src="https://img.shields.io/badge/macOS-Apple%20silicon-18171F">
-  <img alt="Python" src="https://img.shields.io/badge/python-3.10%2B-F2701A">
+  <img alt="Python" src="https://img.shields.io/badge/python-3.12%2B-F2701A">
   <img alt="LeRobot" src="https://img.shields.io/badge/LeRobot-0.7.0-1F9D63">
   <img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-6B6A75">
+  <a href="https://github.com/MuQY1818/macbot/actions/workflows/test.yml"><img alt="tests" src="https://github.com/MuQY1818/macbot/actions/workflows/test.yml/badge.svg"></a>
 </p>
 
-<p align="center"><a href="README.md">English</a> · <b>中文</b></p>
+<p align="center"><a href="https://github.com/MuQY1818/macbot/blob/main/README.md">English</a> · <b>中文</b></p>
 
-<p align="center"><img src="docs/img/collect_zh.jpg" alt="macbot 采集控制台" width="100%"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/MuQY1818/macbot/main/docs/img/collect_zh.jpg" alt="macbot 采集控制台" width="100%"></p>
 
 ## 为什么做这个
 
@@ -45,7 +46,7 @@
 
 | 跑策略 | 回放试验 |
 |---|---|
-| <img src="docs/img/run_zh.jpg" alt="跑策略"> | <img src="docs/img/replay_zh.jpg" alt="回放"> |
+| <img src="https://raw.githubusercontent.com/MuQY1818/macbot/main/docs/img/run_zh.jpg" alt="跑策略"> | <img src="https://raw.githubusercontent.com/MuQY1818/macbot/main/docs/img/replay_zh.jpg" alt="回放"> |
 
 ## 硬件
 
@@ -63,16 +64,16 @@ LeRobot 支持的其他机械臂可以加到 `macbot/robot/`。控制台只需�
 ## 快速开始
 
 ```bash
-git clone https://github.com/MuQY1818/macbot && cd macbot
 conda create -n macbot python=3.12 -y && conda activate macbot
-pip install -e ".[orbbec,pi]"          # 只用 ACT 可以去掉 pi
+pip install "macbot[orbbec,pi]"        # 只用 ACT 可以去掉 pi
+# 或者从源码装：git clone https://github.com/MuQY1818/macbot && pip install -e "./macbot[orbbec,pi]"
 
 macbot doctor                          # 看看哪些就绪、缺什么
 macbot collect --fake                  # 用模拟机械臂和相机打开采集控制台
 ```
 
 打开 <http://127.0.0.1:8766>。按 **S** 录制，**回车** 保存，**←** 丢弃。
-连真机之前，先装 PCAN 驱动、填好相机 ID，见 [docs/setup_zh.md](docs/setup_zh.md)。
+连真机之前，先装 PCAN 驱动、填好相机 ID，见 [docs/setup_zh.md](https://github.com/MuQY1818/macbot/blob/main/docs/setup_zh.md)。
 
 ## 工作流程
 
@@ -85,8 +86,8 @@ sudo -E $(which python) -m macbot.cli run --policy runs/my_run/checkpoints/last/
 macbot replay                                          # 5. 回放试验；macbot video <rollout.npz> 导出 MP4
 ```
 
-完整说明（含数据格式和各执行方式）见 [docs/guide_zh.md](docs/guide_zh.md)。
-自己的设置写在一个 YAML 里，用 `macbot --config my.yaml <命令>` 传入，没写的项沿用 [macbot/default.yaml](macbot/default.yaml)。可以从 [configs/example.yaml](configs/example.yaml) 开始改。
+完整说明（含数据格式和各执行方式）见 [docs/guide_zh.md](https://github.com/MuQY1818/macbot/blob/main/docs/guide_zh.md)。
+自己的设置写在一个 YAML 里，用 `macbot --config my.yaml <命令>` 传入，没写的项沿用 [macbot/default.yaml](https://github.com/MuQY1818/macbot/blob/main/macbot/default.yaml)。可以从 [configs/example.yaml](https://github.com/MuQY1818/macbot/blob/main/configs/example.yaml) 开始改。
 
 ## 在 macOS 上跑起来要解决的问题
 
@@ -124,4 +125,4 @@ macbot 会驱动真实的机械臂。所有控制台启动时都处于暂停或�
 
 ## 许可证
 
-Apache-2.0，见 [LICENSE](LICENSE)。
+Apache-2.0，见 [LICENSE](https://github.com/MuQY1818/macbot/blob/main/LICENSE)。

@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,8 +7,21 @@ name = "macbot"
 version = "0.1.0"
 description = "Real-robot learning on a MacBook: teleoperate, record, export to LeRobot and run ACT / pi0.5 on Apple silicon."
 readme = "README.md"
-requires-python = ">=3.10"
-license = { text = "Apache-2.0" }
+requires-python = ">=3.12"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "MuQY1818" }]
+keywords = ["robotics", "lerobot", "teleoperation", "imitation-learning", "vla", "pi0", "act", "apple-silicon", "mps", "macos"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "Intended Audience :: Developers",
+  "Operating System :: MacOS",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Topic :: Scientific/Engineering :: Human Machine Interfaces",
+]
 dependencies = [
   "lerobot[rebot,dataset]==0.7.0",
   "numpy",
@@ -20,6 +33,12 @@ dependencies = [
 orbbec = ["pyorbbecsdk2"]
 pi = ["lerobot[pi]==0.7.0"]
 dev = ["pytest"]
+
+[project.urls]
+Homepage = "https://github.com/MuQY1818/macbot"
+Documentation = "https://github.com/MuQY1818/macbot/blob/main/docs/guide.md"
+Issues = "https://github.com/MuQY1818/macbot/issues"
+Changelog = "https://github.com/MuQY1818/macbot/releases"
 
 [project.scripts]
 macbot = "macbot.cli:main"
