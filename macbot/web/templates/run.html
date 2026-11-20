@@ -52,7 +52,7 @@
         </dl>
       </div>
       <div class="card">
-        <h2><span data-i18n="joints">joints</span> <span class="hint" data-i18n="joints_hint"></span></h2>
+        <h2><span id="joints-title" data-i18n="joints">joints</span> <span class="hint" data-i18n="joints_hint"></span></h2>
         <div id="joints"></div>
       </div>
       <div class="card">
@@ -64,7 +64,7 @@
         </table></div>
         <button class="ghost rollout-toggle" id="all-trials" aria-controls="saved" hidden></button>
       </div>
-      <div id="run-review" hidden>{{rollout_details}}</div>
+      <section id="run-review" aria-labelledby="rinfo-title" hidden>{{rollout_details}}</section>
     </div>
   </div>
 </div>
@@ -83,10 +83,14 @@ const saved = new RolloutList($("saved"), n => {
 }, { toggle: $("all-trials"), timed: true });
 saved.enabled = false;
 const viewer = new RolloutViewer({
+  trialHeading: true,
   status: key => { viewerMessage = key; replayMessage(); },
   change: open => {
     if (panel.hidden === !open) return;
     panel.hidden = $("run-review").hidden = !open;
+    const jointsTitle = $("joints-title");
+    jointsTitle.dataset.i18n = open ? "live_joints" : "joints";
+    jointsTitle.textContent = t(jointsTitle.dataset.i18n);
     $("views").hidden = $("live-trace").hidden = open;
     for (const c of S.cam_names) {
       const img = $("cam-" + c);

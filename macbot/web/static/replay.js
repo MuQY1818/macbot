@@ -9,10 +9,12 @@ const rolloutURL = n => `/api/rollout/${encodeURIComponent(n)}`;
 const isEditing = e => e.target.closest("input,select,textarea,button,[contenteditable]");
 
 class RolloutViewer {
-  constructor({ status, change, result }) {
+  constructor({ status, change, result, trialHeading = false }) {
     this.status = status;
     this.change = change;
     this.result = result;
+    this.trialHeading = trialHeading;
+    if (trialHeading) delete $("rinfo-title").dataset.i18n;
     $("rplay").onclick = () => this.togglePlay();
     $("rspeed").onchange = () => { if (this.timer) { this.stop(); this.togglePlay(); } };
     $("rslider").oninput = e => { this.stop(); this.seek(+e.target.value); };
@@ -87,6 +89,7 @@ class RolloutViewer {
   info() {
     const r = this.data, m = r.meta;
     $("rtitle").textContent = `${this.name} · ${this.duration.toFixed(1)} s`;
+    if (this.trialHeading) $("rinfo-title").textContent = t("trial_heading", this.name);
     const tile = (key, value, unit = "") => `<div class="tile"><div class="k">${t(key)}</div><div class="v">${esc(value)}<small> ${unit}</small></div></div>`;
     $("rtiles").innerHTML = tile("length", this.duration.toFixed(1), "s") + tile("chunks", r.chunks) +
       tile("median_infer", r.infer_ms == null ? "–" : Math.round(r.infer_ms), "ms") + tile("speed", `×${m.speed ?? "–"}`);

@@ -142,9 +142,9 @@ def replay_mock(store, name):
     s = store.summary(name)
     m = s["meta"]
     for key in list(m):
-        if key not in ("task", "instruction", "fps", "frames", "joint_names", "cameras", "result", "speed", "saved_at", "note"):
+        if key not in ("task", "instruction", "fps", "frames", "joint_names", "cameras", "result", "speed",
+                       "saved_at", "note", "policy", "executor", "mode"):
             m.pop(key)
-    m.update(policy=POLICY, executor=EXECUTOR)
     items = store.index()
     items.sort(key=lambda item: item["name"] != name)
     k = 0

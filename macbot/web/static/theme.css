@@ -209,6 +209,7 @@ footer { text-align: center; padding: 4px 0 24px; font-size: 12px; color: var(--
 .rollout-heading { justify-content: space-between; }
 .rollout-heading .ghost { padding: 4px 8px; font-size: 12px; }
 #run-replay:focus { outline: none; }
+#run-review > .card { border-top: 2px solid var(--brand); }
 .rollout-toggle { margin-top: 16px; }
 .rollout-chunk, .rollout-review .hint, #rframe-error, #run-replay-msg, #replay-status { color: var(--mid); }
 .rollout-chunk { margin-top: 8px; }
