@@ -23,6 +23,8 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from macbot import web  # noqa: E402
+from macbot.config import load  # noqa: E402
+from macbot.policy.gripper import takeover_gripper_alignment  # noqa: E402
 from macbot.robot.rebot import JOINTS  # noqa: E402
 from macbot.viz.rollouts import Store  # noqa: E402
 
@@ -128,16 +130,26 @@ def run_mock(r, meta, store, name, opened=False, takeover=None):
               "fake": False, "policy": POLICY, "task": meta["task"], "rec_s": round(float(r["t"][k]), 1), "next": 3,
               "saved_revision": 0, "replay_ready": opened}
     if takeover:
-        status.update(mode=takeover, takeover_enabled=True, align_deg=5, recording=True, fake=meta["fake"],
+        cfg = load()
+        gate = meta.get("takeover_alignment", {"arm_deg": cfg["run"]["takeover_align_deg"],
+            "tolerance": cfg["run"]["takeover_gripper_align_deg"], "close_above": cfg["export"]["gripper_close_above"],
+            "open_below": cfg["export"]["gripper_open_below"]})
+        leader = r["leader"][k].tolist()
+        grip_name = meta.get("gripper")
+        gi = JOINTS.index(grip_name) if grip_name in JOINTS else None
+        grip = (takeover_gripper_alignment(leader[gi], status["cmd"][gi], meta.get("binary_gripper"), gate)
+                if gi is not None and np.isfinite(leader).all() else None)
+        status.update(mode=takeover, takeover_enabled=True, align_deg=gate["arm_deg"], recording=True, fake=meta["fake"],
+                      gripper=grip_name, gripper_alignment=grip,
                       executor=meta["executor"], policy="/".join(Path(meta["policy"]).parts[-2:]),
                       next=int(name.rsplit("_", 1)[-1]), speed=meta["speed"],
                       infer_ms=round(float(np.median(r["infer_ms"][r["chunk_t"] <= r["t"][k]])), 1),
                       hand_marks=sum(t <= float(r["t"][k]) for t in meta.get("hand_marks", [])),
-                      alignment={n: float(a - q) for n, a, q in zip(JOINTS, r["leader"][k], r["qpos"][k], strict=True)
-                                 if n != meta["gripper"]},
+                      alignment={n: a - q for n, a, q in zip(JOINTS, leader, status["q"], strict=True)
+                                 if n != grip_name and np.isfinite(a)},
                       msg=({"en": "Following the leader.", "zh": "正在跟随领臂。"} if takeover == "following" else
-                           {"en": "Holding the follower. Align every arm joint to take control.",
-                            "zh": "从臂保持当前位置。请对齐所有臂关节以接管。"}))
+                           {"en": "Holding the follower. Align the leader to take control.",
+                            "zh": "从臂保持当前指令。请对齐领臂以接管。"}))
     routes, images, _ = replay_mock(store, name)
     routes["/api/status"] = status
     images.update({f"/stream/{c}": rollout_frame_uri(store, name, c, k) for c in ("top", "wrist")})
