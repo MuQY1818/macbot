@@ -27,16 +27,25 @@ MacBook is enough for everything that happens at the robot: teleoperated data co
 export to LeRobot, and closed-loop policy inference, π0.5 included. Training still goes to a GPU machine.
 macbot is the toolkit we use for that, cleaned up so others can reuse it.
 
-Measured on a MacBook Pro (M5 Pro, 48 GB), PyTorch MPS:
+Measured on a MacBook Pro (M5 Pro, 48 GB). Policy inference, time per action chunk:
 
-| Measurement | Result |
-|---|---|
-| π0.5 inference, 50-step action chunk, 10 denoising steps | **~280 ms** (bf16 + `torch.compile`) |
-| π0.5 on the optional MLX backend (`--backend mlx`, fp16, same actions within 0.1°) | **~165 ms** |
-| π0.5 with Real-Time Chunking guidance | **~350 ms** |
-| ACT inference, 100-step chunk | **~25 ms** |
+| Policy | Backend | Execution | Latency |
+|---|---|---|---:|
+| π0.5 (50-step chunk, 10 denoising steps) | PyTorch MPS (bf16, `torch.compile`) | plain | ~270 ms |
+| | PyTorch MPS | Real-Time Chunking guidance | ~350 ms |
+| | **MLX** (fp16, `--backend mlx`) | plain | **~165 ms** |
+| | **MLX** | Real-Time Chunking guidance | **~170 ms** |
+| ACT (100-step chunk) | PyTorch MPS | plain | ~25 ms |
+
+The MLX backend returns the same actions as PyTorch within 0.1° on average. Method and full results are in
+[docs/acceleration.md](https://github.com/MuQY1818/macbot/blob/main/docs/acceleration.md).
+
+Data collection:
+
+| | Result |
+|---|---:|
 | Teleoperation loop / recording grid | 60 Hz / 30 fps |
-| Camera frame age at sampling time, p95 | **≤ 40 ms** (scene UVC + wrist Orbbec) |
+| Camera frame age at sampling time, p95 (scene UVC + wrist Orbbec) | ≤ 40 ms |
 
 ## What is inside
 
