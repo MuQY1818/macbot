@@ -27,7 +27,7 @@ import numpy as np
 
 from .. import web
 from ..cameras import camera_info, open_cameras
-from ..config import ARM, JOINTS, Config
+from ..config import Config
 from ..system import ensure_dir, give_back, start_log
 from ..i18n import text, tr
 from .checks import check_episode
@@ -46,7 +46,8 @@ class State:
         self.instruction = cfg["task"]["instruction"]
         self.msg = tr("Put both arms at the zero pose. Teleoperation starts after the alignment check.",
                       "两臂摆到零位后启动；对齐检查通过才开始遥操作。")
-        self.q, self.cmd = [0.0] * 7, [0.0] * 7
+        self.joints, self.gripper = [], None
+        self.q, self.cmd = [], []
         self.limits, self.ready, self.quit = {}, False, False
         self.buf = None
         self.saving = 0
@@ -102,7 +103,7 @@ class State:
                     "frames": len(self.buf["qpos"]) if (rec and self.buf) else 0,
                     "msg": self.msg, "instruction": self.instruction, "task": self.cfg.task,
                     "target": self.cfg["task"]["target_episodes"], "count": len(eps), "saving": self.saving,
-                    "q": self.q, "cmd": self.cmd, "names": JOINTS, "limits": self.limits, "episodes": eps,
+                    "q": self.q, "cmd": self.cmd, "names": self.joints, "limits": self.limits, "episodes": eps,
                     "fps": self.fps, "cams": self.cam_info, "cam_names": self.cam_names, "out": str(self.out),
                     "cam_age": ages, "stall_s": CAM_STALL_S}
 
@@ -155,12 +156,14 @@ class State:
         try:
             arr = {k: np.asarray(v) for k, v in buf.items() if not k.endswith("_jpg")}
             rc = self.cfg["record"]
-            chk = check_episode(arr, self.cam_names, self.fps, self.cfg["checks"], rc["min_episode_s"])
+            chk = check_episode(arr, self.cam_names, self.fps, self.cfg["checks"], rc["min_episode_s"],
+                                joints=self.joints, gripper=self.gripper)
             n = len(buf["qpos"])
             meta = {"task": self.cfg.task, "instruction": instruction, "fps": self.fps, "frames": n,
-                    "duration_s": round(n / self.fps, 2), "joint_names": JOINTS, "units": "deg",
+                    "duration_s": round(n / self.fps, 2), "joint_names": self.joints, "gripper": self.gripper,
+                    "units": "robot (degrees for most arm joints)",
                     "state": "follower measured position", "action": "command sent to follower (gripper: leader value)",
-                    "cameras": self.cam_info, "follower_ff": self.ff, "fake": self.fake,
+                    "cameras": self.cam_info, "robot": self.ff, "fake": self.fake,
                     "saved_at": time.strftime("%Y-%m-%d %H:%M:%S"), "check": chk, "writer": "macbot"}
             extra = {}
             for k in self.cam_names:
@@ -305,48 +308,42 @@ def run(cfg: Config, fake: bool = False, port: int | None = None, out=None):
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     print(f"web page: http://127.0.0.1:{port}   data: {out}", flush=True)
 
-    from ..robot.rebot import clip_gripper
-    rcfg = cfg["robot"]
-    if fake:
-        from ..robot import FakeFollower, FakeLeader
-        robot, leader = FakeFollower(), FakeLeader()
-    else:
-        from ..robot.rebot import make_follower, make_leader
-        robot, leader = make_follower(rcfg), make_leader(leader_id=rcfg.get("leader_id", "rebot_arm_102_leader"))
-    st.ff = dict(robot.feedforward, gripper_mode=rcfg.get("gripper_mode"), gripper_lead_deg=rcfg["gripper_lead_deg"])
-    leader.connect(calibrate=False)
-    robot.connect(calibrate=False)
-    lim = robot.config.joint_limits
+    from ..robot import open_robot
+    robot = open_robot(cfg["robot"], fake=fake, leader=True)
+    names = robot.joints
+    with st.lock:
+        st.joints, st.gripper = names, robot.gripper
+        st.q = st.cmd = [0.0] * len(names)
     started = False
     try:
-        a0, o0 = leader.get_action(), robot.get_observation()
-        bad = [f"{n} leader {a0[f'{n}.pos']:.0f} / follower {o0[f'{n}.pos']:.0f}" for n in ARM
-               if abs(min(max(a0[f"{n}.pos"], lim[n][0]), lim[n][1]) - o0[f"{n}.pos"]) > T["align_max_deg"]]
+        robot.connect(leader=True)
+        st.ff = robot.info()
+        a0, q0 = robot.read_leader(), robot.read()
+        bad = [f"{n} leader {a:.0f} / follower {q:.0f}" for n, a, q in zip(names, a0, q0)
+               if n != robot.gripper and abs(robot.clamp(n, a) - q) > T["align_max_deg"]]
         if bad and not fake:
             with st.lock:
-                st.msg = tr(f"Arms not aligned (more than {T['align_max_deg']} deg): " + "; ".join(bad) + ". Align and restart.",
-                            f"两臂没对齐（差超过 {T['align_max_deg']}°）：" + "；".join(bad) + "。对齐后重启。")
+                st.msg = tr(f"Arms not aligned (more than {T['align_max_deg']}): " + "; ".join(bad) + ". Align and restart.",
+                            f"两臂没对齐（差超过 {T['align_max_deg']}）：" + "；".join(bad) + "。对齐后重启。")
             print(st.msg["en"], flush=True)
             time.sleep(3)                   # let the page show the message
             raise SystemExit(2)
         with st.lock:
-            st.limits = {n: list(lim[n]) for n in JOINTS}
+            st.limits = {n: list(robot.limits[n]) for n in names if n in robot.limits}
             st.ready = True
             st.msg = tr(f"Teleoperation running. Set up the scene and press S. {len(st.summaries)} episodes so far.",
                         f"遥操作已启动。摆好场景后按 S 开始录制。已有 {len(st.summaries)} 条。")
         started = True
-        print("teleoperation running", flush=True)
-        hz, soft, lead = T["hz"], T["soft_start_s"], float(rcfg["gripper_lead_deg"])
+        print(f"teleoperation running ({robot.kind}: {', '.join(names)})", flush=True)
+        hz, soft = T["hz"], T["soft_start_s"]
         t_start = time.perf_counter()
         while not st.quit:
             tick = time.perf_counter()
-            act = leader.get_action()
+            act = robot.read_leader()
             r = min(1.0, (tick - t_start) / soft)              # soft start from the follower's pose
-            act = {key: o0.get(key, v) * (1 - r) + v * r for key, v in act.items()}
-            obs = robot.get_observation()
-            sent = robot.send_action(clip_gripper(act, float(obs["gripper.pos"]), lead))
-            q = [float(obs[f"{n}.pos"]) for n in JOINTS]
-            cmd = [float(sent.get(f"{n}.pos", act[f"{n}.pos"])) for n in ARM] + [float(act["gripper.pos"])]
+            act = [q * (1 - r) + a * r for q, a in zip(q0, act)]
+            q = robot.read()
+            cmd = robot.send(act, q)
             with st.lock:
                 st.q, st.cmd = q, cmd
             time.sleep(max(0.0, 1 / hz - (time.perf_counter() - tick)))
@@ -355,12 +352,7 @@ def run(cfg: Config, fake: bool = False, port: int | None = None, out=None):
     finally:
         st.quit = True
         try:
-            if not fake:
-                from ..robot.rebot import safe_disconnect
-                try:
-                    leader.disconnect()
-                finally:
-                    safe_disconnect(robot, go_zero=started)
+            robot.shutdown(moved=started)
         finally:
             for c in st.cams.values():
                 c.close()

@@ -24,7 +24,7 @@ import numpy as np
 
 from .. import web
 from ..cameras import open_cameras
-from ..config import ARM, JOINTS, Config
+from ..config import Config
 from ..i18n import tr
 from ..system import ensure_dir, expand, give_back, start_log
 from .executors import AsyncChunk, Ensemble, SyncChunk
@@ -32,7 +32,6 @@ from .gripper import BinaryGripper, find_gripper_config
 from .models import load_policy, prep_image
 
 CAM_STALL_S = 0.5
-HOME_POSE = {n: 0.0 for n in JOINTS}
 
 
 class State:
@@ -44,12 +43,14 @@ class State:
         self.want = None                # request from the page
         self.msg = tr("Paused. Set up the scene, make sure it is safe, then press Start.",
                       "已暂停。场景摆好、确认安全后按“开始”。")
-        self.q, self.cmd = [0.0] * 7, [0.0] * 7
+        self.joints = []
+        self.q, self.cmd = [], []
         self.cams, self.chunks, self.infer_ms = {}, 0, []
         self.quit = False
         self.rec = None
         self.saved = []
         self.executor = ""
+        self.gripper, self.robot_info, self.limits = None, {}, {}
 
     def next_idx(self):
         ids = [int(m.group(1)) for p in self.out.glob("rollout_*.npz") if (m := re.search(r"_(\d+)\.npz$", p.name))]
@@ -74,7 +75,7 @@ class State:
             now = time.time()
             ages = {c: (round(now - self.cams[c].latest()[1], 2) if c in self.cams else None) for c in self.cam_names}
             r = self.rec
-            return {"mode": self.mode, "msg": self.msg, "q": self.q, "cmd": self.cmd, "names": JOINTS,
+            return {"mode": self.mode, "msg": self.msg, "q": self.q, "cmd": self.cmd, "names": self.joints, "limits": self.limits,
                     "cam_names": self.cam_names, "cam_age": ages,
                     "cam_size": {c: self.cfg["cameras"][c]["save_size"] for c in self.cam_names}, "stall_s": CAM_STALL_S, "chunks": self.chunks,
                     "infer_ms": round(float(np.median(self.infer_ms[-20:])), 1) if self.infer_ms else None,
@@ -96,7 +97,7 @@ def save_rollout(st: State, rec: dict, result: str):
     meta = {"task": st.cfg.task, "instruction": st.cfg["task"]["instruction"], "policy": str(a.policy),
             "executor": st.executor, "mode": a.mode, "k": a.k, "te_m": a.te_m, "rtc_beta": a.rtc_beta,
             "grip_debounce": a.grip_debounce, "speed": a.speed, "max_vel": st.cfg["run"]["max_vel"], "result": result,
-            "fps": fps, "frames": len(rec["t"]), "joint_names": JOINTS, "cameras": st.cam_names,
+            "fps": fps, "frames": len(rec["t"]), "joint_names": st.joints, "gripper": st.gripper, "robot": st.robot_info, "cameras": st.cam_names,
             "saved_at": time.strftime("%Y-%m-%d %H:%M:%S"), "fake": a.fake, "writer": "macbot"}
     ex = {k: np.asarray(v, np.float64) for k, v in rec.items() if k.startswith("ex_")}
     tmp = p.with_suffix(".tmp.npz")
@@ -161,6 +162,15 @@ def run(cfg: Config, args):
     srv = ThreadingHTTPServer(("127.0.0.1", port), make_handler(st))
     srv.daemon_threads = True
 
+    from ..robot import open_robot
+    robot = open_robot(cfg["robot"], fake=args.fake)
+    names, n_j = robot.joints, len(robot.joints)
+    with st.lock:
+        st.joints, st.gripper = names, robot.gripper
+        st.q = st.cmd = [0.0] * n_j
+    gi = robot.gripper_index
+    if gripper is not None and gi is None:
+        sys.exit("gripper.json found but the robot has no joint named gripper; use --gripper raw")
     print(f"loading policy {args.policy} on {args.device}", flush=True)
     pol = load_policy(args.policy, args.device, cfg["task"]["instruction"], args.steps)
     if pol.kind == "pi05" and not args.no_compile:
@@ -179,15 +189,17 @@ def run(cfg: Config, args):
     dummy = {c: np.zeros((sizes[c][1], sizes[c][0], 3), np.uint8) for c in st.cam_names}
     for _ in range(3):                                   # warm-up (MPS is slow at first; compile happens here)
         t = time.perf_counter()
-        pol(dummy, [0.0] * 7)
+        a = pol(dummy, [0.0] * n_j)
+    if a.shape[-1] != n_j:
+        sys.exit(f"policy outputs {a.shape[-1]} values per step, but {robot.kind} has {n_j} joints ({', '.join(names)})")
     print(f"policy ready ({pol.kind}, chunk {pol.H}): {(time.perf_counter() - t) * 1e3:.0f} ms per inference", flush=True)
     if args.mode == "rtc":
         pol.enable_rtc(args.rtc_beta)
-        pol(dummy, [0.0] * 7)                            # unguided call (first chunk) compiles separately
-        lo = np.zeros((pol.H, 7), np.float32)
-        pol(dummy, [0.0] * 7, leftover=lo, delay=8)
+        pol(dummy, [0.0] * n_j)                          # unguided call (first chunk) compiles separately
+        lo = np.zeros((pol.H, n_j), np.float32)
+        pol(dummy, [0.0] * n_j, leftover=lo, delay=8)
         t = time.perf_counter()
-        pol(dummy, [0.0] * 7, leftover=lo, delay=8)
+        pol(dummy, [0.0] * n_j, leftover=lo, delay=8)
         print(f"rtc warm-up: {(time.perf_counter() - t) * 1e3:.0f} ms per guided inference", flush=True)
 
     st.cams = open_cameras(cfg["cameras"], fps, args.fake)
@@ -211,23 +223,14 @@ def run(cfg: Config, args):
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     print(f"executor: {st.executor}\nweb page: http://127.0.0.1:{port}   rollouts: {out}", flush=True)
 
-    from ..robot.rebot import clip_gripper
-    if args.fake:
-        from ..robot import FakeFollower
-        robot = FakeFollower()
-    else:
-        from ..robot.rebot import make_follower
-        robot = make_follower(cfg["robot"])
-    robot.connect(calibrate=False)
-    lim = robot.config.joint_limits
-    lead = float(cfg["robot"]["gripper_lead_deg"])
+    robot.connect()
+    st.robot_info = robot.info()
+    st.limits = {n: list(v) for n, v in robot.limits.items()}
+    home = robot.home_pose()
     started = False
     hz = rc["hz"]
     dt = 1.0 / hz
-    vmax = rc["max_vel"] * args.speed * dt               # max arm joint step per control cycle (deg)
-
-    def clamp(n, v):
-        return min(lim[n][1], max(lim[n][0], v))
+    vmax = rc["max_vel"] * args.speed * dt               # max arm joint step per control cycle (robot units)
 
     def say(en, zh, mode=None):
         with st.lock:
@@ -236,8 +239,7 @@ def run(cfg: Config, args):
                 st.mode = mode
 
     try:
-        o = robot.get_observation()
-        cmd = {n: float(o[f"{n}.pos"]) for n in JOINTS}  # start from the measured pose (no jump)
+        cmd = robot.read()                                # start from the measured pose (no jump)
         started = True
         chunk_id, gp_last = -1, float("nan")
         next_rec = time.time()
@@ -294,29 +296,27 @@ def run(cfg: Config, args):
                 say(f"Camera stalled ({', '.join(stalled)}), paused.", f"相机断流（{'、'.join(stalled)}），已自动暂停。", "paused")
                 mode = "paused"
 
-            o = robot.get_observation()
-            q = [float(o[f"{n}.pos"]) for n in JOINTS]
+            q = robot.read()
             with st.lock:
                 st.q = q
-            target = dict(cmd)
+            target = list(cmd)
             if mode == "running":
                 a, chunk_id = ex.target(time.time())
                 if a is not None:
-                    target = {n: float(a[j]) for j, n in enumerate(JOINTS)}
-                    gp_last = target["gripper"]
-                    if gripper is not None:
-                        target["gripper"] = gripper(gp_last, now)
+                    target = [float(v) for v in a]
+                    if gi is not None:
+                        gp_last = target[gi]
+                        if gripper is not None:
+                            target[gi] = gripper(gp_last, now)
             elif mode == "homing":
-                target = dict(HOME_POSE)
-                if all(abs(cmd[n] - HOME_POSE[n]) < 0.5 for n in ARM):
+                target = list(home)
+                if all(abs(cmd[j] - home[j]) < 0.5 for j in range(n_j) if j != gi):
                     say("Back at the start pose. Reset the scene and press Start.", "已回到起始姿态。复位场景后按开始。", "paused")
 
-            for n in ARM:                                 # velocity limit + joint limits
-                cmd[n] = clamp(n, cmd[n] + max(-vmax, min(vmax, target[n] - cmd[n])))
-            gstep = 300.0 * args.speed * dt if mode == "homing" else 1e9
-            cmd["gripper"] = clamp("gripper", cmd["gripper"] + max(-gstep, min(gstep, target["gripper"] - cmd["gripper"])))
-            sent = robot.send_action(clip_gripper({f"{n}.pos": cmd[n] for n in JOINTS}, q[6], lead))
-            sent_v = [float(sent.get(f"{n}.pos", cmd[n])) for n in JOINTS]
+            for j, n in enumerate(names):                 # velocity limit (arm joints) + joint limits
+                step = (300.0 * args.speed * dt if mode == "homing" else 1e9) if j == gi else vmax
+                cmd[j] = robot.clamp(n, cmd[j] + max(-step, min(step, target[j] - cmd[j])))
+            sent_v = robot.send(cmd, q)
             with st.lock:
                 st.cmd = sent_v
                 rec = st.rec if st.mode == "running" else None
@@ -335,9 +335,7 @@ def run(cfg: Config, args):
     finally:
         st.quit = True
         try:
-            if not args.fake:
-                from ..robot.rebot import safe_disconnect
-                safe_disconnect(robot, go_zero=started)
+            robot.shutdown(moved=started)
         finally:
             for c in cams.values():
                 c.close()

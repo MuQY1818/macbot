@@ -17,22 +17,27 @@ from ..system import expand
 
 
 def episode_stats(d, fps: float, cams) -> dict:
+    import json
+    meta = json.loads(str(d["meta"]))
     q, a = d["qpos"].astype(float), d["action"].astype(float)
+    names = meta.get("joint_names") or [f"joint_{i}" for i in range(q.shape[1])]
+    g = names.index(meta["gripper"]) if meta.get("gripper") in names else (names.index("gripper") if "gripper" in names else None)
+    arm = [i for i in range(q.shape[1]) if i != g]
     best = None
     for lag in range(8):
-        err = np.abs(a[:len(a) - lag, :6] - q[lag:, :6])
+        err = np.abs(a[:len(a) - lag][:, arm] - q[lag:][:, arm])
         m = np.percentile(err, 95, axis=0).mean()
         if best is None or m < best[0]:
             best = (m, lag, err)
     _, lag, err = best
-    still = np.abs(np.diff(a[:, :6], axis=0)).max(1) * fps < 2.0
-    off = (a[1:, :6] - q[1:, :6])[still]
+    still = np.abs(np.diff(a[:, arm], axis=0)).max(1) * fps < 2.0
+    off = (a[1:][:, arm] - q[1:][:, arm])[still]
     wt = d["wall_time"] if "wall_time" in d.files else d["timestamp"]
     dt = np.diff(wt) if len(wt) > 1 else np.zeros(1)
     return {"n": len(q), "lag": lag, "p95": np.percentile(err, 95, axis=0), "max": err.max(0),
-            "still": np.median(off, 0) if len(off) else np.full(6, np.nan),
-            "vmax": np.abs(np.diff(q[:, :6], axis=0)).max(0) * fps,
-            "gmin": q[:, 6].min(), "gmax": q[:, 6].max(), "dt_max": dt.max(), "dt_late": int((dt > 1.5 / fps).sum()),
+            "still": np.median(off, 0) if len(off) else np.full(len(arm), np.nan),
+            "vmax": np.abs(np.diff(q[:, arm], axis=0)).max(0) * fps,
+            "gmin": q[:, g].min() if g is not None else np.nan, "gmax": q[:, g].max() if g is not None else np.nan, "dt_max": dt.max(), "dt_late": int((dt > 1.5 / fps).sum()),
             "repeat": {c: int(d[f"{c}_repeat"].sum()) for c in cams if f"{c}_repeat" in d.files},
             "nan": int(np.isnan(q).sum() + np.isnan(a).sum())}
 
@@ -45,7 +50,7 @@ def run(cfg: Config, args):
     fps, cams = float(cfg["record"]["fps"]), list(cfg["cameras"])
     np.set_printoptions(precision=1, suppress=True, linewidth=200)
     rows = []
-    print("ep   frames lag  p95 tracking error J1..J6 (deg)      offset while still (deg)          gripper range    dt max  late  repeats")
+    print("ep   frames lag  p95 tracking error per arm joint     offset while still               gripper range    dt max  late  repeats")
     for f in files:
         idx = int(f.stem.split("_")[-1])
         with np.load(f) as d:

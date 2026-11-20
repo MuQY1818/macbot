@@ -24,7 +24,10 @@ import time
 
 import numpy as np
 
-from ..config import ARM, JOINTS
+from .base import Robot
+
+JOINTS = ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_yaw", "wrist_roll", "gripper"]
+ARM = JOINTS[:6]
 
 STAGE_1 = ["shoulder_pan", "wrist_flex", "wrist_yaw", "wrist_roll"]
 STAGE_2 = ["shoulder_lift", "elbow_flex"]
@@ -221,3 +224,40 @@ def read_joints_passive(rcfg: dict) -> dict:
         for m in robot.motors.values():
             m.close()
         robot.bus.close()
+
+
+class RebotArm(Robot):
+    """reBot B601-RS follower (+ reBot Arm 102 leader) with feedforward, gripper clamp and two-stage zeroing."""
+    kind = "rebot_b601"
+
+    def __init__(self, rcfg: dict, need_leader: bool):
+        super().__init__()
+        self.rcfg = rcfg
+        self.joints, self.gripper = list(JOINTS), "gripper"
+        self.follower = make_follower(rcfg)
+        self.leader = make_leader(leader_id=rcfg.get("leader_id", "rebot_arm_102_leader")) if need_leader else None
+        self.limits = {n: tuple(v) for n, v in self.follower.config.joint_limits.items()}
+        self.lead = float(rcfg.get("gripper_lead_deg", 20.0))
+
+    def send(self, target, measured=None):
+        a = self._dict(target)
+        if measured is not None:
+            a = clip_gripper(a, float(measured[6]), self.lead)
+        sent = self.follower.send_action(a)
+        out = [float(sent.get(f"{n}.pos", t)) for n, t in zip(self.joints, target)]
+        out[6] = float(target[6])          # record the requested gripper target, not the force-clamped one
+        return out
+
+    def home_pose(self):
+        return [0.0] * 7
+
+    def info(self):
+        return dict(self.follower.feedforward, kind=self.kind, gripper_mode=self.rcfg.get("gripper_mode"),
+                    gripper_lead_deg=self.lead)
+
+    def shutdown(self, moved: bool = True):
+        try:
+            if self.leader is not None:
+                self.leader.disconnect()
+        finally:
+            safe_disconnect(self.follower, go_zero=moved)

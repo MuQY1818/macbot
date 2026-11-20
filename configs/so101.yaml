@@ -1,0 +1,31 @@
+# SO-101 (or SO-100) leader-follower arms through LeRobot, with one UVC webcam. No sudo needed.
+#   pip install "macbot" "lerobot[feetech]==0.7.0"
+#   lerobot-calibrate --robot.type=so101_follower --robot.port=<port> --robot.id=my_follower
+#   lerobot-calibrate --teleop.type=so101_leader --teleop.port=<port> --teleop.id=my_leader
+#   macbot --config so101.yaml collect
+# Find the ports with `lerobot-find-port` (they look like /dev/tty.usbmodem5A460814411).
+
+task:
+  name: pick_cube
+  instruction: "pick up the cube and put it in the bowl"
+
+robot:
+  type: lerobot
+  follower: {type: so101_follower, port: /dev/tty.usbmodem_FOLLOWER, id: my_follower}
+  leader: {type: so101_leader, port: /dev/tty.usbmodem_LEADER, id: my_leader}
+  limits:                         # optional safety limits in robot units (degrees; gripper 0-100)
+    gripper: [0, 100]
+
+cameras:                          # replaces the default two-camera setup
+  top:
+    type: uvc
+    unique_id: "0x0000000000000000"   # from `macbot cameras`
+    crop: [0, 0, 0, 0]                # full frame
+    save_size: [640, 360]
+
+# Binary gripper export (macbot export --gripper binary) needs thresholds in your gripper's units:
+# look at the gripper range in `macbot health`, then set export.gripper_close_above / _open_below /
+# _open_deg / _close_deg. Until then, export with --gripper raw.
+
+run:
+  max_vel: 90                     # degrees per second at speed 1.0

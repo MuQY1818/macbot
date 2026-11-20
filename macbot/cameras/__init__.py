@@ -208,10 +208,12 @@ class FakeCamera(_Latest):
 
 
 def _source_size(c: dict) -> tuple[int, int]:
-    if c.get("crop"):
-        x0, y0, x1, y1 = c["crop"]
+    """Size of the frames a camera delivers: the crop box, or the full frame ([0, 0, 0, 0] = no crop)."""
+    crop = c.get("crop") or [0, 0, 0, 0]
+    x0, y0, x1, y1 = crop
+    if x1 > x0 and y1 > y0:
         return x1 - x0, y1 - y0
-    return tuple(c.get("expect_size") or (1280, 720))
+    return tuple(c.get("expect_size") or ((1920, 1080) if c.get("type") == "uvc" else (1280, 720)))
 
 
 def open_cameras(cams_cfg: dict, fps: int, fake: bool) -> dict:
@@ -235,5 +237,8 @@ def open_cameras(cams_cfg: dict, fps: int, fake: bool) -> dict:
 
 
 def camera_info(cams_cfg: dict) -> dict:
-    return {k: {"type": c["type"], "unique_id": c.get("unique_id"), "crop": c.get("crop"), "size": c["save_size"]}
+    def crop(c):
+        x0, y0, x1, y1 = c.get("crop") or [0, 0, 0, 0]
+        return [x0, y0, x1, y1] if x1 > x0 and y1 > y0 else None
+    return {k: {"type": c["type"], "unique_id": c.get("unique_id"), "crop": crop(c), "size": c["save_size"]}
             for k, c in cams_cfg.items()}

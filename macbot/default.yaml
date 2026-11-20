@@ -9,7 +9,7 @@ task:
 data_root: ~/macbot-data                    # raw/, datasets/, rollouts/, logs/ live here
 
 robot:
-  type: rebot_b601                          # reBot B601-RS follower + reBot Arm 102 leader
+  type: rebot_b601                          # rebot_b601 (reference setup) or lerobot (any LeRobot arm, see configs/so101.yaml)
   can_channel: can0                         # PCAN-USB through PCBUSB on macOS
   follower_id: follower1                    # LeRobot calibration ids (files under ~/.cache/huggingface/lerobot/calibration/)
   leader_id: rebot_arm_102_leader
@@ -41,6 +41,12 @@ teleop:
   hz: 60                                    # leader -> follower control rate
   align_max_deg: 10                         # refuse to start if leader and follower differ more than this
   soft_start_s: 1.5
+
+export:                                     # binary gripper labels (macbot export --gripper binary), robot units
+  gripper_close_above: -40.0                # leader gripper above this = closed (reBot: degrees, 0 = closed)
+  gripper_open_below: -80.0                 # once closed, below this = open again (hysteresis)
+  gripper_open_deg: -150.0                  # value sent for "open" when the policy runs
+  gripper_close_deg: 0.0                    # value sent for "closed" (the force clamp limits the squeeze)
 
 checks:                                     # run on every saved episode, shown in the web UI
   max_cam_age_s: 0.10
