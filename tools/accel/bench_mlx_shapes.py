@@ -6,7 +6,6 @@ from pathlib import Path
 from time import perf_counter_ns
 
 import mlx.core as mx
-import numpy as np
 
 from .eval_fidelity import stats
 

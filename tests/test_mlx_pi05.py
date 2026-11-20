@@ -123,3 +123,67 @@ def test_packed_projections_and_precomputed_modulation(tiny):
         return np.array(network.velocity(noise, cond, cache, positions, keep, modulation))
 
     np.testing.assert_allclose(run(packed, packed.adarms(cond)), run(plain), atol=1e-5)
+
+
+@pytest.mark.parametrize("solver,budget", [("ab2", 3), ("midpoint", 4), ("quadratic", 5)])
+def test_flow_solver_budget_and_direction(solver, budget):
+    from tools.accel.mlx_variants import flow_times, integrate
+
+    times = flow_times(budget, solver)
+    calls = []
+
+    def velocity(i, x):
+        calls.append((i, x.item()))
+        return mx.array([2 * times[i]], dtype=mx.float16)
+
+    end = integrate(mx.array([1.0]), velocity, times, solver)
+    assert end.dtype == mx.float32 and [i for i, _ in calls] == list(range(budget))
+    if solver == "midpoint":
+        # Midpoint integrates the linear time field exactly; x starts at t=1.
+        assert end.item() == pytest.approx(0)
+        assert calls[1][1] == pytest.approx(0.5)
+    elif solver == "ab2":
+        # One Euler startup interval; subsequent AB2 increments are exact here.
+        assert end.item() == pytest.approx(-1 / budget ** 2, abs=1e-3)
+    else:
+        assert times[1] == pytest.approx(0.64)
+        assert end.item() == pytest.approx(-sum((t - e) ** 2 for t, e in zip(times[:-1], times[1:], strict=True)),
+                                           abs=1e-3)
+
+
+def test_midpoint_rejects_odd_budget():
+    from tools.accel.mlx_variants import flow_times
+
+    with pytest.raises(ValueError, match="even"):
+        flow_times(3, "midpoint")
+
+
+def test_attention_pruning_keeps_absolute_positions(tiny):
+    from dataclasses import replace
+    from types import SimpleNamespace
+
+    from tools.accel.mlx_variants import install_pruning
+
+    g, weights, images, noise = tiny
+    for k, w in list(weights.items()):
+        if k.startswith((_PREFIX, _EXPERT)) and ".layers.1." in k:
+            weights[k.replace(".layers.1.", ".layers.2.")] = w
+    net = PI05Network(weights, replace(g, text_depth=3), dtype=mx.float32, fused_rope=True, pack_linears=True)
+    policy = SimpleNamespace(network=net, pool_images=False, trim=True)
+    vision = net.vision(images)
+    ids = mx.array([[1, 2]])
+    mask = mx.ones_like(ids).astype(mx.bool_)
+    full, cache = net.prefix(vision, ids, mask, False)
+    # ceil(.99 * 4) keeps all patches. The gathered RoPE must match contiguous RoPE.
+    install_pruning(policy, 0.99)
+    valid, same = policy.prefix(vision, ids, mask, False)
+    for expect, got in zip(cache, same, strict=True):
+        for a, b in zip(expect, got, strict=True):
+            np.testing.assert_allclose(np.array(a), np.array(b), atol=1e-5)
+    install_pruning(policy, 0.5)
+    valid, small = mx.compile(policy.prefix)(vision, ids, mask, False)
+    pos, keep = net.expert_inputs(valid, noise.shape[1], masked=False)
+    assert pos.item() == full.shape[1] and keep is None
+    assert all(k.shape[2] == v.shape[2] == 6 for k, v in small)
+    cond = net.time_condition(mx.array([1.0]), 0.004, 4.0)
+    assert np.isfinite(np.array(net.velocity(noise, cond, small, pos, keep))).all()

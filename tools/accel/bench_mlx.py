@@ -102,8 +102,8 @@ def compare_trace(policy, records, noise, args):
                 "action": compare(ref[f"{i}_actions"], action[None]),
             }
             keep = np.array(valid)[0]
-            if policy.pool_images:
-                result[i]["kv_comparison"] = "Image pooling changes token identity, positions and cache length."
+            if policy.pool_images or args.keep_visual_fraction is not None:
+                result[i]["kv_comparison"] = "Visual token reduction changes cache length."
                 continue
             kv = [
                 compare(ref[f"{i}_{name}{j}"], to_np(tensor)[:, :, keep])
@@ -127,8 +127,16 @@ def run(args, records, joints):
         fused_attention=not args.unfused_attention, fused_rope=args.fused_rope,
         dtype={"bf16": mx.bfloat16, "fp16": mx.float16}[args.precision], precompute_adarms=args.precompute_adarms,
         pack_linears=args.pack_linears, gelu_fp32=args.gelu_fp32, pool_images=args.pool_images,
+        time_grid="quadratic" if args.solver == "quadratic" else "uniform",
     )
     load_peak = mx.get_peak_memory()
+    if args.keep_visual_fraction is not None or args.solver in ("ab2", "midpoint"):
+        from .mlx_variants import install_pruning, install_solver
+
+        if args.keep_visual_fraction is not None:
+            install_pruning(policy, args.keep_visual_fraction)
+        if args.solver in ("ab2", "midpoint"):
+            install_solver(policy, args.solver)
     if args.compile:
         policy.enable_compile()
     noise = noise_for(args.seed, len(records), policy.config)
@@ -141,7 +149,8 @@ def run(args, records, joints):
         or t["velocity"]["relative_rms"] > 0.25
         for t in trace.values()
     )
-    if stage_drift and not (args.pool_images or (args.bits and args.measure_lossy_drift)):
+    if stage_drift and not (args.pool_images or args.keep_visual_fraction is not None
+                            or (args.bits and args.measure_lossy_drift)):
         raise ValueError("Stage error exceeds the port sanity limits; latency was not measured")
     if stage_drift:
         print("Stage drift exceeds the port sanity limits; measuring an explicitly lossy configuration.", flush=True)
@@ -186,7 +195,7 @@ def run(args, records, joints):
         "compile": args.compile, "fused_rope": args.fused_rope, "unfused_attention": args.unfused_attention,
         "precompute_adarms": args.precompute_adarms,
         "pack_linears": args.pack_linears, "gelu_fp32": args.gelu_fp32, "pool_images": args.pool_images,
-        "stage_drift": stage_drift,
+        "stage_drift": stage_drift, "solver": args.solver, "keep_visual_fraction": args.keep_visual_fraction,
         "count": len(records), "warmup": args.warmup, "extra_shape_warmup": extra_warmup,
         "latency_ms": latency, "memory_bytes": memory,
         "fidelity": metrics(actions, np.load(args.reference), joints, binary),
@@ -213,6 +222,9 @@ def main():
     p.add_argument("--warmup", type=int, default=5)
     p.add_argument("--seed", type=int, default=941)
     p.add_argument("--steps", type=int)
+    p.add_argument("--solver", choices=["euler", "quadratic", "midpoint", "ab2"], default="euler",
+                   help="offline flow experiment; --steps is the velocity evaluation budget")
+    p.add_argument("--keep-visual-fraction", type=float, help="lossy attention-ranked fraction kept per camera")
     p.add_argument("--bits", type=int, choices=[4, 8])
     p.add_argument("--quantize", choices=["prefix", "expert", "both"], default="prefix")
     p.add_argument("--precision", choices=["bf16", "fp16"], default="bf16")
