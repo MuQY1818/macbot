@@ -74,7 +74,7 @@ def arm(cv, bx, by, joints, link, joint="Y", scale=2, gripper=True):
     cv.box(bx - 5, by - 3, bx + 5, by - 2, "D")
     cv.box(bx - 3, by - 5, bx + 3, by - 4, "K")
     pts = [(bx - 1, by - 6)] + [(bx - 1 + dx, by - 6 + dy) for dx, dy in joints]
-    for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+    for (x0, y0), (x1, y1) in zip(pts, pts[1:], strict=False):
         cv.line(x0, y0, x1, y1, link, w=scale)
     for x, y in pts[:-1]:
         cv.box(x - 1, y - 1, x + scale, y + scale, "K")
@@ -174,7 +174,7 @@ def macbook(cv, x, y):
     ys = [1, 1, 2, 3, 3, 2, 2, 3, 4, 4, 3, 3, 2, 2, 3, 3, 2, 2, 2]
     base = vy1 - 1
     pts = [(bx0 + k, base - v) for k, v in enumerate(ys[: bx1 - bx0 + 1])]
-    for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+    for (x0, y0), (x1, y1) in zip(pts, pts[1:], strict=False):
         cv.line(x0, y0, x1, y1, "g", w=1)
     # base: wider than the lid, thumb notch, darker front edge
     b0, b1 = x - 4, x + w + 3
@@ -188,7 +188,7 @@ def macbook(cv, x, y):
 
 def dotted(cv, pts, c, head=True):
     """Orthogonal dotted path through cell points, with a pixel arrowhead at the end."""
-    for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+    for (x0, y0), (x1, y1) in zip(pts, pts[1:], strict=False):
         n = max(abs(x1 - x0), abs(y1 - y0))
         sx, sy = (x1 > x0) - (x1 < x0), (y1 > y0) - (y1 < y0)
         for i in range(0, n + 1):
@@ -290,7 +290,7 @@ class Pixfont:
         x0 = round(x0 / (PX / 2)) * (PX / 2)               # snap to the font pixel grid
         pen = SVGPathPen(self.gs)
         cx = x0
-        for ch, a in zip(s, adv):
+        for ch, a in zip(s, adv, strict=True):
             tp = TransformPen(pen, (self.scale, 0, 0, -self.scale, cx, y))
             self.gs[self.cmap[ord(ch)]].draw(tp)
             cx += a
@@ -305,7 +305,8 @@ def build(theme, font):
         d, bb = font.path(s, x * PX, y * PX, anchor)
         paths.append(f'<path fill="{theme[color]}" d="{d}"/>')
         boxes.append(bb)
-    xs = [x for x, _ in cv.cells] ; ys = [y for _, y in cv.cells]
+    xs = [x for x, _ in cv.cells]
+    ys = [y for _, y in cv.cells]
     m = 6 * PX
     x0 = min(min(xs) * PX, min(b[0] for b in boxes)) - m
     y0 = min(min(ys) * PX, min(b[1] for b in boxes)) - m
