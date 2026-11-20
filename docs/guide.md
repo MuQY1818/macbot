@@ -62,6 +62,35 @@ macbot health                  # per-episode report
 macbot health --split 27       # medians before / from episode 27, e.g. after a repair
 ```
 
+### Motor health during run and collect
+
+The joint panel shows each motor's temperature and identifies the hottest motor. Above
+`safety.temp_warn_c` (60 °C), the temperature is highlighted and Start is locked until that motor
+reports below `safety.temp_resume_c` (55 °C). For a static command away from the start pose
+(`safety.hold_warn_s`, 30 s), the panel suggests returning to the start pose to rest the motors.
+
+A reported fault bit, temperature above `safety.temp_alarm_c` (70 °C), or arm joint error continuously
+above `safety.track_deg` (8°) for more than `safety.track_s` (0.3 s) stops the policy or teleoperation.
+The comparison uses the last command actually sent, and excludes the gripper. The watchdog commands
+the measured pose at the time of the trip and locks motion commands for the session. A motor that
+has lost torque may not hold the pose. Support the arm if needed, inspect the cause, then restart;
+quit after a trip disables the follower without the usual return to zero.
+
+The three temperature settings are conservative macbot thresholds. The
+[RS-06 manual](https://files.seeedstudio.com/products/RobStride/Product%20Literature/RS06/RS06User%20Manual251112.pdf)
+describes a 145 °C thermistor fault threshold, not a recommended working temperature for the arm.
+The B601-RS reuses its existing position feedback: one temperature in °C, reported torque in
+N·m (motor sign), status bits, and any cached fault/warning words. There is no independent rotor
+temperature or current in this feedback. Other hardware may have no motor telemetry. Fake and sim
+values are synthetic. Tracking uses the robot's native joint units for generic followers.
+
+`macbot health` shows per-joint maxima and time-stamped events; use `--data` for a run directory.
+Interrupted recordings go in `watchdog/` under that directory and are shown separately in `health`.
+They do not enter the ordinary saved results or exports. NPZ files store `motor_temp_c`, `motor_rotor_c`,
+`motor_torque_nm`, `motor_status`, `motor_fault`, and `motor_warning` in `joint_names` order
+(`NaN`/`-1` for unavailable fields), plus `watchdog_events` in `meta`. `safety.enabled: false`
+turns off watchdog decisions while keeping telemetry and the temperature display.
+
 For every episode the report lists:
 
 - the lag that best aligns command and measurement, and the p95 tracking error at that lag

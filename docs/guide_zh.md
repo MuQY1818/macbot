@@ -57,6 +57,28 @@ macbot health                  # 逐条报告
 macbot health --split 27       # 比较第 27 条之前和之后的中位数，比如维修前后
 ```
 
+### 运行和采集时的电机监控
+
+关节面板显示各个电机的温度，并标出最热的电机。高于 `safety.temp_warn_c`（60 °C）时会变色，
+电机实测温度低于 `safety.temp_resume_c`（55 °C）后才能再次开始。远离起始姿态且指令长时间不动
+（`safety.hold_warn_s`，30 秒）时，面板会提示回到起始姿态，让电机休息。
+
+出现电机故障位、温度高于 `safety.temp_alarm_c`（70 °C），或任一臂关节的跟踪误差连续超过
+`safety.track_deg`（8°）达 `safety.track_s`（0.3 秒）以上，程序会停止策略或遥操作。跟踪误差用最近
+实际发出的指令计算，不含夹爪。触发后改为保持当时的实测姿态，并锁定本次会话的运动操作。电机已失去力矩时，
+可能仍无法保持姿态；必要时托住机械臂，排查原因后再重启。触发后退出会直接失能，不自动回零。
+
+三个温度值是 macbot 的保守配置阈值。[RS-06 手册](https://files.seeedstudio.com/products/RobStride/Product%20Literature/RS06/RS06User%20Manual251112.pdf)
+列出的 145 °C 是热敏电阻的故障保护阈值，并非机械臂的推荐工作温度。B601-RS 复用现有位置反馈，
+可读一路温度（°C）、电机坐标下的反馈力矩（N·m）、状态位，以及收到后缓存的故障和警告字；
+反馈不包含独立转子温度或电流。其他硬件可能没有电机遥测。fake 和 sim 显示的是合成值；
+通用从臂的跟踪阈值按该机械臂的原生关节单位解释。
+
+`macbot health` 显示各关节最高温度和事件时间；运行试验用 `--data` 指向试验目录。中断记录归档到数据目录下
+的 `watchdog/`，在 `health` 中单列，不进入常规结果或数据集导出。NPZ 的 `motor_temp_c`、`motor_rotor_c`、
+`motor_torque_nm`、`motor_status`、`motor_fault` 和 `motor_warning` 按 `joint_names` 排列（缺失值为
+`NaN` 或 `-1`）；事件写在 `meta` 的 `watchdog_events`。`safety.enabled: false` 关闭看门狗判定，继续显示并记录遥测。
+
 每条数据会列出：
 
 - 让指令和实测对得最齐的滞后，以及这个滞后下的 p95 跟踪误差

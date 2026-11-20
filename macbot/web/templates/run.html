@@ -22,9 +22,9 @@
       <div class="views" id="views"></div>
       <div class="card">
         <div class="btn-row">
-          <button class="go" onclick="cmd('start')"><span data-i18n="start">Start</span> <kbd>S</kbd></button>
+          <button class="go" id="bStart" onclick="cmd('start')"><span data-i18n="start">Start</span> <kbd>S</kbd></button>
           <button class="stop" onclick="cmd('pause')"><span data-i18n="hold">Pause</span> <kbd>␣</kbd></button>
-          <button onclick="cmd('home')"><span id="home-label" data-i18n="home">Home</span> <kbd>H</kbd></button>
+          <button id="bHome" onclick="cmd('home')"><span id="home-label" data-i18n="home">Home</span> <kbd>H</kbd></button>
           <span class="spacer"></span>
           <button class="primary" onclick="cmd('save_ok')"><span data-i18n="succ">Success</span> <kbd>Y</kbd></button>
           <button onclick="cmd('save_fail')"><span data-i18n="failb">Failure</span> <kbd>N</kbd></button>
@@ -172,21 +172,24 @@ function build(s) {
 function render(s) {
   S = s;
   if (!built) build(s);
-  $("quit").dataset.i18n = s.sim ? "quit_sim" : "quit";
+  $("quit").dataset.i18n = s.sim || s.motor_health?.tripped ? "quit_sim" : "quit";
   $("quit").textContent = t($("quit").dataset.i18n);
   $("home-label").dataset.i18n = s.sim ? "reset_scene" : "home";
   $("home-label").textContent = t($("home-label").dataset.i18n);
   const manual = ["aligning", "following"].includes(s.mode);
-  const cls = { running: "run", paused: "warn", homing: "idle", aligning: "warn", following: "run" }[s.mode] || "idle";
+  const tripped = s.motor_health?.tripped;
+  const cls = tripped ? "alarm" : ({ running: "run", paused: "warn", homing: "idle", aligning: "warn", following: "run" }[s.mode] || "idle");
   $("badge").className = "badge " + cls;
   $("badge").dataset.runMode = s.mode;
-  $("badge").textContent = t(s.mode) + (s.sim || s.fake ? ` · ${t("simulated")}` : "");
+  $("badge").textContent = t(tripped ? "motor_alarm" : s.mode) + (s.sim || s.fake ? ` · ${t("simulated")}` : "");
   $("views").classList.toggle("go", s.mode === "running" || s.mode === "following");
   $("timer").textContent = s.rec_s ? `${fmtTime(s.rec_s)}` : "";
   $("msg").textContent = L(s.msg);
+  $("bStart").disabled = !!s.motor_health?.blocked;
+  $("bHome").disabled = !!s.motor_health?.tripped;
   const takeover = $("takeover");
   takeover.hidden = !s.takeover_enabled;
-  takeover.disabled = !manual && s.mode !== "running";
+  takeover.disabled = tripped || (manual ? !!s.motor_health?.blocked : s.mode !== "running");
   takeover.firstElementChild.dataset.i18n = manual ? "return_policy" : "takeover";
   takeover.firstElementChild.textContent = t(takeover.firstElementChild.dataset.i18n);
   $("mark-hand").disabled = !s.recording;
@@ -222,7 +225,7 @@ function render(s) {
     camTag($("tag-" + c), c, still ? 0 : a, s.stall_s);
     $("age-" + c).textContent = still ? t("render_hold") : (a == null ? "" : `${Math.round(a * 1000)} ms`);
   }
-  renderJoints($("joints"), s.names, s.q, s.cmd, s.limits);
+  renderJoints($("joints"), s.names, s.q, s.cmd, s.limits, s.motor_health);
   if (s.mode === "running" || manual) { HQ.push(s.q); HC.push(s.cmd); if (HQ.length > HIST) { HQ.shift(); HC.shift(); } }
   if (HQ.length > 1) { drawTraces($("plot"), $("legend"), HQ.map(r => r.slice(0, -1)), HC.map(r => r.slice(0, -1)), s.names.slice(0, -1)); $("legend").lastElementChild.remove(); moveCursor($("plot"), HQ.length - 1, HQ.length); }
   enableReplay(s.replay_ready && !motion);
@@ -238,7 +241,7 @@ $("rclose").onclick = () => {
   replayMessage();
   if (previous) $("saved").querySelector(`[data-n="${CSS.escape(previous)}"] button`)?.focus();
 };
-$("quit").onclick = () => { if (confirm(t("confirm_quit"))) cmd("quit"); };
+$("quit").onclick = () => { if (confirm(t(S?.motor_health?.tripped ? "confirm_quit_alarm" : "confirm_quit"))) cmd("quit"); };
 document.addEventListener("keydown", e => {
   if ($("run-review").contains(e.target) || (panel.contains(e.target) && (e.repeat || viewer.key(e) || isEditing(e)))) return;
   if (["INPUT", "SELECT", "TEXTAREA"].includes(e.target.tagName) || e.repeat) return;

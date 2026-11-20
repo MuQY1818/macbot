@@ -87,14 +87,15 @@ function render(s) {
   if (!camsBuilt) buildViews(s.cam_names, s.cams);
   const rec = s.phase === "recording";
   const b = $("badge");
-  $("quit").dataset.i18n = s.sim ? "quit_sim" : "quit";
+  $("quit").dataset.i18n = s.sim || s.motor_health?.tripped ? "quit_sim" : "quit";
   $("quit").textContent = t($("quit").dataset.i18n);
   const simulated = s.fake || s.sim;
-  b.className = "badge " + (rec ? "rec" : (!s.ready ? "idle" : (simulated ? "warn" : "live")));
-  b.textContent = t(rec ? "rec" : (s.ready ? (simulated ? "simulated" : "ready") : "not_ready"));
+  const stopped = s.phase === "stopped";
+  b.className = "badge " + (stopped ? "alarm" : rec ? "rec" : (!s.ready ? "idle" : (simulated ? "warn" : "live")));
+  b.textContent = t(stopped ? "motor_alarm" : rec ? "rec" : (s.ready ? (simulated ? "simulated" : "ready") : "not_ready"));
   $("timer").textContent = rec ? `${fmtTime(s.elapsed)} · ${s.frames} ${t("frames")}` : (s.saving ? t("saving") : "");
   $("views").classList.toggle("hot", rec && !replay);
-  $("bStart").disabled = rec || !s.ready;
+  $("bStart").disabled = rec || !s.ready || !!s.motor_health?.blocked;
   $("bSave").disabled = !rec; $("bDiscard").disabled = !rec;
   $("bIns").disabled = rec; $("ins").disabled = rec;
   if (!insDirty && document.activeElement !== $("ins")) $("ins").value = s.instruction;
@@ -111,7 +112,7 @@ function render(s) {
     if (!replay) camTag($("tag-" + c), c, a, s.stall_s);
     $("age-" + c).textContent = a == null || replay ? "" : `${Math.round(a * 1000)} ms`;
   }
-  renderJoints($("joints"), s.names, s.q, s.cmd, s.limits);
+  renderJoints($("joints"), s.names, s.q, s.cmd, s.limits, s.motor_health);
   const key = JSON.stringify(s.episodes.map(e => [e.idx, e.frames, e.check]));
   if (key !== epsKey) { epsKey = key; renderEps(s.episodes); }
 }
@@ -202,7 +203,7 @@ $("bSave").onclick = () => cmd("save");
 $("bDiscard").onclick = () => cmd("discard");
 $("bIns").onclick = () => { insDirty = false; cmd("instruction", { text: $("ins").value }); };
 $("ins").addEventListener("input", () => { insDirty = true; });
-$("quit").onclick = () => { if (confirm(t("confirm_quit"))) cmd("quit"); };
+$("quit").onclick = () => { if (confirm(t(S?.motor_health?.tripped ? "confirm_quit_alarm" : "confirm_quit"))) cmd("quit"); };
 
 document.addEventListener("keydown", e => {
   if (["INPUT", "SELECT", "TEXTAREA"].includes(e.target.tagName) || e.repeat) return;

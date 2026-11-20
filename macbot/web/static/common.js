@@ -8,6 +8,7 @@ const I18N = {
     quit_sim: "Quit", reset_scene: "Reset scene", render_hold: "still frame",
     record: "Record", save: "Save", discard: "Discard", set_ins: "Set instruction", progress: "progress",
     joints: "joints", joints_hint: "bar = command · line = measured", episodes: "episodes",
+    hottest_motor: "Hottest motor", motor_temp: "Motor temperature", motor_alarm: "Motor alarm",
     th_len: "length", th_frames: "frames", th_ins: "instruction", th_saved: "saved", th_check: "check",
     no_eps: "no episodes yet", play: "Play", pause: "Pause", back_live: "Back to live", del: "Delete",
     rec: "rec", ready: "ready", simulated: "simulated", not_ready: "not ready", connecting: "connecting",
@@ -16,6 +17,7 @@ const I18N = {
     crop: "crop", full: "full frame", ok: "ok", warn: "warn", fail: "fail",
     confirm_del: i => `Delete episode ${i}? The file moves to deleted/.`,
     confirm_quit: "Quit? The follower returns to zero slowly, then disables.",
+    confirm_quit_alarm: "Quit and disable the follower at its current pose?",
     legend: "solid = measured · dashed = command", tagline: "real-robot learning on a MacBook",
     replay_title: (i, s) => `replay · episode ${i} · ${s} s`,
     start: "Start", hold: "Pause", home: "Home", succ: "Success", failb: "Failure", drop: "Discard run",
@@ -45,6 +47,7 @@ const I18N = {
     quit: "结束并回零", collect: "采集", run: "跑策略", replay: "回放", instruction: "语言指令",
     record: "开始录制", save: "保存", discard: "丢弃", set_ins: "保存指令", progress: "进度",
     joints: "关节", joints_hint: "色块 = 指令 · 竖线 = 实测", episodes: "已采数据",
+    hottest_motor: "最热电机", motor_temp: "电机温度", motor_alarm: "电机告警",
     th_len: "时长", th_frames: "帧数", th_ins: "指令", th_saved: "保存时间", th_check: "检查",
     no_eps: "还没有保存的数据", play: "播放", pause: "暂停", back_live: "回到实时画面", del: "删除",
     rec: "录制中", ready: "待机", simulated: "模拟", not_ready: "未就绪", connecting: "连接中",
@@ -54,6 +57,7 @@ const I18N = {
     crop: "裁剪", full: "全幅", ok: "通过", warn: "注意", fail: "不通过",
     confirm_del: i => `删除第 ${i} 条？文件会移到 deleted/。`,
     confirm_quit: "结束程序？从臂会先慢速回零，再失能。",
+    confirm_quit_alarm: "结束程序并在当前位置失能？",
     legend: "实线 = 实测 · 虚线 = 指令", tagline: "一台 MacBook 搞定真机学习",
     replay_title: (i, s) => `回放 · 第 ${i} 条 · ${s} 秒`,
     start: "开始", hold: "暂停", home: "回起始姿态", succ: "存为成功", failb: "存为失败", drop: "丢弃这次",
@@ -144,13 +148,25 @@ function layoutViews(el, names, sizeOf, prefix = "") {
   }).join("");
 }
 
-function renderJoints(el, names, q, cmd, limits) {
-  el.innerHTML = names.map((n, i) => {
+function renderJoints(el, names, q, cmd, limits, health) {
+  if (health) el.classList.add("motor-joints");
+  const temp = i => Number.isFinite(health?.temp_c[i]) ? `${health.temp_c[i].toFixed(1)} °C` : "–";
+  const level = i => health?.levels[i] || "";
+  const label = i => level(i) === "alarm" ? t("motor_alarm") : level(i) === "warning" ? t("warn") : t("motor_temp");
+  const peak = health?.temp_c.reduce((best, v, i) => Number.isFinite(v) &&
+    (best < 0 || v > health.temp_c[best]) ? i : best, -1) ?? -1;
+  const headline = !health || !names.length ? "" : `<p class="motor-peak ${level(peak)}" id="motor-peak">` +
+    `${t("hottest_motor")}: ${peak < 0 ? "–" : `${esc(jointLabel(names[peak]))} · ${temp(peak)}`}</p>`;
+  const note = (message, alarm) => message ?
+    `<p class="motor-note ${alarm ? "alarm" : "warning"}" role="status">${esc(L(message))}</p>` : "";
+  const message = note(health?.blocked, health?.tripped) + note(health?.rest, false);
+  el.innerHTML = headline + message + names.map((n, i) => {
     const [lo, hi] = limits && Object.hasOwn(limits, n) ? limits[n] : [-180, 180];
     const p = v => Math.max(0, Math.min(100, 100 * (v - lo) / (hi - lo)));
     return `<div class="joint"><span class="name">${esc(jointLabel(n))}</span><div class="meter">` +
       `<span class="cmd" style="left:${p(cmd[i])}%"></span><span class="meas" style="left:${p(q[i])}%"></span></div>` +
-      `<span class="val num">${q[i].toFixed(1)}°</span></div>`;
+      `<span class="val num">${q[i].toFixed(1)}°</span>` +
+      (health ? `<span class="val num motor-temp ${level(i)}" title="${esc(label(i))}">${temp(i)}</span>` : "") + `</div>`;
   }).join("");
 }
 
