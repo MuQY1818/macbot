@@ -21,6 +21,7 @@ ADAPTERS = {
 }
 FAMILIES = {"so100": "SO-100", "so101": "SO-101", "koch": "Koch", "omx": "OMX", "rebot_b601": "reBot B601-RS"}
 PCAN = (0x0C72, 0x000C)
+VIDEO_CLASS = 14  # USB interface class for video (UVC)
 
 
 @dataclass(frozen=True)
@@ -43,13 +44,26 @@ class Adapter:
 
 
 def _usb_nodes(nodes):
+    # `ioreg -a` returns the root entry as a dict; tests and older callers pass a list.
+    if isinstance(nodes, dict):
+        nodes = [nodes]
     for node in nodes:
+        if not isinstance(node, dict):
+            continue
         if "idVendor" in node and "idProduct" in node:
             yield node
         yield from _usb_nodes(node.get("IORegistryEntryChildren", []))
 
 
-def scan_adapters(ports=None, usb_nodes=None) -> list[Adapter]:
+def _video_ids():
+    """USB IDs of devices with a video interface. Some UVC cameras also expose a CDC serial port."""
+    xml = subprocess.check_output(["ioreg", "-a", "-r", "-c", "IOUSBHostInterface", "-l"], timeout=5)
+    found = plistlib.loads(xml) if xml.strip() else []
+    return {(i.get("idVendor"), i.get("idProduct")) for i in (found if isinstance(found, list) else [found])
+            if isinstance(i, dict) and i.get("bInterfaceClass") == VIDEO_CLASS}
+
+
+def scan_adapters(ports=None, usb_nodes=None, video_ids=None) -> list[Adapter]:
     """On macOS, PCAN does not expose a serial port; enumerate it separately."""
     if ports is None:
         from serial.tools.list_ports import comports
@@ -60,17 +74,22 @@ def scan_adapters(ports=None, usb_nodes=None) -> list[Adapter]:
         usb_nodes = []
         if sys.platform == "darwin":
             xml = subprocess.check_output(["ioreg", "-a", "-p", "IOUSB", "-l"], timeout=5)
-            usb_nodes = _usb_nodes(plistlib.loads(xml))
+            usb_nodes = plistlib.loads(xml)
+    if video_ids is None:
+        video_ids = _video_ids() if sys.platform == "darwin" else set()
     devices = []
     for p in sorted(ports, key=lambda p: p.device):
         if p.vid is None or p.pid is None or (p.vid, p.pid) == PCAN:
+            continue
+        # A camera's serial port is never an arm, and sampling it would send motor packets to the camera.
+        if (p.vid, p.pid) in video_ids and (p.vid, p.pid) not in ADAPTERS:
             continue
         # The /dev/tty.* node is an alias for the same hardware as /dev/cu.*.
         if p.device.startswith("/dev/tty.") and "/dev/cu." + p.device.removeprefix("/dev/tty.") in paths:
             continue
         devices.append(Adapter(p.device, p.vid, p.pid, p.serial_number or None,
                                p.product or p.description or p.device))
-    for node in usb_nodes:
+    for node in _usb_nodes(usb_nodes):
         vid, pid = node.get("idVendor"), node.get("idProduct")
         if (vid, pid) == PCAN:
             devices.append(Adapter(None, vid, pid, node.get("USB Serial Number"), "PEAK PCAN-USB"))

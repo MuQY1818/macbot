@@ -25,17 +25,35 @@ def test_usb_hints_and_aliases():
     a, b, c = scan_adapters(
         [usb("/dev/tty.a"), usb("/dev/cu.a"), usb("/dev/cu.b", pid=1, serial=None)],
         [{"idVendor": 0x0C72, "idProduct": 0x000C, "USB Serial Number": "CAN"}],
+        set(),
     )
     assert a.hint[1] == ("so100", "so101")
     assert b.hint[0] == "Unknown USB adapter"
     assert c.port is None and c.hint[1] == ("rebot_b601",)
 
 
+def test_ioreg_root_dict_and_camera_serial_ports():
+    # `ioreg -a -p IOUSB -l` returns one root dict; PCAN sits behind a hub.
+    root = {"IORegistryEntryName": "Root", "IORegistryEntryChildren": [
+        {"idVendor": 0x05E3, "idProduct": 0x0626, "IORegistryEntryChildren": [
+            {"idVendor": 0x0C72, "idProduct": 0x000C, "IORegistryEntryChildren": []},
+            {"idVendor": 0x2BDF, "idProduct": 0x02B2},
+        ]},
+    ]}
+    camera = usb("/dev/cu.usbmodem1105", vid=0x2BDF, pid=0x02B2, serial="SN0002")
+    leader = usb("/dev/cu.usbserial-120", serial=None)
+    devices = scan_adapters([camera, leader], root, video_ids={(0x2BDF, 0x02B2)})
+    assert [d.port for d in devices] == ["/dev/cu.usbserial-120", None]
+    assert devices[1].hint[1] == ("rebot_b601",)
+    # A known arm adapter is kept even if some camera shares its IDs.
+    assert len(scan_adapters([leader], [], video_ids={(0x1A86, 0x7523)})) == 1
+
+
 def test_switch_ports_without_switching_devices():
-    a, b = scan_adapters([usb("/dev/cu.first"), usb("/dev/cu.second", serial="B")], [])
+    a, b = scan_adapters([usb("/dev/cu.first"), usb("/dev/cu.second", serial="B")], [], set())
     robot = {"type": "lerobot", "follower": {"port": b.port}, "leader": {"port": a.port},
              "usb": {"leader": a.identity, "follower": b.identity}}
-    first, second = scan_adapters([usb("/dev/cu.first", serial="B"), usb("/dev/cu.second")], [])
+    first, second = scan_adapters([usb("/dev/cu.first", serial="B"), usb("/dev/cu.second")], [], set())
     resolved = resolve_robot(robot, lambda: [first, second])
     assert resolved["leader"]["port"] == second.port
     assert calibration_id(a.identity, "leader") == calibration_id(second.identity, "leader")
