@@ -223,7 +223,9 @@ def main(argv=None):
     p.set_defaults(fn=cmd_collect)
 
     p = sub.add_parser("export", help="recorded episodes -> LeRobot dataset")
-    p.add_argument("--data", help="episode folder (default <data_root>/raw/<task>)")
+    p.add_argument("--rollouts", action="store_true", help="export reviewed policy trials with binary gripper and frame labels")
+    p.add_argument("--with-rollout-labels", action="store_true", help="add matching label columns to a demonstration export for merging")
+    p.add_argument("--data", help="input folder (default raw/<task>, or rollouts/<task> with --rollouts)")
     p.add_argument("--out", help="dataset folder (default <data_root>/datasets/<task>[_bin])")
     p.add_argument("--repo-id")
     p.add_argument("--gripper", choices=["raw", "binary"], default="raw", help="gripper action: leader angle, or 0/1")
