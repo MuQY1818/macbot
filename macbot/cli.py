@@ -255,6 +255,10 @@ def main(argv=None):
     p.add_argument("--te-hz", type=float, default=30.0, help="ensemble: max inference rate")
     p.add_argument("--rtc-beta", type=float, default=10.0, help="rtc: max guidance weight")
     p.add_argument("--rtc-horizon", type=int, default=20, help="rtc: guided prefix length in policy steps")
+    p.add_argument("--rtc-schedule", choices=("linear", "exp"), default="linear",
+                   help="rtc: guidance weight after the delay decays linearly or exponentially (as in the RTC paper)")
+    p.add_argument("--query-every", type=int, default=0,
+                   help="async/rtc: query every this many policy steps (default 0: as soon as inference ends)")
     p.add_argument("--gripper", default="auto", help="auto (find gripper.json), raw, or a path to gripper.json")
     p.add_argument("--grip-debounce", type=float, default=0.6, help="binary gripper: seconds of 'open' before opening")
     p.add_argument("--grip-lead", type=float, default=0.0,

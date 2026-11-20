@@ -118,11 +118,13 @@ class PI05:
         lm = m.paligemma_with_expert.paligemma.model.language_model
         lm.forward = torch.compile(lm.forward, dynamic=False)   # pi0.5 calls .forward directly
 
-    def enable_rtc(self, beta: float):
+    def enable_rtc(self, beta: float, schedule: str = "linear"):
         """Real-Time Chunking (Black et al., 2025) in LeRobot's guided mode."""
+        from lerobot.configs.types import RTCAttentionSchedule
         from lerobot.policies.rtc.configuration_rtc import RTCConfig
         self.pol.config.rtc_config = RTCConfig(enabled=True, mode="guided", max_guidance_weight=beta,
-                                               execution_horizon=self.H)
+                                               execution_horizon=self.H,
+                                               prefix_attention_schedule=RTCAttentionSchedule[schedule.upper()])
         self.pol.init_rtc_processor()
         self.pol.requires_grad_(False)                # guidance differentiates w.r.t. x_t only
         self.rtc = True

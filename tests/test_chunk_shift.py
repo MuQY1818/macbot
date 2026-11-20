@@ -116,3 +116,39 @@ def test_switch_shifts_on_a_saved_rollout(tmp_path):
     np.savez(path, cmd=cur.astype(np.float32), meta=json.dumps({}))
     with np.load(path) as d:
         assert len(switch_shifts(d)[0]) == 0                    # older rollouts without chunks
+
+
+def test_async_query_every_spaces_queries():
+    times, stop = [], threading.Event()
+    ex = AsyncChunk(Pol(delay=0.005), _observe, 30, lambda t, ms, **k: times.append(time.time()),
+                    every=6, stop=stop.is_set)
+    assert "query every 6 steps" in ex.describe()
+    ex.start()
+    try:
+        ex.reset(True)
+        deadline = time.time() + 3
+        while len(times) < 4 and time.time() < deadline:
+            time.sleep(0.01)
+    finally:
+        stop.set()
+        ex.join(1)
+    gaps = np.diff(times[1:4])                                   # after the first chunk: one query per 6 steps
+    assert len(gaps) >= 2 and (gaps > 0.18).all()
+
+
+def test_mlx_rtc_exponential_schedule():
+    import pytest
+    pytest.importorskip("mlx.core")
+    from types import SimpleNamespace
+
+    from macbot.policy.mlx_pi05 import PI05MLX
+    weights = {}
+    for schedule in ("linear", "exp"):
+        me = SimpleNamespace(rtc_beta=10.0, rtc_schedule=schedule)
+        _, w = PI05MLX.rtc_target(me, np.zeros((40, 7)), 3, 20, (1, 50, 32))
+        weights[schedule] = np.array(w)[0, :, 0]
+    lin, exp = weights["linear"], weights["exp"]
+    assert (lin[:3] == 1).all() and (exp[:3] == 1).all() and (lin[20:] == 0).all() and (exp[20:] == 0).all()
+    ramp = lin[3:20]
+    assert np.allclose(exp[3:20], ramp * np.expm1(ramp) / (np.e - 1), atol=1e-6)
+    assert (exp[3:20] < lin[3:20]).all()

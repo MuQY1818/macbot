@@ -16,6 +16,9 @@ _VISION = _VLM + "vision_tower."
 _PREFIX = _VLM + "language_model."
 
 
+RTC_SCHEDULES = ("linear", "exp")   # guidance weight after the delay: linear or exponential decay to zero
+
+
 @dataclass(frozen=True)
 class Geometry:
     vision_depth: int = 27
@@ -358,7 +361,7 @@ class PI05MLX:
             times = [t ** 2 for t in times]
             self.deltas = [end - t for t, end in zip(times[:-1], times[1:], strict=True)]
         self.times = times[:-1]
-        self.rtc_beta = None
+        self.rtc_beta, self.rtc_schedule = None, "linear"
         schedule = mx.array(times[:-1], dtype=mx.float32)
         self.cond = self.network.time_condition(schedule, config.min_period, config.max_period)
         self.modulation = self.network.adarms(self.cond) if precompute_adarms else None
@@ -402,10 +405,12 @@ class PI05MLX:
                 tokens, mask = tokens[:, :length], mask[:, :length]
         return mx.array(np.concatenate(images, axis=0)), mx.array(tokens, dtype=mx.int32), mx.array(mask), bool(mask.all())
 
-    def enable_rtc(self, beta):
+    def enable_rtc(self, beta, schedule="linear"):
         if not np.isfinite(beta) or beta <= 0:
             raise ValueError("RTC guidance weight must be finite and positive")
-        self.rtc_beta = float(beta)
+        if schedule not in RTC_SCHEDULES:
+            raise ValueError(f"RTC schedule must be one of {', '.join(RTC_SCHEDULES)}")
+        self.rtc_beta, self.rtc_schedule = float(beta), schedule
 
     def rtc_target(self, leftover, delay, horizon, shape):
         if self.rtc_beta is None:
@@ -420,7 +425,10 @@ class PI05MLX:
         start = min(delay, end)
         weights = np.zeros(length, dtype=np.float32)
         weights[:start] = 1
-        weights[start:end] = np.linspace(1, 0, end - start + 2)[1:-1]
+        ramp = np.linspace(1, 0, end - start + 2)[1:-1]
+        if getattr(self, "rtc_schedule", "linear") == "exp":       # Black et al. 2025, as LeRobot's EXP schedule
+            ramp = ramp * np.expm1(ramp) / (np.e - 1)
+        weights[start:end] = ramp
         target = np.pad(left, ((0, length - len(left)), (0, width - left.shape[1])))
         return mx.array(target[None]), mx.array(weights[None, :, None])
 
