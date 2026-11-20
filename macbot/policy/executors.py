@@ -31,6 +31,21 @@ import time
 import numpy as np
 
 
+def switch_record(new, prev, p, entry, q) -> dict:
+    """Chunk switch data for offline analysis of progress regression (saved as ``ex_*`` arrays).
+
+    ``chunk``/``prev``: the new and the current chunk in executed joint space (``prev`` is NaN when there is none),
+    ``p``: fractional index of ``prev`` that the new chunk's index 0 replaces, ``entry``: index of the new chunk at
+    which it starts to be executed, ``q_obs``: the measured state the policy saw."""
+    new = np.asarray(new, np.float32)
+    old = np.full_like(new, np.nan)
+    if prev is not None:
+        prev = np.asarray(prev, np.float32)[:len(new)]
+        old[:len(prev), :prev.shape[1]] = prev[:, :new.shape[1]]
+    return {"chunk": new, "prev": old, "p": float("nan") if prev is None else float(p), "entry": float(entry),
+            "q_obs": np.asarray(q, np.float32)}
+
+
 def _interp(ch: np.ndarray, f: float) -> np.ndarray:
     if len(ch) == 1:
         return ch[0]
@@ -78,6 +93,7 @@ class SyncChunk(Executor):
     def target(self, now):
         f = (now - self.t0) * self.rate if self.chunk is not None else None
         if self.chunk is None or f >= self.k:
+            prev, p = self.chunk, f
             imgs, q = self.observe()
             t = time.perf_counter()
             try:
@@ -87,7 +103,7 @@ class SyncChunk(Executor):
                 return None, self.id
             ms = (time.perf_counter() - t) * 1e3
             self.t0, self.id, f = time.time(), self.id + 1, 0.0
-            self.log(self.t0, ms)
+            self.log(self.t0, ms, **switch_record(self.chunk, prev, p, 0.0, q))
         return _interp(self.chunk, f), self.id
 
     def peek(self, now):
@@ -277,10 +293,13 @@ class AsyncChunk(Executor, threading.Thread):
                 if self.cur is not None:
                     jump = float(np.abs(_interp(a, (t_done - T0) * self.rate)[:6]
                                         - _interp(self.cur["act"], (t_done - self.cur["T0"]) * self.rate)[:6]).max())
+                prev = self.cur
                 self.cur = {"act": a, "raw": raw, "T0": T0, "id": self.n}
                 self.n += 1
+            rec = switch_record(a, None if prev is None else prev["act"],
+                                0.0 if prev is None else (T0 - prev["T0"]) * self.rate, (t_done - T0) * self.rate, q)
             self.log(T0, (t_done - t_req) * 1e3, switched=1, delay=delay, jump=round(jump, 3),
-                     overrun=round((t_done - T0) * self.rate - delay, 2))
+                     overrun=round((t_done - T0) * self.rate - delay, 2), **rec)
 
     def describe(self):
         return "real-time chunking (guided)" if self.guide else "asynchronous chunks"

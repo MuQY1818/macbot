@@ -44,6 +44,7 @@ HOME_RAMP_S = 0.6                                         # homing speeds up ove
 MOTION_COMMANDS = ("start", "home", "quit")
 TAKEOVER_MODES = {"aligning": 2, "following": 1}
 LEADER_STALE_S = 0.25                                     # older leader samples hold the follower
+CHUNK_LOG_KEYS = ("ex_chunk", "ex_prev", "ex_q_obs")      # per-switch chunk arrays, kept in float32
 CATCHUP_S = 1.0                                           # takeover soft start: home_vel -> max_vel over this time
 CATCHUP_DONE_DEG = 2.0                                    # ...or earlier, once every arm joint is this close
 LEADER_GRACE_S = 0.5                                      # a shorter leader dropout holds, then keeps following
@@ -216,6 +217,18 @@ class State:
                 "hand_marks": [], "motor": [], "watchdog_events": [], **{f"{c}_jpg": [] for c in self.cam_names}}
 
 
+def stack_chunks(rows) -> np.ndarray:
+    """Stack per-switch arrays into float32, padding chunks of different lengths with NaN."""
+    rows = [np.asarray(r, np.float32) for r in rows]
+    if not rows:
+        return np.zeros((0,), np.float32)
+    shape = tuple(max(r.shape[i] for r in rows) for i in range(rows[0].ndim))
+    out = np.full((len(rows), *shape), np.nan, np.float32)
+    for i, r in enumerate(rows):
+        out[(i, *(slice(0, n) for n in r.shape))] = r
+    return out
+
+
 def save_rollout(st: State, rec: dict, result: str):
     p = (diagnostic_path(st.out, "rollout") if result == "watchdog"
          else st.out / f"rollout_{st.next_idx():03d}.npz")
@@ -242,7 +255,7 @@ def save_rollout(st: State, rec: dict, result: str):
         meta["takeover_alignment"] = {"arm_deg": st.align_deg, **st.gripper_gate}
         arrs["takeover"] = np.asarray(rec["takeover"], np.uint8)
         arrs["leader"] = np.asarray(rec["leader"], np.float32)
-    ex = {k: np.asarray(v, np.float64) for k, v in rec.items() if k.startswith("ex_")}
+    ex = {k: stack_chunks(v) if k in CHUNK_LOG_KEYS else np.asarray(v, np.float64) for k, v in rec.items() if k.startswith("ex_")}
     tmp = p.with_suffix(".tmp.npz")
     shape = (len(rec["t"]), len(st.joints))
     np.savez(tmp, qpos=np.asarray(rec["q"], np.float32).reshape(shape), cmd=np.asarray(rec["cmd"], np.float32).reshape(shape),
