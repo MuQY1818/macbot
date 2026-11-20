@@ -14,10 +14,10 @@ PX = 5  # one art pixel
 
 THEMES = {
     "light": dict(K="#1B1A2E", S="#2B2A4C", s="#35345E", O="#FF7A1A", Y="#FFC93C", T="#2EC4B6", t="#1F8C83",
-                  B="#C9C3B6", b="#9E978A", G="#3BB273", W="#FFFFFF", L="#E9E5DB", D="#8A8796", R="#FF4D4D",
+                  B="#C9C3B6", b="#9E978A", G="#3BB273", W="#FFFFFF", L="#E9E5DB", D="#8A8796", R="#FF4D4D", N="#14131F", V="#55546E", g="#3BB273",
                   text="#1B1A2E", muted="#8A8796", arrow_mac="#FF7A1A", arrow_gpu="#9E978A"),
     "dark": dict(K="#8E8BAE", S="#2B2A4C", s="#35345E", O="#FF7A1A", Y="#FFC93C", T="#2EC4B6", t="#1F8C83",
-                 B="#C9C3B6", b="#9E978A", G="#3BB273", W="#F3F1EA", L="#3A3946", D="#A9A6B8", R="#FF4D4D",
+                 B="#C9C3B6", b="#9E978A", G="#3BB273", W="#F3F1EA", L="#3A3946", D="#A9A6B8", R="#FF4D4D", N="#14131F", V="#55546E", g="#3BB273",
                  text="#ECEBF0", muted="#A9A6B8", arrow_mac="#FF7A1A", arrow_gpu="#8A8796"),
 }
 
@@ -135,33 +135,55 @@ def dataset(cv, x, y):
 
 
 def macbook(cv, x, y):
-    w, h = 54, 32
-    cv.box(x, y, x + w - 1, y + h - 1, "K")
-    cv.box(x + 2, y + 2, x + w - 3, y + h - 3, "S")
-    for r in range(y + 3, y + h - 2, 2):
-        cv.box(x + 2, r, x + w - 3, r, "s")
-    # console: two camera tiles and joint bars
-    cv.box(x + 4, y + 4, x + 5, y + 5, "R")
-    cv.box(x + 7, y + 4, x + 16, y + 5, "D")
-    for tx in (x + 4, x + 28):
-        cv.box(tx, y + 8, tx + 21, y + 21, "K")
-        cv.box(tx + 1, y + 9, tx + 20, y + 20, "t")
-        cv.box(tx + 1, y + 17, tx + 20, y + 20, "T")
-    cv.box(x + 15, y + 14, x + 17, y + 16, "O")       # cube seen from the top camera
-    cv.box(x + 9, y + 11, x + 12, y + 12, "Y")
-    cv.box(x + 36, y + 12, x + 41, y + 17, "O")       # cube seen from the wrist camera
-    cv.box(x + 30, y + 18, x + 31, y + 20, "K")
-    cv.box(x + 46, y + 18, x + 47, y + 20, "K")
-    for k in range(3):
-        bx = x + 4 + k * 15
-        cv.box(bx, y + 24, bx + 12, y + 24, "D")
-        cv.box(bx + 3 + 3 * k, y + 23, bx + 4 + 3 * k, y + 25, "O")
-    # deck
-    cv.box(x - 4, y + h, x + w + 3, y + h, "K")
-    cv.box(x - 4, y + h + 1, x + w + 3, y + h + 2, "B")
-    cv.box(x - 4, y + h + 3, x + w + 3, y + h + 3, "b")
-    cv.box(x - 3, y + h + 4, x + w + 2, y + h + 4, "K")
+    """MacBook, 56 x 38 cells: lid with a macOS window showing the wrist view and joint bars, then the base."""
+    w, h = 56, 34
+    # lid: ink outline with cut corners, black bezel, camera dot
+    cv.box(x + 1, y, x + w - 2, y + h - 1, "K")
+    cv.box(x, y + 1, x + w - 1, y + h - 2, "K")
+    cv.box(x + 1, y + 1, x + w - 2, y + h - 2, "N")
+    cv.put(x + w // 2, y + 1, "V")
+    sx0, sy0, sx1, sy1 = x + 3, y + 3, x + w - 4, y + h - 3
+    cv.box(sx0, sy0, sx1, sy1, "S")                    # desktop
+    cv.box(sx0, sy0, sx1, sy0, "s")                    # menu bar
+    # window
+    wx0, wy0, wx1, wy1 = sx0 + 3, sy0 + 3, sx1 - 3, sy1 - 2
+    cv.box(wx0, wy0, wx1, wy1, "V")
+    cv.box(wx0 + 1, wy0 + 3, wx1 - 1, wy1 - 1, "N")
+    for k, c in enumerate("RYg"):
+        cv.put(wx0 + 2 + 2 * k, wy0 + 1, c)
+    # camera view: an arm over a cube
+    vx0, vy0, vx1, vy1 = wx0 + 2, wy0 + 4, wx0 + 26, wy1 - 2
+    cv.box(vx0, vy0, vx1, vy1, "s")
+    cv.box(vx0, vy1 - 3, vx1, vy1, "t")
+    cv.box(vx0 + 4, vy1 - 5, vx0 + 6, vy1 - 4, "D")    # base
+    cv.line(vx0 + 5, vy1 - 6, vx0 + 9, vy0 + 3, "O", w=1)
+    cv.line(vx0 + 9, vy0 + 3, vx0 + 16, vy0 + 5, "O", w=1)
+    cv.line(vx0 + 16, vy0 + 5, vx0 + 17, vy1 - 7, "O", w=1)
+    cv.put(vx0 + 9, vy0 + 3, "Y")
+    cv.put(vx0 + 16, vy0 + 5, "Y")
+    cv.box(vx0 + 16, vy1 - 6, vx0 + 18, vy1 - 6, "D")  # gripper
+    cv.box(vx0 + 16, vy1 - 4, vx0 + 18, vy1 - 2, "T")  # cube
+    cv.put(vx1 - 2, vy0 + 1, "R")                      # recording dot
+    # joint bars
+    bx0, bx1 = vx1 + 3, wx1 - 3
+    for k, (c, frac) in enumerate((("O", 0.7), ("Y", 0.45), ("T", 0.85), ("O", 0.3))):
+        by = vy0 + 1 + 3 * k
+        cv.box(bx0, by, bx1, by, "s")
+        cv.box(bx0, by, bx0 + round((bx1 - bx0) * frac), by, c)
+    # latency sparkline under the bars
+    ys = [1, 1, 2, 3, 3, 2, 2, 3, 4, 4, 3, 3, 2, 2, 3, 3, 2, 2, 2]
+    base = vy1 - 1
+    pts = [(bx0 + k, base - v) for k, v in enumerate(ys[: bx1 - bx0 + 1])]
+    for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+        cv.line(x0, y0, x1, y1, "g", w=1)
+    # base: wider than the lid, thumb notch, darker front edge
+    b0, b1 = x - 4, x + w + 3
+    cv.box(b0 + 1, y + h, b1 - 1, y + h, "K")
+    cv.box(b0, y + h + 1, b1, y + h + 2, "K")
+    cv.box(b0 + 1, y + h + 1, b1 - 1, y + h + 1, "B")
+    cv.box(b0 + 1, y + h + 2, b1 - 1, y + h + 2, "b")
     cv.box(x + w // 2 - 5, y + h + 1, x + w // 2 + 4, y + h + 1, "b")
+    cv.box(b0 + 2, y + h + 3, b1 - 2, y + h + 3, "K")
 
 
 def dotted(cv, pts, c, head=True):
@@ -219,9 +241,9 @@ def scene(cv):
     label(86, 78, "camera", "muted")
 
     # MacBook
-    mx, my = 124, g - 37
+    mx, my = 123, g - 38
     macbook(cv, mx, my)
-    label(mx + 27, 78, "MacBook", "text")
+    label(mx + 28, 78, "MacBook", "text")
 
     # GPU tower, scaled 2x
     gx, gy = 226, g - 34
