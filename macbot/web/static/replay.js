@@ -7,6 +7,7 @@ async function replayFetch(url, options) {
 
 const rolloutURL = n => `/api/rollout/${encodeURIComponent(n)}`;
 const isEditing = e => e.target.closest("input,select,textarea,button,[contenteditable]");
+const FRAME_INTERVAL_MS = 1000 / 15;
 
 class RolloutViewer {
   constructor({ status, change, result, trialHeading = false }) {
@@ -29,6 +30,9 @@ class RolloutViewer {
 
   close() {
     this.stop();
+    clearTimeout(this.frameTimer);
+    this.frameTimer = null;
+    this.lastFrameRequest = -Infinity;
     this.load?.abort();
     this.load = this.data = this.name = null;
     this.wanted = this.shown = null;
@@ -121,10 +125,22 @@ class RolloutViewer {
     if (!this.data) return;
     this.wanted = Math.max(0, Math.min(k, this.data.t.length - 1));
     $("rslider").value = this.wanted;
-    if (this.pending !== this.load && (this.shown !== this.wanted || !$("rframe-error").hidden)) this.showFrames();
+    this.queueFrames();
+  }
+
+  queueFrames() {
+    if (this.pending === this.load || this.frameTimer != null) return;
+    if (this.shown === this.wanted && $("rframe-error").hidden) return;
+    const delay = this.lastFrameRequest + FRAME_INTERVAL_MS - performance.now();
+    if (delay <= 0) {
+      this.showFrames();
+    } else {
+      this.frameTimer = setTimeout(() => { this.frameTimer = null; this.queueFrames(); }, delay);
+    }
   }
 
   async showFrames() {
+    this.lastFrameRequest = performance.now();
     const load = this.pending = this.load, {signal} = load;
     const k = this.wanted, base = rolloutURL(this.name), urls = [];
     try {
@@ -159,7 +175,7 @@ class RolloutViewer {
     } finally {
       for (const url of urls) URL.revokeObjectURL(url);
       if (this.pending === load) this.pending = null;
-      if (!signal.aborted && this.wanted !== k) this.showFrames();
+      if (!signal.aborted && this.wanted !== k) this.queueFrames();
     }
   }
 
@@ -180,7 +196,7 @@ class RolloutViewer {
       const time = ts + (performance.now() - wall) * speed / 1000;
       this.seek(this.frameAt(time));
       if (time >= this.duration) this.stop();
-    }, 1000 / 15);
+    }, FRAME_INTERVAL_MS);
   }
 
   key(e) {
