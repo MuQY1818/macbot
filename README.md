@@ -33,27 +33,27 @@ MacBook is enough for everything that happens at the robot: teleoperated data co
 export to LeRobot, and closed-loop policy inference, π0.5 included. Training still goes to a GPU machine.
 macbot is the toolkit we use for that, cleaned up so others can reuse it.
 
-Measured on a MacBook Pro (M5 Pro, 48 GB). Policy inference, time per action chunk:
+Measured on a MacBook Pro (M5 Pro, 48 GB). Approximate time per action chunk:
 
-| Policy | Backend | Execution | Latency |
-|---|---|---|---:|
-| π0.5 (50-step chunk, 10 denoising steps) | PyTorch MPS (bf16, `torch.compile`) | plain | ~270 ms |
-| | PyTorch MPS | Real-Time Chunking guidance | ~350 ms |
-| | **MLX** (fp16, `--backend mlx`) | plain | **~165 ms** |
-| | **MLX** | Real-Time Chunking guidance | **~170 ms** |
-| ACT (100-step chunk) | PyTorch MPS | plain | ~25 ms |
-| SmolVLA (official base, 50-step chunk) | PyTorch MPS | plain | ~300 ms |
-| X-VLA (SO-101, 30-step chunk) | PyTorch MPS | plain | ~235 ms |
+| Policy | Chunk | PyTorch MPS | MLX |
+|---|---:|---:|---:|
+| π0.5 | 50 | 270 ms | **165 ms** |
+| π0.5 with RTC | 50 | 350 ms | **170 ms** |
+| SmolVLA | 50 | 300 ms | — |
+| X-VLA | 30 | 235 ms | — |
+| ACT | 100 | 25 ms | — |
 
-The MLX backend returns the same actions as PyTorch within 0.1° on average. Method and full results are in
-[docs/acceleration.md](https://github.com/MuQY1818/macbot/blob/main/docs/acceleration.md).
+π0.5 runs 10 denoising steps, in bf16 with `torch.compile` on PyTorch and in fp16 with `--backend mlx`. The
+MLX actions match PyTorch within 0.1° on average. RTC is Real-Time Chunking guidance. SmolVLA is the official
+base checkpoint and X-VLA the SO-101 fine-tune. Method and full results are in
+[docs/acceleration.md](https://github.com/MuQY1818/macbot/blob/main/docs/acceleration.md), other policies in
+[docs/policies.md](https://github.com/MuQY1818/macbot/blob/main/docs/policies.md).
 
-Data collection:
-
-| | Result |
+| Data collection | Measured |
 |---|---:|
-| Teleoperation loop / recording grid | 60 Hz / 30 fps |
-| Camera frame age at sampling time, p95 (scene UVC + wrist Orbbec) | ≤ 40 ms |
+| Teleoperation loop | 60 Hz |
+| Recording | 30 fps |
+| Camera frame age at sampling, p95 | ≤ 40 ms |
 
 ## What is inside
 
