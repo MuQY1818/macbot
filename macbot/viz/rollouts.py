@@ -1,11 +1,13 @@
 """Shared HTTP routes and bounded, on-demand access to rollout JPEGs."""
 from __future__ import annotations
 
+import ctypes
 import json
 import os
 import re
 import socket
 import struct
+import sys
 import threading
 from collections import OrderedDict
 from concurrent.futures import BrokenExecutor
@@ -24,6 +26,14 @@ MAX_CACHED_SUMMARY = 1024 * 1024
 SUMMARY_CACHE_SIZE = 4
 # A ZIP local header can have different extra fields from its central directory entry (e.g. ZIP64).
 LOCAL_HEADER = struct.Struct("<4s22xHH")
+if sys.platform == "darwin":
+    _native = ctypes.CDLL(None)
+    _get_qos = _native.qos_class_self
+    _set_qos = _native.pthread_set_qos_class_self_np
+else:
+    _get_qos = _set_qos = None
+QOS_BACKGROUND = 0x09
+QOS_DEFAULT = 0x15
 
 
 def version_of(stat):
@@ -225,6 +235,13 @@ def serve_rollouts(handler, store, path, *, method="GET", lease=nullcontext):
         handler.connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
     handler.connection.settimeout(2)
     acquired = store.slots.acquire(blocking=False)
+    prior_qos = None
+    if acquired and _get_qos is not None and lease is not nullcontext:
+        # Only the run console competes with the hold loop. Restore the thread's
+        # priority before it can handle another URL on the same connection.
+        previous = _get_qos()
+        if _set_qos(QOS_BACKGROUND, 0) == 0:
+            prior_qos = previous or QOS_DEFAULT
     try:
         if not acquired:
             handler.json({"error": "replay_busy"}, 429)
@@ -263,5 +280,7 @@ def serve_rollouts(handler, store, path, *, method="GET", lease=nullcontext):
     finally:
         if acquired:
             store.slots.release()
+        if prior_qos is not None:
+            _set_qos(prior_qos, 0)
         handler.protocol_version = version
     return True
