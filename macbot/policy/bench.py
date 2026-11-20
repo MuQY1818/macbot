@@ -11,7 +11,7 @@ import numpy as np
 
 from ..config import Config
 from ..system import expand
-from .models import load_policy, policy_backend, raw_state_shape
+from .models import load_generic, load_policy, policy_backend, raw_state_shape, use_generic
 from .profile import MLXStages, TorchStages
 
 
@@ -21,20 +21,26 @@ def run(cfg: Config, args):
     state = raw_state_shape(path, metadata) or [7]
     q = [0.0] * state[0]
     backend = policy_backend(cfg, args)
+    generic = use_generic(metadata.get("type", "act"), getattr(args, "policy_impl", "auto"), backend)
     steps = getattr(args, "steps", None)
-    if backend == "mlx":
+    if generic:
+        pol = load_generic(path, cfg, args)
+        q = [0.0] * pol.width
+    elif backend == "mlx":
         pol = load_policy(path, args.device, cfg["task"]["instruction"], steps, backend="mlx",
                           mlx_bits=args.mlx_bits, mlx_quantize=args.mlx_quantize, mlx_time_grid=args.mlx_time_grid)
     elif steps is not None:
         pol = load_policy(path, args.device, cfg["task"]["instruction"], steps)
     else:
         pol = load_policy(path, args.device, cfg["task"]["instruction"])
-    if pol.kind == "pi05" and not args.no_compile:
+    if not generic and pol.kind == "pi05" and not args.no_compile:
         pol.enable_compile()
         print(f"{'mx.compile' if backend == 'mlx' else 'torch.compile'} on; the first calls compile", flush=True)
     imgs = {c: np.zeros((v["save_size"][1], v["save_size"][0], 3), np.uint8) for c, v in cfg["cameras"].items()}
     for _ in range(5):
         pol(imgs, q)
+    if generic:
+        pol.reset()
     if backend == "mlx":
         import mlx.core as mx
 
@@ -46,14 +52,27 @@ def run(cfg: Config, args):
         ts.append((time.perf_counter() - t) * 1e3)
     ts = np.array(ts)
     engine = "MLX" if backend == "mlx" else args.device
-    print(f"{pol.kind} on {engine}, chunk {pol.H}: median {np.median(ts):.0f} ms, "
-          f"p90 {np.percentile(ts, 90):.0f} ms, min {ts.min():.0f} ms over {args.n} calls")
+    execution = "step" if generic and pol.stepwise else f"chunk {pol.H}"
+    precision = 2 if generic else 0
+    print(f"{pol.kind} on {engine}, {execution}: median {np.median(ts):.{precision}f} ms, "
+          f"p90 {np.percentile(ts, 90):.{precision}f} ms, min {ts.min():.{precision}f} ms over {args.n} calls")
     if backend == "mlx":
         rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
         if sys.platform != "darwin":
             rss *= 1024
         print(f"Peak process RSS: {rss / 2**30:.2f} GiB; MLX allocation peak: {mx.get_peak_memory() / 2**30:.2f} GiB")
         stages = MLXStages(mx)
+        for _ in range(args.n):
+            pol(imgs, q, stage=stages)
+    elif generic:
+        rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        if sys.platform != "darwin":
+            rss *= 1024
+        print(f"Peak process RSS: {rss / 2**30:.2f} GiB")
+        if not getattr(args, "profile", False):
+            return
+        stages = TorchStages(pol.torch.mps.synchronize if args.device == "mps" else lambda: None)
+        pol.reset()
         for _ in range(args.n):
             pol(imgs, q, stage=stages)
     elif pol.kind == "pi05" and getattr(args, "profile", False):

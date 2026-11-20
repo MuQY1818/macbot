@@ -21,7 +21,7 @@
 | `cameras/` | 提供 UVC（Swift/AVFoundation）、Orbbec、fake 和来自机械臂观测的相机数据源。 |
 | `collect/` | 运行主从臂控制循环，按固定时间网格录制关节指令和观测，并检查每条数据。 |
 | `data/`、`train/` | 检查原始数据并导出为 LeRobot v3；示例训练脚本产出策略检查点。 |
-| `policy/`、`viz/` | 加载 ACT 或 π0.5，控制机械臂并记录试验；回放试验文件或导出 MP4。 |
+| `policy/`、`viz/` | 加载 LeRobot 策略，控制机械臂并记录试验；回放试验文件或导出 MP4。 |
 
 [`Robot`](../macbot/robot/base.py) 接口提供有序的关节名、可选的夹爪和限位，以及
 `connect(leader=...)`、`read()`、`read_leader()`、`send()`、`home_pose()` 和 `shutdown()`。
@@ -35,3 +35,7 @@
 运行器通过 [`Executor`](../macbot/policy/executors.py) 将推理与控制循环分开。
 同步分块按需预测，时间集成合并重叠预测，异步分块在后台线程预测。Real-Time Chunking 为异步执行
 加入引导。`AsyncChunk.accept()` 决定新动作块在何时生效。运行器独立处理启动、暂停、速度限制和录制。
+
+通用适配器通过 LeRobot 加载策略和随 checkpoint 保存的处理器。支持直接预测动作块的策略使用同步分块；
+其余策略在每个策略时钟调用一次 `select_action`，由 LeRobot 管理观测历史和动作队列。
+ACT 和 π0.5 保留原有封装和默认执行方式。

@@ -41,6 +41,8 @@ Measured on a MacBook Pro (M5 Pro, 48 GB). Policy inference, time per action chu
 | | **MLX** (fp16, `--backend mlx`) | plain | **~165 ms** |
 | | **MLX** | Real-Time Chunking guidance | **~170 ms** |
 | ACT (100-step chunk) | PyTorch MPS | plain | ~25 ms |
+| SmolVLA (official base, 50-step chunk) | PyTorch MPS | plain | ~300 ms |
+| X-VLA (SO-101, 30-step chunk) | PyTorch MPS | plain | ~235 ms |
 
 The MLX backend returns the same actions as PyTorch within 0.1° on average. Method and full results are in
 [docs/acceleration.md](https://github.com/MuQY1818/macbot/blob/main/docs/acceleration.md).
@@ -58,7 +60,7 @@ Data collection:
   instruction, automatic quality checks (frame age, repeated frames, joint jumps, timing), instant replay of
   any episode with joint traces.
 - **Export** to a LeRobot v3 dataset, optionally with a binary (open / closed) gripper action.
-- **Policy runner** console for ACT and π0.5 with four execution schemes (synchronous chunks, temporal
+- **Policy runner** console for LeRobot checkpoints. ACT and π0.5 have four execution schemes (synchronous chunks, temporal
   ensembling, asynchronous chunks, Real-Time Chunking), velocity and joint limits, pause / home / quit with a
   slow two-stage return to zero, and every trial saved with video and timing.
 - **Replay** of saved trials (all cameras in sync, command vs. measured traces, chunk boundaries) and
@@ -77,7 +79,8 @@ Data collection:
 
 The reBot B601-RS is the reference arm tested on hardware. See [robot support](docs/robots.md)
 for the SO-100/101 and other compatible LeRobot arms, the local simulator, and what has been
-verified. The [setup guide](docs/setup.md) covers drivers and cameras. For π0.5, we recommend
+verified. See [policy support](docs/policies.md) for tested checkpoints and Apple GPU compatibility.
+The [setup guide](docs/setup.md) covers drivers and cameras. For π0.5, we recommend
 an Apple silicon Mac with at least 32 GB of memory.
 
 ## Quick start

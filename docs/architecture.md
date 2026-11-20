@@ -22,7 +22,7 @@ shared assets for collect, run and replay.
 | `cameras/` | Provides UVC (Swift/AVFoundation), Orbbec, fake and robot-observation camera sources. |
 | `collect/` | Drives the leader-to-follower loop, records joint commands and observations on a fixed time grid, and checks each episode. |
 | `data/`, `train/` | Inspects and exports raw episodes to LeRobot v3; example training scripts produce policy checkpoints. |
-| `policy/`, `viz/` | Loads ACT or π0.5, controls the arm and records trials; replays those rollout files or exports them as MP4. |
+| `policy/`, `viz/` | Loads LeRobot policies, controls the arm and records trials; replays those rollout files or exports them as MP4. |
 
 The [`Robot`](../macbot/robot/base.py) interface exposes ordered joint names, optional gripper and
 limits, `connect(leader=...)`, `read()`, `read_leader()`, `send()`, `home_pose()` and `shutdown()`.
@@ -40,3 +40,8 @@ ensembling combines overlapping predictions, and asynchronous chunks predict in 
 thread. Real-Time Chunking adds guidance to the asynchronous path. `AsyncChunk.accept()`
 decides when a new chunk takes effect. The runner handles start/pause, velocity limits and
 recording independently of the executor.
+
+The generic adapter loads a LeRobot policy and its saved processor pair. It uses the upstream
+chunk contract when available and runs those chunks synchronously. Otherwise it calls
+`select_action` on each policy tick, so LeRobot manages observation history and queued actions.
+ACT and π0.5 keep their original wrappers and execution defaults.

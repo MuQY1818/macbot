@@ -9,6 +9,11 @@ All notable changes to macbot will be documented here. This project follows
 
 ## [Unreleased]
 
+### Added
+
+- Load compatible LeRobot checkpoints with their saved processors. `macbot policies` lists tested
+  coverage, and `bench --profile` breaks down generic inference. ACT and π0.5 keep their defaults.
+
 ## [0.3.1] - 2026-11-20
 
 ### Added
