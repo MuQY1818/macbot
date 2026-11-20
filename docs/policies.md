@@ -58,16 +58,18 @@ cameras are left to the policy to create and mask. The original ACT/π0.5 paths 
 
 ## Coverage
 
-“Verified” means a named checkpoint ran on MPS and produced a fake-arm rollout, or uses an
-existing stock wrapper with separate verification. It does not mean other checkpoints of that
-type are interchangeable. The LeRobot factory resolved model classes for all 29 registered types
+There are three levels. “Verified” means a public trained checkpoint ran on MPS and produced a
+fake-arm rollout, or the policy uses a stock wrapper with separate verification. “Runs” means the
+data path was exercised on MPS with a tiny or random-weight checkpoint, so latency and accuracy
+for a trained model of that type are still unmeasured. “Not verified” means nothing was executed.
+None of this means other checkpoints of the same type are interchangeable. The LeRobot factory resolved model classes for all 29 registered types
 on this installation. Loading a class does not load or execute weights.
 
 | Policy types | Status and scope |
 |---|---|
 | `act`, `pi05` | Verified stock wrappers. Generic ACT also tested. |
-| `diffusion`, `vqbet`, `tdmpc`, `gaussian_actor` | Verified with the offline checkpoints below. Gaussian actor was tested with continuous actions. |
-| `pi0` | Verified with a six-joint random checkpoint using the 2B PaliGemma prefix. The 300M prefix fails on both devices because vision and text embedding widths differ. |
+| `diffusion`, `vqbet`, `tdmpc`, `gaussian_actor` | Runs with the tiny offline checkpoints below. Gaussian actor was tested with continuous actions. |
+| `pi0` | Runs with a six-joint random checkpoint using the 2B PaliGemma prefix. The 300M prefix fails on both devices because vision and text embedding widths differ. |
 | `pi0_fast` | Loaded and generated tokens on CPU and MPS with a local tokenizer bundle. Both produced random tokens that failed FAST action decoding; no compatible trained checkpoint was tested. |
 | `smolvla` | Verified with `lerobot/smolvla_base`: three RGB inputs, six state/action values, 50-step chunks. |
 | `xvla` | Verified with `whosricky/xvla-so101-pick-red-cube-2cam`. The adapter passes six state values to the model's own padding and leaves the masked third slot absent. The `ee6d` base is unsupported. |
@@ -75,7 +77,7 @@ on this installation. Loading a class does not load or execute weights.
 | `wall_x`, `wall_oss_05` | Not verified. Separate model families; require a compatible checkpoint and its matching backbone and processors. |
 | `cosmos3_edge`, `cosmos3_nano`, `dm05`, `eo1`, `evo1`, `fineart_vla`, `g05`, `lawam`, `lingbot_vla_v2`, `molmoact2`, `vla_jepa` | Factory import only. No robot-specific checkpoint and backbone were exercised. |
 | `fastwam`, `flux3`, `lingbot_va`, `longwam` | Factory import only. Video or action history and checkpoint-specific processor behavior need separate validation. |
-| `multi_task_dit` | Verified with a tiny DDIM checkpoint and a local random CLIP model and tokenizer. |
+| `multi_task_dit` | Runs with a tiny DDIM checkpoint and a local random CLIP model and tokenizer. |
 
 The measurements shown below did not require `PYTORCH_ENABLE_MPS_FALLBACK`. If an untested
 checkpoint hits an unsupported PyTorch MPS operator, try `--device cpu`. To diagnose a possible

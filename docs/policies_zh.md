@@ -49,15 +49,15 @@ macbot --config robot.yaml run --policy path/to/pretrained_model --fake --autost
 
 ## 支持范围
 
-“已验证”指指定 checkpoint 在 MPS 上完成推理并保存假机 rollout，或已有单独验证的专用封装。
+状态分三档。“已验证”指公开的训练好的 checkpoint 在 MPS 上完成推理并保存假机 rollout，或已有单独验证的专用封装。“能运行”指用小模型或随机权重在 MPS 上跑通了数据链路，同类训练好的模型的延迟和精度还没有测。“未验证”指没有实际运行。
 同一策略的其他 checkpoint 仍须核对。此环境中的 LeRobot 工厂成功解析 29 个注册类型的模型类；
 导入成功不表示已加载权重或运行推理。
 
 | 策略类型 | 状态与范围 |
 |---|---|
 | `act`、`pi05` | 原有封装已验证；通用 ACT 也已测试。 |
-| `diffusion`、`vqbet`、`tdmpc`、`gaussian_actor` | 用下表中的离线 checkpoint 验证。GaussianActor 测试的是连续动作。 |
-| `pi0` | 用 2B PaliGemma 前缀、六关节的随机权重 checkpoint 验证。300M 前缀的视觉和文本嵌入维度不同，两端都会报错。 |
+| `diffusion`、`vqbet`、`tdmpc`、`gaussian_actor` | 能运行，用下表中的离线小模型跑通。GaussianActor 测试的是连续动作。 |
+| `pi0` | 能运行，用 2B PaliGemma 前缀、六关节的随机权重 checkpoint 跑通。300M 前缀的视觉和文本嵌入维度不同，两端都会报错。 |
 | `pi0_fast` | 用本地分词器在 CPU 和 MPS 加载并生成 token，两端的随机输出都未通过 FAST 动作解码，未验证匹配机械臂的训练权重。 |
 | `smolvla` | 用 `lerobot/smolvla_base` 验证：三路 RGB、六维状态与动作，50 步动作块。 |
 | `xvla` | 用 `whosricky/xvla-so101-pick-red-cube-2cam` 验证。六维状态由模型自行补齐，第三个屏蔽相机位留空。`ee6d` 基础模型不支持。 |
@@ -65,7 +65,7 @@ macbot --config robot.yaml run --policy path/to/pretrained_model --fake --autost
 | `wall_x`、`wall_oss_05` | 未验证。属于不同模型系列，需要分别配套 checkpoint、骨干和处理器。 |
 | `cosmos3_edge`、`cosmos3_nano`、`dm05`、`eo1`、`evo1`、`fineart_vla`、`g05`、`lawam`、`lingbot_vla_v2`、`molmoact2`、`vla_jepa` | 只验证工厂导入，未运行对应机械臂的 checkpoint 和骨干。 |
 | `fastwam`、`flux3`、`lingbot_va`、`longwam` | 只验证工厂导入，视频或动作历史以及各自的处理器行为有待验证。 |
-| `multi_task_dit` | 用 DDIM 小模型、本地随机 CLIP 模型及分词器验证。 |
+| `multi_task_dit` | 能运行，用 DDIM 小模型、本地随机 CLIP 模型及分词器跑通。 |
 
 下表实测无需 `PYTORCH_ENABLE_MPS_FALLBACK`。如果未测 checkpoint 遇到 MPS 不支持的算子，可先试
 `--device cpu`。要诊断 CPU 回退，请在启动 macbot **之前**设置 `PYTORCH_ENABLE_MPS_FALLBACK=1`，
