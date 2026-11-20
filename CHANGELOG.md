@@ -11,11 +11,19 @@ All notable changes to macbot will be documented here. This project follows
 
 ### Added
 
+- `macbot init` guides USB arm selection, live camera assignment and manual LeRobot calibration.
+  It checks a per-user profile that `collect` and `run` can find automatically. `init --yes`
+  supports setups whose roles are already known.
 - Load compatible LeRobot checkpoints with their saved processors. `macbot policies` lists tested
   coverage, and `bench --profile` breaks down generic inference. ACT and π0.5 keep their defaults.
 
 ### Changed
 
+- Setup can preserve existing camera framing and calibration. Exports and trials record framing, and
+  policy runs reject a known mismatch before connecting.
+- Local consoles try nearby ports when a default is busy and print the bound URL. Explicit ports stay fixed.
+- The base install now includes LeRobot's `feetech` and `dynamixel` extras and `pyserial` for
+  serial arm discovery and support.
 - README: a pixel-art workflow scene replaces the console screenshot at the top, and the tagline and
   package description now cover LeRobot policies in general rather than only ACT and π0.5.
 

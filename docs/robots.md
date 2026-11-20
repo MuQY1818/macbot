@@ -69,7 +69,8 @@ cameras:
 
 ## Calibration and checks
 
-macbot never calibrates the arms. Run `lerobot-calibrate` separately with the same device types,
+`macbot init` checks for calibration and supplies the matching `lerobot-calibrate` commands.
+Run them separately with the same device types,
 ports, IDs and optional `calibration_dir`. Use `--robot.*` for the follower and `--teleop.*`
 for the leader; see the [setup guide](setup.md) for commands. macbot connects with
 `calibrate=False`. Simulation and fake mode need no calibration.

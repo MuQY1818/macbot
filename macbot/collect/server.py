@@ -20,13 +20,13 @@ import re
 import shutil
 import threading
 import time
-from http.server import ThreadingHTTPServer
 
 import cv2
 import numpy as np
 
 from .. import web
 from ..cameras import camera_info, open_cameras
+from ..cameras.framing import framing
 from ..config import Config
 from ..i18n import text, tr
 from ..system import ensure_dir, expand, give_back, start_log
@@ -169,7 +169,8 @@ class State:
                     "duration_s": round(n / self.fps, 2), "joint_names": self.joints, "gripper": self.gripper,
                     "units": "robot (degrees for most arm joints)",
                     "state": "follower measured position", "action": "command sent to follower (gripper: leader value)",
-                    "cameras": self.cam_info, "robot": self.ff, "fake": self.fake,
+                    "cameras": self.cam_info, "camera_framing": framing(self.cfg["cameras"], self.fps),
+                    "robot": self.ff, "fake": self.fake,
                     "saved_at": time.strftime("%Y-%m-%d %H:%M:%S"), "check": chk, "writer": "macbot"}
             extra = {}
             for k in self.cam_names:
@@ -301,18 +302,18 @@ def make_handler(st: State):
     return H
 
 
-def run(cfg: Config, fake: bool = False, port: int | None = None, out=None):
-    start_log(cfg.log_dir, "collect")
-    out = ensure_dir(expand(out) if out else cfg.raw_dir(cfg.task + "_fake" if fake else cfg.task))
-    st = State(cfg, out, fake)
-    T = cfg["teleop"]
-    port = port or T["port"]
-    with ThreadingHTTPServer(("127.0.0.1", port), make_handler(st)) as srv:
-        srv.daemon_threads = True
-        _control(st, srv, port, T)
+def run(cfg: Config, fake: bool = False, port: int | None = None, out=None, *, listen_fd=None):
+    listener = (web.bind_console(cfg, "teleop", web.Handler, port) if listen_fd is None
+                else web.ConsoleServer.from_listener(listen_fd, web.Handler))
+    with listener as srv:
+        start_log(cfg.log_dir, "collect")
+        out = ensure_dir(expand(out) if out else cfg.raw_dir(cfg.task + "_fake" if fake else cfg.task))
+        st = State(cfg, out, fake)
+        srv.RequestHandlerClass = make_handler(st)
+        _control(st, srv, cfg["teleop"])
 
 
-def _control(st, srv, port, T):
+def _control(st, srv, T):
     from ..robot import open_robot
     robot = open_robot(st.cfg["robot"], fake=st.fake, leader=True)
     names = robot.joints
@@ -326,7 +327,7 @@ def _control(st, srv, port, T):
         st.cams = open_cameras(st.cfg["cameras"], st.fps, st.fake, robot)
         threading.Thread(target=srv.serve_forever, daemon=True).start()
         serving = True
-        print(f"web page: http://127.0.0.1:{port}   data: {st.out}", flush=True)
+        print(f"web page: {srv.url}   data: {st.out}", flush=True)
         Recorder(st)
         robot.connect(leader=True)
         st.ff = robot.info()

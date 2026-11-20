@@ -5,7 +5,6 @@ import importlib
 import os
 import platform
 import shutil
-from pathlib import Path
 
 from .config import Config
 from .system import PCBUSB, expand, user_home
@@ -32,8 +31,13 @@ def _check_rebot(rcfg):
     _line(OK if found else BAD, "PCAN-USB driver (PCBUSB)", str(PCBUSB) if found else "install it; see docs/setup.md")
     from .robot.rebot import find_leader_port
 
+    bad = int(not found)
     try:
-        _line(OK, "leader arm (USB serial)", find_leader_port())
+        configured = rcfg.get("leader_port")
+        port = configured or find_leader_port()
+        exists = not configured or expand(port).exists()
+        _line(OK if exists else BAD, "leader arm (USB serial)", port)
+        bad += not exists
     except RuntimeError as exc:
         _line(WARN, "leader arm (USB serial)", str(exc))
     calib = user_home() / ".cache/huggingface/lerobot/calibration/robots"
@@ -41,7 +45,7 @@ def _check_rebot(rcfg):
     _line(OK if follower.is_file() else WARN, "follower calibration", str(follower))
     urdf = rcfg.get("urdf")
     _line(OK if urdf else WARN, "URDF for gravity feedforward", urdf or "not set: gravity compensation stays off")
-    return int(not found)
+    return bad
 
 
 def _driver_name(config):
@@ -62,6 +66,14 @@ def _driver_name(config):
     return drivers.pop().name
 
 
+def calibration_path(role, name, device_id, directory=None):
+    from lerobot.utils.constants import HF_LEROBOT_CALIBRATION, ROBOTS, TELEOPERATORS
+
+    group = ROBOTS if role == "follower" else TELEOPERATORS
+    directory = expand(directory) if directory else HF_LEROBOT_CALIBRATION / group / name
+    return directory / f"{device_id}.json"
+
+
 def _check_lerobot_device(role, spec):
     from .robot.lerobot_generic import device_config
 
@@ -72,7 +84,6 @@ def _check_lerobot_device(role, spec):
     try:
         config = device_config(spec, leader=role == "leader")
         name = _driver_name(config)
-        from lerobot.utils.constants import HF_LEROBOT_CALIBRATION, ROBOTS, TELEOPERATORS
     except (Exception, SystemExit) as exc:
         _line(BAD, f"{role} driver", f"{exc}; check the device type and its LeRobot extra")
         return 1
@@ -91,9 +102,7 @@ def _check_lerobot_device(role, spec):
     elif port:
         _line(WARN, f"{role} port", f"{port} (CAN channel; not probed)")
 
-    group = ROBOTS if role == "follower" else TELEOPERATORS
-    directory = config.calibration_dir or HF_LEROBOT_CALIBRATION / group / name
-    path = Path(directory) / f"{config.id}.json"
+    path = calibration_path(role, name, config.id, config.calibration_dir)
     exists = path.is_file()
     _line(OK if exists else BAD, f"{role} calibration",
           str(path) if exists else f"{path} not found; run lerobot-calibrate")
@@ -123,19 +132,30 @@ def _check_uvc(cameras):
         return 1
     from .cameras import list_cameras, resolve_uid
 
+    bad = 0
     try:
-        cams = list_cameras()
+        if any(c.get("exact_id") for c in cameras.values()):
+            from .cameras.discovery import uvc_inventory
+
+            cams = uvc_inventory()
+        else:
+            cams = list_cameras()
         ids = {c["unique_id"] for c in cams}
         for c in cams:
             _line(OK, c["name"][:28], c["unique_id"])
         for name, c in cameras.items():
             if c["type"] == "uvc":
-                uid = resolve_uid(str(c["unique_id"]))
-                _line(OK if uid in ids else WARN, f"config: {name}",
+                exact = c.get("exact_id", False)
+                uid = c["unique_id"] if exact else resolve_uid(str(c["unique_id"]))
+                _line(OK if uid in ids else BAD if exact else WARN, f"config: {name}",
                       uid if uid in ids else f"uniqueID {c['unique_id']} is not connected (see macbot cameras)")
+                if exact and uid not in ids:
+                    bad += 1
     except Exception as exc:
-        _line(WARN, "camera list", str(exc))
-    return 0
+        strict = any(c.get("exact_id") for c in cameras.values())
+        _line(BAD if strict else WARN, "camera list", str(exc))
+        bad += strict
+    return bad
 
 
 def run(cfg: Config):
@@ -177,9 +197,25 @@ def run(cfg: Config):
     elif "uvc" in types:
         bad += _check_uvc(cameras)
     if kind != "sim" and "orbbec" in types:
-        bad += _import("pyorbbecsdk", "install macbot[orbbec]") is None
+        sdk = _import("pyorbbecsdk", "install the SDK; see the quickstart")
+        bad += sdk is None
         root = os.geteuid() == 0
         _line(OK if root else WARN, "Orbbec camera", "running as root" if root else "run with sudo -E on macOS")
+        selected = {name: c["serial"] for name, c in cameras.items() if c["type"] == "orbbec" and c.get("serial")}
+        if sdk is not None and selected:
+            from .cameras import orbbec_devices, orbbec_serials
+
+            try:
+                context, devices = orbbec_devices()
+                serials = orbbec_serials(devices)
+                for name, serial in selected.items():
+                    found = serials.count(serial) == 1
+                    _line(OK if found else BAD, f"config: {name}", serial if found else f"{serial} not found uniquely")
+                    bad += not found
+                del devices, context
+            except Exception as exc:
+                _line(BAD, "Orbbec device list", str(exc))
+                bad += 1
     if kind == "sim" and "robot" in types:
         _line(OK, "robot cameras", "frames supplied by the simulator")
     if not types:

@@ -92,12 +92,15 @@ def resolve_uid(unique_id: str) -> str:
 
 
 class UVCCamera(_Latest):
-    def __init__(self, unique_id: str, crop=None, fps: int = 30, name: str = "uvc"):
+    def __init__(self, unique_id: str, crop=None, fps: int = 30, name: str = "uvc", *, mode=None, exact=False):
         super().__init__()
         crop = crop or [0, 0, 0, 0]
-        self.p = subprocess.Popen([str(uvc_helper()), resolve_uid(unique_id), *[str(int(v)) for v in crop], "0.92", str(fps)],
-                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        threading.Thread(target=self._loop, daemon=True).start()
+        uid = unique_id if exact else resolve_uid(unique_id)
+        argv = [str(uvc_helper()), uid, *(str(int(v)) for v in crop), "0.92", str(fps),
+                *(str(int(v)) for v in (mode or ()))]
+        self.p = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        self.th = threading.Thread(target=self._loop, daemon=True)
+        self.th.start()
         try:
             self._wait_first(name, alive=lambda: self.p.poll() is None)
         except RuntimeError as e:
@@ -132,6 +135,10 @@ class UVCCamera(_Latest):
                 self.p.wait(timeout=2)
             except subprocess.TimeoutExpired:
                 self.p.kill()
+                self.p.wait()
+        self.th.join(timeout=2)
+        self.p.stdout.close()
+        self.p.stderr.close()
 
 
 def _orbbec_to_bgr(f):
@@ -151,12 +158,49 @@ def _orbbec_to_bgr(f):
     raise RuntimeError(f"unhandled color format {fmt}")
 
 
+def orbbec_devices():
+    from pyorbbecsdk import Context
+
+    context = Context()
+    devices = context.query_devices()
+    return context, devices
+
+
+def orbbec_serials(devices):
+    return [devices.get_device_serial_number_by_index(i) for i in range(devices.get_count())]
+
+
+def orbbec_profiles(pipe):
+    from pyorbbecsdk import OBFormat, OBSensorType
+
+    profiles = pipe.get_stream_profile_list(OBSensorType.COLOR_SENSOR)
+    formats = {OBFormat.MJPG, OBFormat.RGB, OBFormat.BGR, OBFormat.YUYV, OBFormat.UYVY}
+    for i in range(profiles.get_count()):
+        profile = profiles.get_stream_profile_by_index(i).as_video_stream_profile()
+        if profile.get_format() in formats:
+            yield profile
+
+
 class OrbbecColor(_Latest):
-    def __init__(self, expect_size=(1280, 720), name: str = "orbbec"):
+    def __init__(self, expect_size=(1280, 720), name: str = "orbbec", *, serial=None, fps=None):
         super().__init__()
         from pyorbbecsdk import Config, OBSensorType, Pipeline
-        self.pipe = Pipeline()
-        prof = self.pipe.get_stream_profile_list(OBSensorType.COLOR_SENSOR).get_default_video_stream_profile()
+        self.context = None
+        if serial:
+            self.context, devices = orbbec_devices()
+            matches = [i for i, value in enumerate(orbbec_serials(devices)) if value == serial]
+            if len(matches) != 1:
+                raise RuntimeError(f"{name}: expected exactly one Orbbec with serial {serial}")
+            self.pipe = Pipeline(devices.get_device_by_index(matches[0]))
+        else:
+            self.pipe = Pipeline()
+        if serial and fps is not None:
+            prof = next((p for p in orbbec_profiles(self.pipe)
+                         if (p.get_width(), p.get_height(), p.get_fps()) == (*expect_size, fps)), None)
+            if prof is None:
+                raise RuntimeError(f"{name}: Orbbec color mode {expect_size} at {fps} fps is unavailable")
+        else:
+            prof = self.pipe.get_stream_profile_list(OBSensorType.COLOR_SENSOR).get_default_video_stream_profile()
         if (prof.get_width(), prof.get_height()) != tuple(expect_size):
             raise RuntimeError(f"{name}: color stream is {prof.get_width()}x{prof.get_height()}, config expects {expect_size}")
         cfg = Config()
@@ -263,9 +307,11 @@ def open_cameras(cams_cfg: dict, fps: int, fake: bool, robot=None) -> dict:
             if fake:
                 out[name] = FakeCamera(name, _source_size(c))
             elif c["type"] == "uvc":
-                out[name] = UVCCamera(c["unique_id"], c.get("crop"), fps, name)
+                out[name] = UVCCamera(c["unique_id"], c.get("crop"), c.get("fps", fps), name,
+                                      mode=c.get("expect_size"), exact=c.get("exact_id", False))
             elif c["type"] == "orbbec":
-                out[name] = OrbbecColor(tuple(c.get("expect_size", (1280, 720))), name)
+                out[name] = OrbbecColor(tuple(c.get("expect_size", (1280, 720))), name,
+                                        serial=c.get("serial"), fps=c.get("fps"))
             elif c["type"] == "robot":
                 out[name] = RobotCamera(robot, name, c)
             else:

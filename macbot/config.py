@@ -12,9 +12,14 @@ PACKAGE = Path(__file__).resolve().parent
 DEFAULT = PACKAGE / "default.yaml"
 
 CAMERAS = ("top", "wrist")
+CONSOLES = ("init", "teleop", "run", "replay")
 
 
 REPLACE = {"cameras"}      # sections a user file replaces as a whole instead of merging into
+
+
+class ConsolePortError(ValueError):
+    pass
 
 
 def _merge(base: dict, over: dict, top: bool = True) -> dict:
@@ -27,6 +32,10 @@ def _merge(base: dict, over: dict, top: bool = True) -> dict:
 
 class Config(dict):
     """A dict with a few path helpers."""
+
+    def __init__(self, settings=(), explicit_ports=()):
+        super().__init__(settings)
+        self.explicit_ports = frozenset(explicit_ports)
 
     @property
     def root(self) -> Path:
@@ -53,6 +62,22 @@ class Config(dict):
 def load(path: str | Path | None = None) -> Config:
     """Load the default config, then overlay ``path`` if given."""
     cfg = yaml.safe_load(DEFAULT.read_text())
-    if path:
-        cfg = _merge(cfg, yaml.safe_load(expand(path).read_text()) or {})
-    return Config(cfg)
+    overrides = (yaml.safe_load(expand(path).read_text()) or {}) if path else {}
+    explicit_ports = [section for section in CONSOLES if "port" in (overrides.get(section) or {})]
+    return Config(_merge(cfg, overrides), explicit_ports)
+
+
+def setup_path() -> Path:
+    """The per-user profile created only when setup is explicitly saved."""
+    return expand("~/.config/macbot/config.yaml")
+
+
+def load_cli(path=None, *, resolve=None) -> Config:
+    if path is None and setup_path().is_file():
+        path = setup_path()
+    cfg = load(path)
+    if resolve is not None:
+        from .robot.usb import resolve_robot
+
+        cfg["robot"] = resolve_robot(cfg["robot"], leader=resolve)
+    return cfg

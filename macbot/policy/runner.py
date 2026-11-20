@@ -18,13 +18,13 @@ import sys
 import threading
 import time
 from contextlib import ExitStack
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 import numpy as np
 
 from .. import web
 from ..cameras import open_cameras
+from ..cameras.framing import check_framing, framing, training_framing
 from ..config import Config
 from ..i18n import tr
 from ..system import ensure_dir, expand, give_back, start_log
@@ -100,6 +100,7 @@ def save_rollout(st: State, rec: dict, result: str):
             "executor": st.executor, "mode": a.mode, "k": a.k, "te_m": a.te_m, "rtc_beta": a.rtc_beta,
             "grip_debounce": a.grip_debounce, "speed": a.speed, "max_vel": st.cfg["run"]["max_vel"], "result": result,
             "fps": fps, "frames": len(rec["t"]), "joint_names": st.joints, "gripper": st.gripper, "robot": st.robot_info, "cameras": st.cam_names,
+            "camera_framing": framing(st.cfg["cameras"], fps),
             "saved_at": time.strftime("%Y-%m-%d %H:%M:%S"), "fake": a.fake, "writer": "macbot"}
     ex = {k: np.asarray(v, np.float64) for k, v in rec.items() if k.startswith("ex_")}
     tmp = p.with_suffix(".tmp.npz")
@@ -146,6 +147,18 @@ def make_handler(st: State):
 
 
 def run(cfg: Config, args):
+    with web.bind_console(cfg, "run", web.Handler, args.port) as srv, ExitStack() as cleanup:
+        _run(cfg, args, srv, cleanup)
+
+
+def _run(cfg, args, srv, cleanup):
+    args.policy = expand(args.policy)
+    current = framing(cfg["cameras"], cfg["record"]["fps"])
+    try:
+        expected = training_framing(args.policy, cfg.root)
+    except (ValueError, OSError) as exc:
+        raise SystemExit(f"Cannot read training camera framing: {exc}") from None
+    check_framing(expected, current, override=args.allow_framing_mismatch)
     start_log(cfg.log_dir, "run")
     rc = cfg["run"]
     args.speed = args.speed if args.speed is not None else rc["speed"]
@@ -153,20 +166,17 @@ def run(cfg: Config, args):
         sys.exit("--speed must be between 0.1 and 1.0")
     if args.autostart and not (args.fake or cfg["robot"].get("type") == "sim"):
         sys.exit("--autostart only works with --fake or robot.type: sim")
-    args.policy = expand(args.policy)
     gcfg = find_gripper_config(args.policy, args.gripper)
     gripper = BinaryGripper(gcfg, args.grip_debounce) if gcfg else None
 
     fps = int(cfg["record"]["fps"])
     out = ensure_dir(cfg.rollout_dir(cfg.task + ("_fake" if args.fake else "")))
     st = State(cfg, out, args)
-    port = args.port or rc["port"]
-    with ThreadingHTTPServer(("127.0.0.1", port), make_handler(st)) as srv, ExitStack() as cleanup:
-        srv.daemon_threads = True
-        _control(st, srv, port, fps, gripper, cleanup)
+    srv.RequestHandlerClass = make_handler(st)
+    _control(st, srv, fps, gripper, cleanup)
 
 
-def _control(st, srv, port, fps, gripper, cleanup):
+def _control(st, srv, fps, gripper, cleanup):
     cfg, args, rc = st.cfg, st.args, st.cfg["run"]
     from ..robot import open_robot
     robot = open_robot(cfg["robot"], fake=args.fake)
@@ -277,7 +287,7 @@ def _control(st, srv, port, fps, gripper, cleanup):
     st.executor = ex.describe()
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     cleanup.callback(srv.shutdown)
-    print(f"executor: {st.executor}\nweb page: http://127.0.0.1:{port}   rollouts: {st.out}", flush=True)
+    print(f"executor: {st.executor}\nweb page: {srv.url}   rollouts: {st.out}", flush=True)
 
     hz = rc["hz"]
     dt = 1.0 / hz

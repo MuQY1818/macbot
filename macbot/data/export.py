@@ -21,6 +21,7 @@ import sys
 import cv2
 import numpy as np
 
+from ..cameras.framing import FRAMING_FILE, dataset_framing, write_framing
 from ..config import Config
 from ..i18n import text
 from ..system import expand
@@ -71,10 +72,8 @@ def run(cfg: Config, args):
     files = sorted(data.glob("episode_*.npz"))
     if not files:
         sys.exit(f"no episode_*.npz in {data}")
-    if out.exists():
-        if not args.overwrite:
-            sys.exit(f"{out} exists; add --overwrite to rebuild it")
-        shutil.rmtree(out)
+    if out.exists() and not args.overwrite:
+        sys.exit(f"{out} exists; add --overwrite to rebuild it")
 
     keep, skipped = [], []
     for p in files:
@@ -103,6 +102,7 @@ def run(cfg: Config, args):
     joints = m0.get("joint_names") or []
     if any((m.get("joint_names") or []) != joints for _, m in keep[1:]):
         sys.exit("episodes were recorded with different joint lists; they cannot share a dataset")
+    recorded_framing = dataset_framing(keep)
     gi = joints.index(m0["gripper"]) if m0.get("gripper") in joints else (joints.index("gripper") if "gripper" in joints else None)
     if binary and gi is None:
         sys.exit("--gripper binary needs a joint named gripper")
@@ -115,6 +115,8 @@ def run(cfg: Config, args):
                 **{f"observation.images.{c}": {"dtype": kind, "shape": shape[c], "names": ["height", "width", "channels"]}
                    for c in cams}}
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
+    if out.exists():
+        shutil.rmtree(out)
     ds = LeRobotDataset.create(repo_id=repo_id, fps=fps, features=features, root=out,
                                robot_type=rtype, use_videos=not args.images)
     total = 0
@@ -133,6 +135,7 @@ def run(cfg: Config, args):
         total += len(q)
         print(f"  {p.name}: {len(q)} frames  \"{m['instruction']}\"", flush=True)
     ds.finalize()
+    write_framing(out / "meta" / FRAMING_FILE, recorded_framing)
     if binary:
         (out / "gripper.json").write_text(json.dumps({
             "mode": "binary", "close_value": 1.0, "open_value": 0.0, "open_deg": args.open_deg, "close_deg": args.close_deg,

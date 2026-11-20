@@ -136,6 +136,13 @@ def test_six_joint_episode_export(six_joint_episode, tmp_path):
         assert info["features"][key]["shape"] == [6]
         assert info["features"][key]["names"] == [f"{n}.pos" for n in SO_JOINTS]
     assert info["features"]["observation.images.top"]["shape"] == [12, 16, 3]
+    sidecar = out / "meta" / "camera_framing.json"
+    assert json.loads(sidecar.read_text()) == {"top": {"crop": None, "save_size": [16, 12]}}
+    from lerobot.datasets.io_utils import load_info
+
+    assert load_info(out).total_frames == 4
+    sidecar.unlink()
+    assert load_info(out).total_frames == 4
 
 
 def test_bench_uses_checkpoint_state_dimension(monkeypatch, tmp_path, capsys):

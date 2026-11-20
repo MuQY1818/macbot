@@ -19,7 +19,7 @@
 sudo -E $(which python) -m macbot.cli --config my.yaml collect
 ```
 
-网页地址是 <http://127.0.0.1:8766>。
+打开终端显示的地址（8766 可用时使用该端口）。
 
 | 按键 | 作用 |
 |---|---|
@@ -98,7 +98,7 @@ DATASET=~/data/cubes_to_box_bin ./train/train_act.sh cubes_act
 sudo -E $(which python) -m macbot.cli run --policy ~/policies/cubes_pi05/004000 --speed 0.3
 ```
 
-网页地址是 <http://127.0.0.1:8767>，启动后处于**暂停**状态。
+打开终端显示的地址（8767 可用时使用该端口），启动后处于**暂停**状态。
 
 | 按键 | 作用 |
 |---|---|
@@ -141,7 +141,7 @@ class MyExecutor(Executor):
 ## 6. 回看
 
 ```bash
-macbot replay                                   # http://127.0.0.1:8768
+macbot replay                                   # 打开终端显示的地址
 macbot video ~/macbot-data/rollouts/cubes_to_box/rollout_003.npz --height 720
 ```
 

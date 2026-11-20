@@ -1,20 +1,73 @@
 """Tiny HTTP layer shared by the collect, run and replay pages (standard library only)."""
 from __future__ import annotations
 
+import errno
 import json
 import mimetypes
 import re
+import socket
 import time
-from http.server import BaseHTTPRequestHandler
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import cv2
+
+from ..config import CONSOLES, ConsolePortError
 
 HERE = Path(__file__).resolve().parent
 STATIC = HERE / "static"
 TEMPLATES = HERE / "templates"
 BRAND = ('<a class="brand" href="/"><img class="logo-light" src="/static/logo.svg" alt="macbot">'
          '<img class="logo-dark" src="/static/logo-dark.svg" alt="macbot"></a>')
+HOST = "127.0.0.1"
+PORT_ATTEMPTS = 10
+
+
+class ConsoleServer(ThreadingHTTPServer):
+    @property
+    def url(self):
+        return f"http://{HOST}:{self.server_port}"
+
+    @classmethod
+    def from_listener(cls, fd, handler):
+        """Adopt the wizard's already-listening socket after exec."""
+        with socket.socket(fileno=fd) as listener:
+            if listener.family != socket.AF_INET or listener.type != socket.SOCK_STREAM:
+                raise ValueError("The collection listener must be an IPv4 TCP socket.")
+            host, port = listener.getsockname()
+            if host != HOST or not port:
+                raise ValueError("The collection listener must be bound to IPv4 loopback.")
+            server = cls((host, port), handler, bind_and_activate=False)
+            server.socket.close()
+            # Re-wrap the descriptor so the temporary socket does not own it.
+            server.socket = socket.socket(fileno=listener.detach())
+            server.socket.set_inheritable(False)
+            server.server_name, server.server_port = server.server_address
+            return server
+
+
+def bind_console(cfg, section, handler, port=None):
+    """Bind the actual listener in one step; retry only implicit ports in use."""
+    explicit = port is not None or section in cfg.explicit_ports
+    requested = cfg[section]["port"] if port is None else port
+    command = "collect" if section == "teleop" else section
+    hint = f"choose another with macbot {command} --port or change {section}.port in your config"
+    if type(requested) is not int or not 0 <= requested <= 65535:
+        raise ConsolePortError(f"Invalid port {requested!r}; {hint}.")
+    last = requested if explicit else min(65535, requested + PORT_ATTEMPTS - 1)
+    # Fall forward past the other consoles' defaults so one busy port does not push every console along.
+    siblings = {cfg[other]["port"] for other in CONSOLES if other != section and other in cfg} - {requested}
+    for candidate in range(requested, last + 1):
+        if candidate in siblings:
+            continue
+        try:
+            return ConsoleServer((HOST, candidate), handler)
+        except OSError as exc:
+            if exc.errno != errno.EADDRINUSE:
+                raise
+            if explicit:
+                raise ConsolePortError(f"Port {requested} is already in use; {hint}.") from None
+    raise ConsolePortError(f"Ports {requested}-{last} are already in use; {hint}.")
 
 
 def page(name: str, **vars) -> bytes:

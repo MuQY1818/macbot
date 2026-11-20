@@ -23,10 +23,11 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Human Machine Interfaces",
 ]
 dependencies = [
-  "lerobot[rebot,dataset]==0.7.0",
+  "lerobot[rebot,dataset,feetech,dynamixel]==0.7.0",
   "numpy",
   "opencv-python",
   "pyyaml",
+  "pyserial>=3.5,<4",
 ]
 
 [project.optional-dependencies]

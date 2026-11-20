@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 import re
 import threading
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 import numpy as np
@@ -104,10 +103,9 @@ def run(cfg: Config, args):
     folder = expand(args.dir) if args.dir else cfg.rollout_dir()
     if not folder.is_dir():
         raise SystemExit(f"{folder} does not exist")
-    srv = ThreadingHTTPServer(("127.0.0.1", args.port), make_handler(Store(folder), cfg.task))
-    srv.daemon_threads = True
-    print(f"rollouts: {folder}\nopen http://127.0.0.1:{args.port}  (Ctrl-C to stop)", flush=True)
-    try:
-        srv.serve_forever()
-    except KeyboardInterrupt:
-        pass
+    with web.bind_console(cfg, "replay", make_handler(Store(folder), cfg.task), args.port) as srv:
+        print(f"rollouts: {folder}\nopen {srv.url}  (Ctrl-C to stop)", flush=True)
+        try:
+            srv.serve_forever()
+        except KeyboardInterrupt:
+            pass

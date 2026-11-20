@@ -36,6 +36,9 @@ record:
   jpeg_quality: 92
   min_episode_s: 2.0
 
+init:
+  port: 8765                                # console ports fall back only if not explicitly set
+
 teleop:
   port: 8766
   hz: 60                                    # leader -> follower control rate
@@ -59,3 +62,6 @@ run:
   hz: 60
   speed: 0.5                                # global slow-down for first runs (0.1 - 1.0)
   max_vel: 120.0                            # deg/s per arm joint, multiplied by speed
+
+replay:
+  port: 8768

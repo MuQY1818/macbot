@@ -2,15 +2,17 @@
 
 [English](setup.md)
 
-第 1–6 节适用于 reBot 参考配置。其他机械臂和无硬件仿真的流程见文末。
+向导流程见[快速开始](quickstart_zh.md)。以下手动流程适合自定义配置和排查问题。
 
 ## 1. Python 环境
 
 ```bash
 conda create -n macbot python=3.12 -y && conda activate macbot
-pip install "macbot[orbbec,pi]"    # orbbec：腕部相机 SDK；pi：π0.5 依赖
+pip install macbot                 # 需要 π0.5 时改装 macbot[pi]
 xcode-select --install             # 提供 swiftc，首次使用 UVC 相机时编译助手程序
 ```
+
+使用 Orbbec 腕部相机前，请参照[快速开始](quickstart_zh.md)安装 SDK。
 
 ## 2. CAN 驱动（PCAN-USB）
 

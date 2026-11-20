@@ -14,7 +14,9 @@ Robot + cameras <-> run <- policy checkpoint <---------+
 
 `macbot/cli.py` selects a command and `macbot/config.py` overlays a YAML file on `macbot/default.yaml`.
 The `cameras` map is replaced as a whole. `macbot/web/` supplies the HTTP handlers, templates and
-shared assets for collect, run and replay.
+shared assets for setup, collect, run and replay. `macbot/init_wizard.py` assembles the setup profile;
+`robot/usb.py` and `cameras/discovery.py` provide device discovery and preview. The setup console
+hands off to the separate `collect` command after releasing its previews.
 
 | Module | Responsibility |
 |---|---|

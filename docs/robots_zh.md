@@ -64,7 +64,7 @@ cameras:
 
 ## 标定与检查
 
-macbot 不会标定机械臂。请单独运行 `lerobot-calibrate`，使用相同的设备类型、串口、ID
+`macbot init` 检查标定文件并提供对应命令。请单独运行 `lerobot-calibrate`，使用相同的设备类型、串口、ID
 及可选的 `calibration_dir`。从臂使用 `--robot.*`，主臂使用 `--teleop.*`，命令见
 [安装指南](setup_zh.md)。macbot 以 `calibrate=False` 连接。仿真和 fake 模式不需要标定。
 

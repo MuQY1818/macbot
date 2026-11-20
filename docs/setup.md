@@ -2,15 +2,18 @@
 
 [中文](setup_zh.md)
 
-Sections 1–6 describe the reference reBot setup. For another arm or no hardware, see the workflows below.
+For guided setup, start with the [quickstart](quickstart.md). The manual workflows below are
+useful for custom profiles and troubleshooting.
 
 ## 1. Python environment
 
 ```bash
 conda create -n macbot python=3.12 -y && conda activate macbot
-pip install "macbot[orbbec,pi]"    # orbbec: wrist camera SDK, pi: pi0.5 dependencies
+pip install macbot                 # use macbot[pi] for pi0.5 dependencies
 xcode-select --install             # swiftc, used to build the UVC camera helper on first use
 ```
+
+For an Orbbec wrist camera, see the SDK installation notes in the [quickstart](quickstart.md).
 
 ## 2. CAN driver (PCAN-USB)
 

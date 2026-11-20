@@ -1,6 +1,7 @@
 """Command line entry point: ``macbot <command>``.
 
     macbot doctor                 check dependencies, the configured robot and cameras
+    macbot init [--yes]           detect and configure arms and cameras
     macbot cameras                list video devices with their uniqueIDs
     macbot joints                 read leader and follower joint angles without powering anything
     macbot robots                 list the LeRobot arm types macbot can drive (robot.type: lerobot)
@@ -22,14 +23,46 @@ import argparse
 import sys
 
 
-def _cfg(args):
-    from .config import load
-    return load(args.config)
+def _cfg(args, *, resolve=None):
+    from .config import load_cli
+
+    try:
+        return load_cli(args.config, resolve=resolve)
+    except (OSError, ValueError, RuntimeError) as exc:
+        raise SystemExit(str(exc)) from exc
 
 
 def cmd_doctor(args):
     from .doctor import run
-    return run(_cfg(args))
+    return run(_cfg(args, resolve=True))
+
+
+def cmd_init(args):
+    import os
+
+    from .init_wizard import Setup
+    from .system import expand
+
+    if not args.yes and any((args.family, args.leader_serial, args.follower_serial)):
+        raise SystemExit("--family and --*-serial are for macbot init --yes")
+    try:
+        setup = Setup(expand(args.config).absolute() if args.config else None, source=args.source)
+        if args.yes:
+            setup.refresh()
+            status, output = setup.automatic(family=args.family, leader=args.leader_serial, follower=args.follower_serial)
+            print(f"Configuration: {setup.path}\n{output}", end="")
+            return status
+        from .web.init_wizard import serve
+
+        launch = serve(setup, args.port, open_browser=not args.no_browser)
+    except (OSError, ValueError, RuntimeError) as exc:
+        raise SystemExit(str(exc)) from exc
+    if launch is not None:
+        with launch:
+            # Keep the chosen URL reserved until collect takes ownership.
+            launch.socket.set_inheritable(True)
+            os.execv(sys.executable, [sys.executable, "-m", "macbot.cli", "--config", str(setup.path),
+                                      "collect", "--listen-fd", str(launch.fileno())])
 
 
 def cmd_cameras(args):
@@ -43,14 +76,14 @@ def cmd_cameras(args):
 
 
 def cmd_joints(args):
-    cfg = _cfg(args)
+    cfg = _cfg(args, resolve=True)
     rcfg = cfg["robot"]
     if rcfg.get("type") == "sim":
         raise SystemExit("use collect or run to see simulated joints")
     if rcfg.get("type", "rebot_b601") == "rebot_b601":
         _preload(cfg)
         from .robot.rebot import JOINTS, make_leader, read_joints_passive
-        leader = make_leader(leader_id=rcfg.get("leader_id", "rebot_arm_102_leader"))
+        leader = make_leader(port=rcfg.get("leader_port"), leader_id=rcfg.get("leader_id", "rebot_arm_102_leader"))
         leader.connect(calibrate=False)    # leader: unlock (torque off) and reset turn counters; it does not move
         act = leader.get_action()
         leader.disconnect()
@@ -99,11 +132,11 @@ def _preload(cfg):
 
 
 def cmd_collect(args):
-    cfg = _cfg(args)
+    cfg = _cfg(args, resolve=None if args.fake else True)
     if not args.fake:
         _preload(cfg)
     from .collect.server import run
-    run(cfg, fake=args.fake, port=args.port, out=args.out)
+    run(cfg, fake=args.fake, port=args.port, out=args.out, listen_fd=args.listen_fd)
 
 
 def cmd_export(args):
@@ -117,7 +150,7 @@ def cmd_health(args):
 
 
 def cmd_run(args):
-    cfg = _cfg(args)
+    cfg = _cfg(args, resolve=None if args.fake else False)
     if not args.fake:
         _preload(cfg)
     from .policy.runner import run
@@ -151,9 +184,22 @@ def _backend_args(parser):
 
 
 def main(argv=None):
+    from .config import ConsolePortError
+    from .robot.usb import FAMILIES
+
     ap = argparse.ArgumentParser(prog="macbot", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--config", help="YAML file overriding the built-in defaults")
     sub = ap.add_subparsers(dest="cmd", required=True, metavar="command")
+
+    p = sub.add_parser("init", help="detect arms and cameras and create a configuration")
+    p.add_argument("--from", dest="source", help="reuse framing and calibration from an existing macbot YAML")
+    p.add_argument("--yes", action="store_true", help="configure without a browser when roles are unambiguous")
+    p.add_argument("--family", choices=FAMILIES, help="confirm a robot model for scripted setup")
+    p.add_argument("--leader-serial", help="confirm the leader's USB serial for scripted setup")
+    p.add_argument("--follower-serial", help="confirm the follower's USB serial for scripted setup")
+    p.add_argument("--port", type=int, help="local setup console port (default: 8765 or init.port)")
+    p.add_argument("--no-browser", action="store_true", help="print the local setup URL without opening it")
+    p.set_defaults(fn=cmd_init)
 
     sub.add_parser("doctor", help="check the configured robot and cameras without connecting").set_defaults(fn=cmd_doctor)
     sub.add_parser("cameras", help="list video devices and uniqueIDs").set_defaults(fn=cmd_cameras)
@@ -163,7 +209,9 @@ def main(argv=None):
 
     p = sub.add_parser("collect", help="teleoperate and record (web page)")
     p.add_argument("--fake", action="store_true", help="simulate robot, leader and cameras")
-    p.add_argument("--port", type=int)
+    port_args = p.add_mutually_exclusive_group()
+    port_args.add_argument("--port", type=int, help="collection console port (default: 8766 or teleop.port)")
+    port_args.add_argument("--listen-fd", type=int, help=argparse.SUPPRESS)
     p.add_argument("--out", help="episode folder (default <data_root>/raw/<task>)")
     p.set_defaults(fn=cmd_collect)
 
@@ -199,17 +247,18 @@ def main(argv=None):
     p.add_argument("--grip-debounce", type=float, default=0.6, help="binary gripper: seconds of 'open' before opening")
     p.add_argument("--steps", type=int, help="pi0.5 denoising steps (default from checkpoint)")
     p.add_argument("--no-compile", action="store_true", help="pi0.5: skip backend compilation")
+    p.add_argument("--allow-framing-mismatch", action="store_true", help="run despite a known camera framing mismatch")
     _backend_args(p)
     p.add_argument("--speed", type=float, help="0.1-1.0, default from config")
     p.add_argument("--device", default="mps")
-    p.add_argument("--port", type=int)
+    p.add_argument("--port", type=int, help="policy console port (default: 8767 or run.port)")
     p.add_argument("--fake", action="store_true", help="simulate robot and cameras (policy runs for real)")
     p.add_argument("--autostart", type=float, default=0, help="in fake or sim mode: run this many seconds, save, quit")
     p.set_defaults(fn=cmd_run)
 
     p = sub.add_parser("replay", help="browse recorded rollouts")
     p.add_argument("--dir", help="rollout folder (default <data_root>/rollouts/<task>)")
-    p.add_argument("--port", type=int, default=8768)
+    p.add_argument("--port", type=int, help="replay console port (default: 8768 or replay.port)")
     p.set_defaults(fn=cmd_replay)
 
     p = sub.add_parser("video", help="rollout -> side-by-side MP4")
@@ -229,7 +278,10 @@ def main(argv=None):
     p.set_defaults(fn=cmd_bench)
 
     args = ap.parse_args(argv)
-    return args.fn(args)
+    try:
+        return args.fn(args)
+    except ConsolePortError as exc:
+        raise SystemExit(str(exc)) from None
 
 
 if __name__ == "__main__":
