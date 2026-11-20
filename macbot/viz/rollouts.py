@@ -113,9 +113,14 @@ def read_stored_frame(fp, camera, frame):
     return data
 
 
+def encode_summary(folder, name):
+    return json.dumps(Store(folder).summary(name), ensure_ascii=False, allow_nan=False).encode()
+
+
 class Store:
-    def __init__(self, folder):
+    def __init__(self, folder, *, trace_worker=None):
         self.folder = folder
+        self.trace_worker = trace_worker
         self.slots = threading.BoundedSemaphore(4)
         self.summary_lock = threading.Lock()
         self.summaries = OrderedDict()
@@ -181,10 +186,12 @@ class Store:
             if cached := self.summaries.get(key):
                 self.summaries.move_to_end(key)
                 return cached
-            # Use the incremental encoder on a cold read so other threads can run between
-            # pieces of a large trace. Cache bytes to avoid encoding again on later opens.
-            encoder = json.JSONEncoder(ensure_ascii=False, allow_nan=False)
-            payload = "".join(encoder.iterencode(self.summary(name))).encode()
+            # The run console encodes cold traces in a separate process; large JSON responses
+            # would otherwise hold the GIL shared by the paused control loop and HTTP threads.
+            if self.trace_worker is not None:
+                payload = self.trace_worker.submit(encode_summary, self.folder, name).result()
+            else:
+                payload = encode_summary(self.folder, name)
             if len(payload) <= MAX_CACHED_SUMMARY:
                 self.summaries[key] = payload
                 if len(self.summaries) > SUMMARY_CACHE_SIZE:

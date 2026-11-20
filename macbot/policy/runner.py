@@ -13,10 +13,13 @@ frame, chunk_t and infer_ms per chunk, executor extras, JPEG frames per camera, 
 from __future__ import annotations
 
 import json
+import multiprocessing
+import os
 import re
 import sys
 import threading
 import time
+from concurrent.futures import ProcessPoolExecutor
 from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
@@ -144,9 +147,9 @@ def save_rollout(st: State, rec: dict, result: str):
     return p.name, meta
 
 
-def make_handler(st: State):
+def make_handler(st: State, trace_worker=None):
     preview = {k: tuple(st.cfg["cameras"][k]["save_size"]) for k in st.cam_names}
-    store = Store(st.out)
+    store = Store(st.out, trace_worker=trace_worker)
 
     class H(web.Handler):
         def do_GET(self):
@@ -185,6 +188,11 @@ def run(cfg: Config, args):
         _run(cfg, args, srv, cleanup)
 
 
+def start_trace_worker():
+    if hasattr(os, "nice"):
+        os.nice(5)
+
+
 def _run(cfg, args, srv, cleanup):
     args.policy = expand(args.policy)
     current = framing(cfg["cameras"], cfg["record"]["fps"])
@@ -206,7 +214,12 @@ def _run(cfg, args, srv, cleanup):
     fps = int(cfg["record"]["fps"])
     out = ensure_dir(cfg.rollout_dir(cfg.task + ("_fake" if args.fake else "")))
     st = State(cfg, out, args)
-    srv.RequestHandlerClass = make_handler(st)
+    trace_worker = cleanup.enter_context(ProcessPoolExecutor(
+        max_workers=1, mp_context=multiprocessing.get_context("spawn"), initializer=start_trace_worker,
+    ))
+    # Spawn before connecting the robot, so opening the first replay does not start a process.
+    trace_worker.submit(os.getpid).result()
+    srv.RequestHandlerClass = make_handler(st, trace_worker)
     _control(st, srv, fps, gripper, cleanup)
 
 
