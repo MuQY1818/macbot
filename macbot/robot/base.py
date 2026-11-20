@@ -50,7 +50,7 @@ class Robot:
         return [float(d[f"{n}.pos"]) for n in self.joints]
 
     def _dict(self, v) -> dict:
-        return {f"{n}.pos": float(x) for n, x in zip(self.joints, v)}
+        return {f"{n}.pos": float(x) for n, x in zip(self.joints, v, strict=False)}
 
     # ---- interface
     def connect(self, leader: bool = False):
@@ -67,7 +67,7 @@ class Robot:
 
     def send(self, target, measured=None) -> list[float]:
         sent = self.follower.send_action(self._dict(target))
-        return [float(sent.get(f"{n}.pos", t)) for n, t in zip(self.joints, target)]
+        return [float(sent.get(f"{n}.pos", t)) for n, t in zip(self.joints, target, strict=False)]
 
     def home_pose(self) -> list[float]:
         return list(self._start) if self._start is not None else [0.0] * len(self.joints)
@@ -78,9 +78,9 @@ class Robot:
     def move_slowly(self, goal, step: float = 0.5, dt: float = 0.02):
         """Interpolate to ``goal`` at ``step`` units per ``dt`` for the joint that has the farthest to go."""
         q = self.read()
-        n = max(1, math.ceil(max(abs(g - x) for g, x in zip(goal, q)) / step))
+        n = max(1, math.ceil(max(abs(g - x) for g, x in zip(goal, q, strict=False)) / step))
         for k in range(1, n + 1):
-            self.send([x + (g - x) * k / n for x, g in zip(q, goal)], None)
+            self.send([x + (g - x) * k / n for x, g in zip(q, goal, strict=False)], None)
             time.sleep(dt)
         time.sleep(0.3)
 

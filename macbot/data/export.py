@@ -128,7 +128,7 @@ def run(cfg: Config, args):
             streams = [frames(d, c) for c in cams]
             for qi, ai, *imgs in zip(q, a, *streams, strict=True):
                 ds.add_frame({"observation.state": qi, "action": ai, "task": m["instruction"],
-                              **{f"observation.images.{c}": im for c, im in zip(cams, imgs)}})
+                              **{f"observation.images.{c}": im for c, im in zip(cams, imgs, strict=False)}})
         ds.save_episode()
         total += len(q)
         print(f"  {p.name}: {len(q)} frames  \"{m['instruction']}\"", flush=True)

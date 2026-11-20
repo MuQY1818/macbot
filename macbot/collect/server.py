@@ -28,8 +28,8 @@ import numpy as np
 from .. import web
 from ..cameras import camera_info, open_cameras
 from ..config import Config
-from ..system import ensure_dir, expand, give_back, start_log
 from ..i18n import text, tr
+from ..system import ensure_dir, expand, give_back, start_log
 from .checks import check_episode
 
 CAM_STALL_S = 0.5      # a camera without a new frame for this long counts as disconnected
@@ -331,7 +331,7 @@ def _control(st, srv, port, T):
         robot.connect(leader=True)
         st.ff = robot.info()
         a0, q0 = robot.read_leader(), robot.read()
-        bad = [f"{n} leader {a:.0f} / follower {q:.0f}" for n, a, q in zip(names, a0, q0)
+        bad = [f"{n} leader {a:.0f} / follower {q:.0f}" for n, a, q in zip(names, a0, q0, strict=False)
                if n != robot.gripper and abs(robot.clamp(n, a) - q) > T["align_max_deg"]]
         if bad and not (st.fake or st.sim):
             with st.lock:
@@ -369,7 +369,7 @@ def _control(st, srv, port, T):
                     continue
             act = robot.read_leader()
             r = min(1.0, (tick - t_start) / soft) if soft else 1.0
-            act = [q * (1 - r) + a * r for q, a in zip(q0, act)]
+            act = [q * (1 - r) + a * r for q, a in zip(q0, act, strict=False)]
             q = robot.read()
             cmd = robot.send(act, q)
             with st.lock:

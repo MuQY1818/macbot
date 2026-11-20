@@ -244,7 +244,7 @@ class RebotArm(Robot):
         if measured is not None:
             a = clip_gripper(a, float(measured[6]), self.lead)
         sent = self.follower.send_action(a)
-        out = [float(sent.get(f"{n}.pos", t)) for n, t in zip(self.joints, target)]
+        out = [float(sent.get(f"{n}.pos", t)) for n, t in zip(self.joints, target, strict=False)]
         out[6] = float(target[6])          # record the requested gripper target, not the force-clamped one
         return out
 

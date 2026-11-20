@@ -7,11 +7,11 @@ import pytest
 
 from macbot.collect.checks import check_episode
 from macbot.config import load
-from macbot.robot.rebot import JOINTS
 from macbot.data.export import binarize
 from macbot.i18n import text, tr
 from macbot.policy.executors import AsyncChunk, Ensemble, SyncChunk, _interp
 from macbot.policy.gripper import BinaryGripper
+from macbot.robot.rebot import JOINTS
 
 
 def test_config_defaults_and_overlay(tmp_path):

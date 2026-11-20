@@ -51,6 +51,7 @@ def known_types() -> tuple[list[str], list[str]]:
 
 def _config(base, spec: dict):
     import dataclasses
+
     import draccus
     spec = dict(spec)
     typ = spec.pop("type", None)

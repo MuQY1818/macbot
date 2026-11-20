@@ -21,7 +21,6 @@ import argparse
 import sys
 
 
-
 def _cfg(args):
     from .config import load
     return load(args.config)

@@ -10,8 +10,7 @@ from macbot.cameras import camera_info, open_cameras
 from macbot.cli import main
 from macbot.data.export import robot_type
 from macbot.data.health import episode_stats
-from macbot.robot import open_robot
-from macbot.robot import lerobot_generic, sim
+from macbot.robot import lerobot_generic, open_robot, sim
 from macbot.robot.fake import SO_JOINTS
 
 

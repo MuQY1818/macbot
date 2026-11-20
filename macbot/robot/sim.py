@@ -88,7 +88,7 @@ class SimArm(Robot):
         elapsed = time.monotonic() - self._t0
         return [self.clamp(n, q + (12 if n == self.gripper else 18)
                            * math.sin(0.8 * elapsed) * math.cos(0.4 * elapsed + i))
-                for i, (n, q) in enumerate(zip(self.joints, self._start))]
+                for i, (n, q) in enumerate(zip(self.joints, self._start, strict=False))]
 
     def send(self, target, measured=None):
         sent = [self.clamp(n, v) for n, v in zip(self.joints, target, strict=True)]

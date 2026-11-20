@@ -106,14 +106,14 @@ class Ensemble(Executor, threading.Thread):
     def target(self, now):
         with self.lk:
             live = [((now - t) * self.rate, ch) for t, ch in self.buf]
-            self.buf = [b for b, (f, ch) in zip(self.buf, live) if f < len(ch) - 1]
+            self.buf = [b for b, (f, ch) in zip(self.buf, live, strict=False) if f < len(ch) - 1]
             n = self.n
         live = [(f, ch) for f, ch in live if 0 <= f < len(ch) - 1]
         if not live:
             return None, n - 1
         fs = np.array([f for f, _ in live])
         w = np.exp(self.m * (fs - fs.max()))                 # older chunks weigh more, as in ACT
-        a = sum(wi * _interp(ch, f) for wi, (f, ch) in zip(w, live)) / w.sum()
+        a = sum(wi * _interp(ch, f) for wi, (f, ch) in zip(w, live, strict=False)) / w.sum()
         return a, n - 1
 
     def run(self):
