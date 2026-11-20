@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+{{head}}
+<title>macbot · Setup</title>
+<link rel="stylesheet" href="/static/init.css">
+<script defer src="/static/init.js"></script>
+</head>
+<body>
+<header class="topbar">
+  {{brand}} <span class="crumb" data-i18n="setup">setup</span>
+  <span class="spacer"></span>
+  <button class="ghost lang" id="theme" type="button"></button>
+  <button class="ghost lang" id="lang" type="button">中文</button>
+</header>
+<main class="wrap setup">
+  <div class="setup-title">
+    <h1 data-i18n="setup_title">Set up your robot</h1>
+    <button id="rescan" type="button" data-i18n="setup_rescan">Rescan devices</button>
+  </div>
+  <ol id="steps" aria-label="Setup progress"></ol>
+  <section id="stage" aria-labelledby="stage-title"></section>
+  <p id="message" class="msg" role="status" hidden></p>
+  <div class="btn-row setup-actions">
+    <button id="back" type="button" data-i18n="setup_back" hidden>Back</button>
+    <button id="next" type="button" class="primary" data-i18n="setup_next" hidden>Continue</button>
+  </div>
+</main>
+</body>
+</html>

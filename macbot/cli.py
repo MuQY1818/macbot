@@ -1,6 +1,7 @@
 """Command line entry point: ``macbot <command>``.
 
     macbot doctor                 check dependencies, the configured robot and cameras
+    macbot init [--yes]           detect and configure arms and cameras
     macbot cameras                list video devices with their uniqueIDs
     macbot joints                 read leader and follower joint angles without powering anything
     macbot robots                 list the LeRobot arm types macbot can drive (robot.type: lerobot)
@@ -22,14 +23,42 @@ import argparse
 import sys
 
 
-def _cfg(args):
-    from .config import load
-    return load(args.config)
+def _cfg(args, *, resolve=None):
+    from .config import load_cli
+
+    try:
+        return load_cli(args.config, resolve=resolve)
+    except (OSError, ValueError, RuntimeError) as exc:
+        raise SystemExit(str(exc)) from exc
 
 
 def cmd_doctor(args):
     from .doctor import run
-    return run(_cfg(args))
+    return run(_cfg(args, resolve=True))
+
+
+def cmd_init(args):
+    import os
+
+    from .setup import Setup
+    from .system import expand
+
+    if not args.yes and any((args.family, args.leader_serial, args.follower_serial)):
+        raise SystemExit("--family and --*-serial are for macbot init --yes")
+    setup = Setup(expand(args.config).absolute() if args.config else None)
+    try:
+        if args.yes:
+            setup.refresh()
+            status, output = setup.automatic(family=args.family, leader=args.leader_serial, follower=args.follower_serial)
+            print(f"Configuration: {setup.path}\n{output}", end="")
+            return status
+        from .web.setup import serve
+
+        launch = serve(setup, args.port, open_browser=not args.no_browser)
+    except (OSError, ValueError, RuntimeError) as exc:
+        raise SystemExit(str(exc)) from exc
+    if launch:
+        os.execv(sys.executable, [sys.executable, "-m", "macbot.cli", "--config", str(setup.path), "collect"])
 
 
 def cmd_cameras(args):
@@ -43,14 +72,14 @@ def cmd_cameras(args):
 
 
 def cmd_joints(args):
-    cfg = _cfg(args)
+    cfg = _cfg(args, resolve=True)
     rcfg = cfg["robot"]
     if rcfg.get("type") == "sim":
         raise SystemExit("use collect or run to see simulated joints")
     if rcfg.get("type", "rebot_b601") == "rebot_b601":
         _preload(cfg)
         from .robot.rebot import JOINTS, make_leader, read_joints_passive
-        leader = make_leader(leader_id=rcfg.get("leader_id", "rebot_arm_102_leader"))
+        leader = make_leader(port=rcfg.get("leader_port"), leader_id=rcfg.get("leader_id", "rebot_arm_102_leader"))
         leader.connect(calibrate=False)    # leader: unlock (torque off) and reset turn counters; it does not move
         act = leader.get_action()
         leader.disconnect()
@@ -99,7 +128,7 @@ def _preload(cfg):
 
 
 def cmd_collect(args):
-    cfg = _cfg(args)
+    cfg = _cfg(args, resolve=None if args.fake else True)
     if not args.fake:
         _preload(cfg)
     from .collect.server import run
@@ -117,7 +146,7 @@ def cmd_health(args):
 
 
 def cmd_run(args):
-    cfg = _cfg(args)
+    cfg = _cfg(args, resolve=None if args.fake else False)
     if not args.fake:
         _preload(cfg)
     from .policy.runner import run
@@ -151,9 +180,20 @@ def _backend_args(parser):
 
 
 def main(argv=None):
+    from .robot.usb import FAMILIES
+
     ap = argparse.ArgumentParser(prog="macbot", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--config", help="YAML file overriding the built-in defaults")
     sub = ap.add_subparsers(dest="cmd", required=True, metavar="command")
+
+    p = sub.add_parser("init", help="detect arms and cameras and create a configuration")
+    p.add_argument("--yes", action="store_true", help="configure without a browser when roles are unambiguous")
+    p.add_argument("--family", choices=FAMILIES, help="confirm a robot model for scripted setup")
+    p.add_argument("--leader-serial", help="confirm the leader's USB serial for scripted setup")
+    p.add_argument("--follower-serial", help="confirm the follower's USB serial for scripted setup")
+    p.add_argument("--port", default=8765, type=int, help="local setup console port (default: 8765)")
+    p.add_argument("--no-browser", action="store_true", help="print the local setup URL without opening it")
+    p.set_defaults(fn=cmd_init)
 
     sub.add_parser("doctor", help="check the configured robot and cameras without connecting").set_defaults(fn=cmd_doctor)
     sub.add_parser("cameras", help="list video devices and uniqueIDs").set_defaults(fn=cmd_cameras)

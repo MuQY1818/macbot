@@ -56,3 +56,19 @@ def load(path: str | Path | None = None) -> Config:
     if path:
         cfg = _merge(cfg, yaml.safe_load(expand(path).read_text()) or {})
     return Config(cfg)
+
+
+def setup_path() -> Path:
+    """The per-user profile created only when setup is explicitly saved."""
+    return expand("~/.config/macbot/config.yaml")
+
+
+def load_cli(path=None, *, resolve=None) -> Config:
+    if path is None and setup_path().is_file():
+        path = setup_path()
+    cfg = load(path)
+    if resolve is not None:
+        from .robot.usb import resolve_robot
+
+        cfg["robot"] = resolve_robot(cfg["robot"], leader=resolve)
+    return cfg

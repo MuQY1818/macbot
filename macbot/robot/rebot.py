@@ -235,7 +235,8 @@ class RebotArm(Robot):
         self.rcfg = rcfg
         self.joints, self.gripper = list(JOINTS), "gripper"
         self.follower = make_follower(rcfg)
-        self.leader = make_leader(leader_id=rcfg.get("leader_id", "rebot_arm_102_leader")) if need_leader else None
+        self.leader = make_leader(port=rcfg.get("leader_port"),
+                                  leader_id=rcfg.get("leader_id", "rebot_arm_102_leader")) if need_leader else None
         self.limits = {n: tuple(v) for n, v in self.follower.config.joint_limits.items()}
         self.lead = float(rcfg.get("gripper_lead_deg", 20.0))
 

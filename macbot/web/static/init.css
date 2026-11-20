@@ -1,0 +1,35 @@
+.setup { max-width: 1056px; }
+.setup-title { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.setup h1 { margin: 6px 0; font-size: 27px; }
+.setup h2 { margin: 0 0 8px; font-size: 19px; }
+.setup h3 { margin: 0 0 6px; font-size: 14px; overflow-wrap: anywhere; }
+.setup p { margin-block: 8px; }
+.setup button, .setup select { min-height: 44px; }
+.setup [hidden] { display: none; }
+.setup button.primary { color: #18171f; }
+#steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; list-style: none; padding: 0; margin: 25px 0; }
+#steps li { padding: 8px 0; border-top: 2px solid var(--line-strong); color: var(--mid); }
+#steps li[aria-current="step"] { color: var(--ink); font-weight: 700; border-color: var(--brand); }
+#steps li.done { border-color: var(--ok); }
+#steps span { margin-right: 5px; font-family: var(--mono); }
+#stage { border-bottom: 1px solid var(--line); padding-bottom: 20px; }
+.setup-actions { justify-content: flex-end; margin-top: 16px; }
+.setup-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 18px 0; }
+.setup-fields label, .setup-role { display: grid; gap: 4px; font-weight: 600; }
+.setup select { width: 100%; min-width: 0; }
+.setup-inventory { list-style: none; padding: 0; margin: 14px 0; }
+.setup-inventory li, .setup-cal { padding: 10px 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.setup-inventory span, .setup-details { display: block; color: var(--mid); }
+.setup-cameras { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(235px, 100%), 1fr)); gap: 12px; margin-top: 16px; }
+.setup-cameras .card { border-radius: 8px; padding: 12px; }
+.setup-cameras .view { aspect-ratio: 16 / 9; margin-bottom: 12px; box-shadow: none; }
+.setup-cameras .view img { object-fit: contain; position: absolute; inset: 0; }
+.setup-cameras .view img:not([src]) { display: none; }
+.setup pre { overflow-wrap: anywhere; white-space: pre-wrap; padding: 10px; background: var(--sunk); border-radius: 8px; }
+.setup .badge { text-transform: none; }
+.setup-error { border-left-color: var(--bad); }
+.setup-note { color: var(--mid); }
+@media (max-width: 620px) {
+  .setup-fields { grid-template-columns: 1fr; }
+  #steps { font-size: 12px; gap: 6px; }
+}
