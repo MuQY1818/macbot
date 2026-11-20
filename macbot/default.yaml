@@ -63,6 +63,11 @@ run:
   speed: 0.5                                # global slow-down for first runs (0.1 - 1.0)
   max_vel: 120.0                            # deg/s per arm joint, multiplied by speed
   home_vel: 25.0                            # deg/s of the farthest arm joint when moving to the start pose
+  takeover: false                           # connect a leader for manual takeover
+  takeover_align_deg: 5.0                   # every arm joint must be within this distance
+
+grasp_miss:                                 # calibrated defaults for the reBot soft gripper only
+  rebot_soft: {held: -1.8, empty: 0.1, tolerance: 0.6}
 
 replay:
   port: 8768

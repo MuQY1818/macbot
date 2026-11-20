@@ -31,6 +31,11 @@ class BinaryGripper:
             self._open_since = None
         return self.close_deg if self.closed else self.open_deg
 
+    def sync(self, command: float) -> None:
+        """Seed hysteresis from the current gripper command after manual control."""
+        self.closed = abs(command - self.close_deg) < abs(command - self.open_deg)
+        self._open_since = None
+
 
 def find_gripper_config(policy: Path, arg: str) -> dict | None:
     """``auto``: look for gripper.json in the policy folder and up to three parents. ``raw``: none."""

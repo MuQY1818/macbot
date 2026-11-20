@@ -169,10 +169,27 @@ def make_follower(rcfg: dict):
     return robot
 
 
-def make_leader(port: str | None = None, leader_id: str = "rebot_arm_102_leader"):
+def make_leader(port: str | None = None, leader_id: str = "rebot_arm_102_leader", *, fresh=False):
     from lerobot.teleoperators.rebot_102_leader.config_rebot_102_leader import RebotArm102LeaderTeleopConfig
     from lerobot.teleoperators.rebot_102_leader.rebot_102_leader import RebotArm102Leader
-    leader = RebotArm102Leader(RebotArm102LeaderTeleopConfig(port=port or find_leader_port(), id=leader_id))
+
+    class FreshLeader(RebotArm102Leader):
+        def _read_raw_positions(self):
+            # Upstream get_action falls back to cached angles on errors; the bus can also
+            # return a cached angle for just one joint. Neither is valid for takeover.
+            ids = self.config.joint_ids
+            samples = self.bus.sync_monitor(list(ids.values()))
+            self.fresh = all(samples[i] is not None and samples[i].reliable for i in ids.values())
+            if not self.fresh:
+                return self._last_raw_positions
+            return {n: samples[i].angle_deg for n, i in ids.items()}
+
+        def get_action(self):
+            self.fresh = False
+            return super().get_action()
+
+    cls = FreshLeader if fresh else RebotArm102Leader
+    leader = cls(RebotArm102LeaderTeleopConfig(port=port or find_leader_port(), id=leader_id))
     if not leader.is_calibrated:
         raise RuntimeError(f"missing calibration file {leader.calibration_fpath}; not connecting")
     return leader
@@ -230,13 +247,13 @@ class RebotArm(Robot):
     """reBot B601-RS follower (+ reBot Arm 102 leader) with feedforward, gripper clamp and two-stage zeroing."""
     kind = "rebot_b601"
 
-    def __init__(self, rcfg: dict, need_leader: bool):
+    def __init__(self, rcfg: dict, need_leader: bool, *, fresh_leader=False):
         super().__init__()
         self.rcfg = rcfg
         self.joints, self.gripper = list(JOINTS), "gripper"
         self.follower = make_follower(rcfg)
-        self.leader = make_leader(port=rcfg.get("leader_port"),
-                                  leader_id=rcfg.get("leader_id", "rebot_arm_102_leader")) if need_leader else None
+        self.leader = (make_leader(port=rcfg.get("leader_port"), fresh=fresh_leader,
+                                   leader_id=rcfg.get("leader_id", "rebot_arm_102_leader")) if need_leader else None)
         self.limits = {n: tuple(v) for n, v in self.follower.config.joint_limits.items()}
         self.lead = float(rcfg.get("gripper_lead_deg", 20.0))
 
@@ -248,6 +265,12 @@ class RebotArm(Robot):
         out = [float(sent.get(f"{n}.pos", t)) for n, t in zip(self.joints, target, strict=False)]
         out[6] = float(target[6])          # record the requested gripper target, not the force-clamped one
         return out
+
+    def read_leader_fresh(self):
+        action = self.read_leader()
+        if not self.leader.fresh:
+            raise OSError("No fresh reBot leader reading")
+        return action
 
     def home_pose(self):
         return [0.0] * 7

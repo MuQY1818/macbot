@@ -11,7 +11,7 @@ from __future__ import annotations
 from .base import Robot
 
 
-def open_robot(rcfg: dict, fake: bool = False, leader: bool = False) -> Robot:
+def open_robot(rcfg: dict, fake: bool = False, leader: bool = False, *, fresh_leader=False) -> Robot:
     typ = rcfg.get("type", "rebot_b601")
     if fake:
         from .fake import fake_for
@@ -20,7 +20,7 @@ def open_robot(rcfg: dict, fake: bool = False, leader: bool = False) -> Robot:
         from ..system import preload_pcan
         preload_pcan()
         from .rebot import RebotArm
-        return RebotArm(rcfg, leader)
+        return RebotArm(rcfg, leader, fresh_leader=fresh_leader)
     if typ == "lerobot":
         from .lerobot_generic import LeRobotArm
         return LeRobotArm(rcfg, leader)

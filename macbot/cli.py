@@ -150,8 +150,14 @@ def cmd_health(args):
 
 
 def cmd_run(args):
-    cfg = _cfg(args, resolve=None if args.fake else False)
+    cfg = _cfg(args)
     if not args.fake:
+        from .robot.usb import resolve_robot
+
+        try:
+            cfg["robot"] = resolve_robot(cfg["robot"], leader=args.takeover or cfg["run"]["takeover"])
+        except (OSError, ValueError, RuntimeError) as exc:
+            raise SystemExit(str(exc)) from exc
         _preload(cfg)
     from .policy.runner import run
     run(cfg, args)
@@ -251,6 +257,7 @@ def main(argv=None):
     p.add_argument("--allow-framing-mismatch", action="store_true", help="run despite a known camera framing mismatch")
     _backend_args(p)
     p.add_argument("--speed", type=float, help="0.1-1.0, default from config")
+    p.add_argument("--takeover", action="store_true", help="connect a leader for manual takeover (T)")
     p.add_argument("--device", default="mps")
     p.add_argument("--port", type=int, help="policy console port (default: 8767 or run.port)")
     p.add_argument("--fake", action="store_true", help="simulate robot and cameras (policy runs for real)")
