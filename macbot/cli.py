@@ -224,6 +224,9 @@ def main(argv=None):
 
     p = sub.add_parser("export", help="recorded episodes -> LeRobot dataset")
     p.add_argument("--rollouts", action="store_true", help="export reviewed policy trials with binary gripper and frame labels")
+    p.add_argument("--segments", action="store_true", help="with --rollouts, export uninterrupted policy and human runs")
+    p.add_argument("--min-segment-s", type=float, help="with --segments, drop runs shorter than this (default: 1.0)")
+    p.add_argument("--pre-takeover-s", type=float, help="with --segments, mark policy frames before takeover (default: 1.7)")
     p.add_argument("--with-rollout-labels", action="store_true", help="add matching label columns to a demonstration export for merging")
     p.add_argument("--data", help="input folder (default raw/<task>, or rollouts/<task> with --rollouts)")
     p.add_argument("--out", help="dataset folder (default <data_root>/datasets/<task>[_bin])")

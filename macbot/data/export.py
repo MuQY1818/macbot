@@ -33,6 +33,8 @@ ROLLOUT_FEATURES = {
     key: {"dtype": "uint8", "shape": (1,), "names": None}
     for key in ("takeover", "grasp_miss", "hand_mark")
 }
+SEGMENT_FEATURES = {**ROLLOUT_FEATURES, "pre_takeover": {"dtype": "uint8", "shape": (1,), "names": None}}
+SEGMENT_SOURCES = ("rollout_policy", "rollout_human")
 HAND_MARK_RADIUS_S = 0.5
 
 
@@ -51,9 +53,8 @@ def robot_type(meta: dict) -> str:
     return "rebot_b601_follower"
 
 
-def frames(d, cam):
-    off, blob = d[f"{cam}_offsets"], d[f"{cam}_jpeg"]
-    for i in range(len(off) - 1):
+def decode_frames(off, blob, start, end):
+    for i in range(start, end):
         yield cv2.cvtColor(cv2.imdecode(blob[off[i]:off[i + 1]], cv2.IMREAD_COLOR), cv2.COLOR_BGR2RGB)
 
 
@@ -61,12 +62,41 @@ def _msg(items) -> str:
     return "; ".join(text(m, "en") if isinstance(m, dict) else str(m) for m in items)
 
 
-def rollout_labels(d, meta, q, a, gi, args, grasp_cfg):
+def rollout_timeline(d, n=None):
     t = d["t"]
-    takeover = d["takeover"] if "takeover" in d.files else np.zeros(len(q), np.uint8)
-    if (t.shape != (len(q),) or takeover.shape != t.shape or not np.isin(takeover, [0, 1, 2]).all()
+    n = t.size if n is None else n
+    takeover = d["takeover"] if "takeover" in d.files else np.zeros(n, np.uint8)
+    if (t.shape != (n,) or takeover.shape != t.shape or not np.isin(takeover, [0, 1, 2]).all()
             or not np.isfinite(t).all() or np.any(np.diff(t) <= 0)):
         raise ValueError("invalid frame timestamps or takeover labels")
+    return t, takeover.astype(np.uint8, copy=False)
+
+
+def segment_plan(t, takeover, fps, min_s, pre_s):
+    """Return retained runs and frame labels in the original trial's coordinates."""
+    changes = np.flatnonzero(takeover[1:] != takeover[:-1]) + 1
+    pre = np.zeros(len(t), np.uint8)
+    # The recording stores sampled control states, not button press times.
+    requests = changes[(takeover[changes - 1] == 0) & (takeover[changes] != 0)]
+    if pre_s:
+        for end in requests:
+            pre[t.searchsorted(t[end] - pre_s - 1e-9):end] = 1
+    pre[takeover != 0] = 0
+    runs, short, index = [], 0, 0
+    edges = [0, *changes, len(t)]
+    for start, end in zip(edges[:-1], edges[1:], strict=True):
+        label = takeover[start]
+        if label == 2:
+            continue
+        if (end - start) / fps < min_s:
+            short += 1
+        else:
+            runs.append((slice(start, end), SEGMENT_SOURCES[label], index))
+        index += 1
+    return runs, pre, short
+
+
+def rollout_labels(d, meta, q, a, gi, args, grasp_cfg, t, takeover):
     miss = np.zeros(len(q), np.uint8)
     report = detect(meta, t, a, q, grasp_cfg)
     for span in report["misses"]:
@@ -101,29 +131,53 @@ def rollout_labels(d, meta, q, a, gi, args, grasp_cfg):
     return np.column_stack((takeover, miss, hand)).astype(np.uint8), report
 
 
-def label_episodes(out, results, source):
+def label_episodes(out, results, source, provenance=None):
     """LeRobot 0.7's public writer has no custom episode metadata argument."""
     import pyarrow as pa
     import pyarrow.parquet as pq
 
     for path in (out / "meta" / "episodes").glob("chunk-*/file-*.parquet"):
         table = pq.read_table(path)
-        review = [results[i] for i in table["episode_index"].to_pylist()]
+        indices = table["episode_index"].to_pylist()
+        review = [results[i] for i in indices]
+        segment_info = [provenance[i] for i in indices] if provenance is not None else None
         table = table.append_column("success", pa.array([r[0] for r in review], type=pa.bool_()))
-        table = table.append_column("source", pa.array([source] * len(review), type=pa.string()))
+        sources = [s[0] for s in segment_info] if segment_info is not None else [source] * len(review)
+        table = table.append_column("source", pa.array(sources, type=pa.string()))
         table = table.append_column("grasp_miss_count", pa.array([r[1] for r in review], type=pa.int32()))
         table = table.append_column("grasp_unknown_closes", pa.array([r[2] for r in review], type=pa.int32()))
+        if segment_info is not None:
+            for col, key, dtype in [(1, "trial_name", pa.string()), (2, "original_start_time", pa.float64()),
+                                    (3, "segment_index", pa.int32())]:
+                table = table.append_column(key, pa.array([s[col] for s in segment_info], type=dtype))
         tmp = path.with_suffix(".tmp")
         pq.write_table(table, tmp)
         tmp.replace(path)
 
 
-def frame_layout(d, cams):
-    return {c: next(frames(d, c)).shape for c in cams}
+def frame_layout(d, cams, start=0):
+    return {c: next(decode_frames(d[f"{c}_offsets"], d[f"{c}_jpeg"], start, start + 1)).shape for c in cams}
+
+
+def segment_summary(trials, sources, holds, short, fps, human, pre):
+    print(f"  {trials} trials, {sources.count('rollout_policy')} rollout_policy segments, "
+          f"{sources.count('rollout_human')} rollout_human segments, {holds} label 2 frames dropped, "
+          f"{short} short segments dropped, {human / fps:.2f} human seconds, {pre} pre-takeover frames")
 
 
 def run(cfg: Config, args):
     rollouts = getattr(args, "rollouts", False)
+    segments = getattr(args, "segments", False)
+    min_s, pre_s = getattr(args, "min_segment_s", None), getattr(args, "pre_takeover_s", None)
+    if segments and not rollouts:
+        sys.exit("--segments requires --rollouts")
+    if not segments and (min_s is not None or pre_s is not None):
+        sys.exit("--min-segment-s and --pre-takeover-s require --segments")
+    min_s, pre_s = 1.0 if min_s is None else min_s, 1.7 if pre_s is None else pre_s
+    if segments:
+        for flag, value in [("--min-segment-s", min_s), ("--pre-takeover-s", pre_s)]:
+            if not math.isfinite(value) or value < 0:
+                sys.exit(f"{flag} must be finite and nonnegative")
     labeled = rollouts or getattr(args, "with_rollout_labels", False)
     binary = labeled or args.gripper == "binary"
     ex = cfg.get("export", {})
@@ -133,7 +187,8 @@ def run(cfg: Config, args):
     if binary and (not all(math.isfinite(getattr(args, k)) for k in ("close_above", "open_below", "open_deg", "close_deg"))
                    or args.open_below >= args.close_above):
         sys.exit("binary gripper needs finite angles and --open-below less than --close-above")
-    name = cfg.task + ("_rollouts" if rollouts else "_bin_labeled" if labeled else "_bin" if binary else "")
+    name = cfg.task + ("_rollout_segments" if segments else "_rollouts" if rollouts
+                       else "_bin_labeled" if labeled else "_bin" if binary else "")
     data = expand(args.data) if args.data else cfg.rollout_dir() if rollouts else cfg.raw_dir()
     out = expand(args.out) if args.out else cfg.dataset_dir(name)
     repo_id = args.repo_id or f"local/{name}"
@@ -163,10 +218,35 @@ def run(cfg: Config, args):
                 skipped.append((p.name, _msg(c.get("errors", []) + c.get("warnings", []))))
                 continue
         keep.append((p, meta))
-    if not keep:
+    if not keep and not segments:
         for n, why in skipped:
             print(f"  skipped {n}: {why}")
         sys.exit("nothing to export")
+
+    trials = len(keep)
+    plans, holds, short = {}, 0, 0
+    if segments:
+        for p, m in keep:
+            try:
+                with np.load(p) as d:
+                    t, takeover = rollout_timeline(d)
+                fps = int(m["fps"])
+                if not len(t) or fps <= 0:
+                    raise ValueError("expected a nonempty trial and positive fps")
+                runs, pre, dropped = segment_plan(t, takeover, fps, min_s, pre_s)
+            except (ValueError, KeyError, TypeError) as exc:
+                sys.exit(f"{p.name}: {exc}")
+            holds += int(np.count_nonzero(takeover == 2))
+            short += dropped
+            if runs:
+                plans[p] = t, takeover, runs, pre
+        keep = [(p, m) for p, m in keep if p in plans]
+        if not keep:
+            # Do not replace an existing dataset if none of the runs survive.
+            segment_summary(trials, [], holds, short, 1, 0, 0)
+            for n, why in skipped:
+                print(f"  skipped {n}: {why}")
+            sys.exit("nothing to export")
 
     m0 = keep[0][1]
     fps, cams = int(m0["fps"]), list(m0["cameras"])
@@ -177,8 +257,10 @@ def run(cfg: Config, args):
         if (robot_type(m) != robot_type(m0) or bool(m.get("fake")) != bool(m0.get("fake"))
                 or (m.get("robot") or {}).get("semantics") != (m0.get("robot") or {}).get("semantics")):
             sys.exit(f"{p.name}: robot or observation semantics differ from the first episode")
-    with np.load(keep[0][0]) as d:
-        shape = frame_layout(d, cams)
+    first = keep[0][0]
+    first_run = plans[first][2][0][0] if segments else slice(0, 1)
+    with np.load(first) as d:
+        shape = frame_layout(d, cams, first_run.start)
 
     joints = m0.get("joint_names") or []
     if any((m.get("joint_names") or []) != joints for _, m in keep[1:]):
@@ -198,13 +280,15 @@ def run(cfg: Config, args):
                 **{f"observation.images.{c}": {"dtype": kind, "shape": shape[c], "names": ["height", "width", "channels"]}
                    for c in cams}}
     if labeled:
-        features.update(ROLLOUT_FEATURES)
+        features.update(SEGMENT_FEATURES if segments else ROLLOUT_FEATURES)
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
     if out.exists():
         shutil.rmtree(out)
     ds = LeRobotDataset.create(repo_id=repo_id, fps=fps, features=features, root=out,
                                robot_type=rtype, use_videos=not args.images)
     total, takeover_seconds, results = 0, 0.0, []
+    provenance, human, pre_frames, episodes = [], 0, 0, 0
+    label_keys = SEGMENT_FEATURES if segments else ROLLOUT_FEATURES
     grasp_cfg = settings(cfg) if rollouts else None
     for p, m in keep:
         with np.load(p) as d:
@@ -212,31 +296,57 @@ def run(cfg: Config, args):
             if not len(q) or q.shape != a.shape or q.shape != (len(q), dim):
                 sys.exit(f"{p.name}: expected matching state and action arrays with {dim} joints")
             labels = [()] * len(q)
+            runs = [(slice(None), None, None)]
+            result = (True, None, None)
             if rollouts:
                 try:
-                    labels, report = rollout_labels(d, m, q, a, gi, args, grasp_cfg)
+                    if segments:
+                        t, takeover, runs, pre = plans.pop(p)
+                        if len(t) != len(q):
+                            raise ValueError("invalid frame timestamps or takeover labels")
+                    else:
+                        t, takeover = rollout_timeline(d, len(q))
+                    labels, report = rollout_labels(d, m, q, a, gi, args, grasp_cfg, t, takeover)
                 except (ValueError, IndexError, KeyError) as exc:
                     sys.exit(f"{p.name}: {exc}")  # includes the source trial for malformed labels
-                results.append((m["result"] == "success", report["miss_count"], report["unknown_closes"]))
-                takeover_seconds += m.get("takeover_seconds", float(np.count_nonzero(labels[:, 0] == 1)) / fps)
+                result = (m["result"] == "success", report["miss_count"], report["unknown_closes"])
+                if segments:
+                    labels = np.column_stack((labels, pre))
+                else:
+                    takeover_seconds += m.get("takeover_seconds", float(np.count_nonzero(takeover == 1)) / fps)
             elif binary:
                 a[:, gi] = binarize(a[:, gi], args.close_above, args.open_below)
                 if labeled:
                     labels = np.zeros((len(q), len(ROLLOUT_FEATURES)), np.uint8)
-                    results.append((True, None, None))
-            streams = [frames(d, c) for c in cams]
-            for qi, ai, tags, *imgs in zip(q, a, labels, *streams, strict=True):
-                if any(im.shape != shape[c] for c, im in zip(cams, imgs, strict=True)):
-                    sys.exit(f"{p.name}: decoded camera size differs from the first episode")
-                ds.add_frame({"observation.state": qi, "action": ai, "task": m["instruction"],
-                              **{f"observation.images.{c}": im for c, im in zip(cams, imgs, strict=True)},
-                              **{key: np.array([value], dtype=np.uint8) for key, value in zip(ROLLOUT_FEATURES, tags, strict=False)}})
-        ds.save_episode(parallel_encoding=not labeled)
-        total += len(q)
-        print(f"  {p.name}: {len(q)} frames  \"{m['instruction']}\"", flush=True)
+            # Read each compressed camera stream once per trial, even across multiple segments.
+            cameras = [(d[f"{c}_offsets"], d[f"{c}_jpeg"]) for c in cams]
+            if any(len(off) != len(q) + 1 for off, _ in cameras):
+                sys.exit(f"{p.name}: camera frame count differs from state frame count")
+            written = 0
+            for run, source, index in runs:
+                start, end, _ = run.indices(len(q))
+                streams = [decode_frames(off, blob, start, end) for off, blob in cameras]
+                for qi, ai, tags, *imgs in zip(q[run], a[run], labels[run], *streams, strict=True):
+                    if any(im.shape != shape[c] for c, im in zip(cams, imgs, strict=True)):
+                        sys.exit(f"{p.name}: decoded camera size differs from the first episode")
+                    ds.add_frame({"observation.state": qi, "action": ai, "task": m["instruction"],
+                                  **{f"observation.images.{c}": im for c, im in zip(cams, imgs, strict=True)},
+                                  **{key: np.array([value], dtype=np.uint8)
+                                     for key, value in zip(label_keys, tags, strict=labeled)}})
+                ds.save_episode(parallel_encoding=not labeled)
+                episodes += 1
+                written += end - start
+                if labeled:
+                    results.append(result)
+                if segments:
+                    provenance.append((source, p.name, t[start], index))
+                    human += end - start if source == SEGMENT_SOURCES[1] else 0
+                    pre_frames += int(pre[run].sum())
+        total += written
+        print(f"  {p.name}: {written} frames  \"{m['instruction']}\"", flush=True)
     ds.finalize()
     if labeled:
-        label_episodes(out, results, "rollout" if rollouts else "demonstration")
+        label_episodes(out, results, "rollout" if rollouts else "demonstration", provenance if segments else None)
     write_framing(out / "meta" / FRAMING_FILE, recorded_framing)
     if binary and gi is not None:
         (out / "gripper.json").write_text(json.dumps({
@@ -245,8 +355,10 @@ def run(cfg: Config, args):
             "close_above": args.close_above, "open_below": args.open_below}, indent=1))
         print(f"binary gripper: closed above {args.close_above} deg, open below {args.open_below} deg; "
               f"deploy open {args.open_deg} deg, closed {args.close_deg} deg")
-    print(f"exported {len(keep)} episodes, {total} frames ({total / fps / 60:.1f} min) to {out} (repo_id {repo_id}, {fps} fps)")
-    if rollouts:
+    print(f"exported {episodes} episodes, {total} frames ({total / fps / 60:.1f} min) to {out} (repo_id {repo_id}, {fps} fps)")
+    if segments:
+        segment_summary(trials, [s[0] for s in provenance], holds, short, fps, human, pre_frames)
+    elif rollouts:
         print(f"  {sum(r[0] for r in results)} successes, {takeover_seconds:.2f} takeover seconds, "
               f"{sum(r[1] or 0 for r in results)} grasp misses; "
               f"{sum(r[1] is None for r in results)} trials without calibration, "

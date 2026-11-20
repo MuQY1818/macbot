@@ -281,6 +281,37 @@ Before merging with LeRobot, match fps, robot and joint order, camera keys, imag
 Keep the verified framing and `gripper.json` sidecars with the merged dataset. Compute advantages on
 the training machine.
 
+#### Export training segments for DAgger and advantage conditioning
+
+```bash
+macbot export --rollouts --segments --min-segment-s 1.0 --pre-takeover-s 1.7
+```
+
+Without `--segments`, each trial is still exported as one episode. Segment export applies three rules:
+
+1. Drop `takeover=2` frames. Alignment, holds, soft starts and leader dropouts record the control
+   system's handover behavior, which should not become a training target.
+2. Write each uninterrupted policy run (`0`) or human run (`1`) as a separate episode. This keeps
+   action chunks on one side of a handover, including an immediate return from human to policy.
+   Frame indices and timestamps restart at zero in each episode. LeRobot pads chunks at the
+   episode end; use `action_is_pad` to mask padding or select only full chunks in training.
+3. Add `pre_takeover` (`uint8`). It marks policy frames within `--pre-takeover-s` of the next
+   takeover request in the original trial (default 1.7 s, about 50 frames at 30 fps), so training can
+   identify the behavior leading up to intervention. Recordings lack button timestamps, so the window
+   ends at the first sampled transition from policy to alignment or human control. A leader dropout
+   during human control does not start another window. Set the window to `0` to disable marking.
+
+Runs with fewer than `--min-segment-s` seconds at the recorded frame rate (`frames / fps`, default
+1.0 s) are dropped. Each remaining episode has `source="rollout_policy"` or `"rollout_human"`,
+`trial_name` (the NPZ filename), `original_start_time` (seconds from trial start), and `segment_index`
+(zero-based among policy and human runs before dropping short runs). Reviewed `success` and the grasp
+counts refer to the whole trial. Excluded trials stay excluded, and `grasp_miss` and `hand_mark` stay
+aligned to the retained frames. The summary reports included trials, segments by source, label-2
+frames and short segments dropped, and human seconds and pre-takeover frames retained.
+
+Segment exports add a column that `--with-rollout-labels` does not write. For a schema-matched merge
+with demonstrations, add a zero `uint8` `pre_takeover` column with shape `(1,)` to the demonstrations.
+
 `macbot bench --policy DIR` times inference on this Mac with blank images.
 
 ## Fake hardware
