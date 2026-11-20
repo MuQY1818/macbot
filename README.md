@@ -104,6 +104,8 @@ back to [macbot/default.yaml](https://github.com/MuQY1818/macbot/blob/main/macbo
   ~70 ms saved); `torch.compile` on the denoising step and the language model cuts per-kernel dispatch
   overhead (~410 → ~280 ms); the random weight initialization that the checkpoint overwrites anyway is
   skipped, which saves about 80 s per load.
+- **Optional π0.5 on MLX.** See the [inference benchmarks](docs/acceleration.md) for recorded-observation
+  latency, action fidelity, and the checkpoint requirements.
 - **Files written as root** are handed back to the user who ran `sudo`.
 
 ## Contributing
