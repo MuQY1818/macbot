@@ -6,7 +6,7 @@
 |---|---|---|
 | `rebot_b601` | Seeed reBot B601-RS follower and Arm 102 leader | Tested on hardware on Apple silicon. |
 | `lerobot` | SO-100/101, Koch, OMX, OpenArm, YAM and other compatible LeRobot arms | Configured through LeRobot. Fake mode only: the SO-101 collect/export path was exercised; other arms have layout support or can supply `robot.joints`. No hardware validation. |
-| `sim` | SO-101 tabletop in MuJoCo | Collection, export, ACT inference and replay run end to end with random weights. Synthetic keyboard input completed a task; trained policy success is not verified. |
+| `sim` | SO-101 tabletop in MuJoCo | Workflow verified in simulation. Trained ACT completed 0/50 tasks; synthetic keyboard input completed one. |
 
 Run `macbot robots` to list registered LeRobot types. The list reflects installed packages;
 it is not a list of validated arms. Generic followers must accept joint-position (`.pos`)

@@ -61,7 +61,7 @@ lerobot-train --dataset.repo_id=local/so101-tabletop --dataset.root=./dataset --
   --output_dir=./act-tabletop
 macbot --config tabletop.yaml eval \
   --policy ./act-tabletop/checkpoints/last/pretrained_model \
-  --backend torch --mode chunk --k 30 --episodes 50 --seed 1000 --out ./trials
+  --backend torch --mode chunk --k 30 --episodes 50 --seed 1000 --trace-only --out ./trials
 macbot --config tabletop.yaml health --data ./trials
 macbot --config tabletop.yaml replay --dir ./trials
 ```
@@ -76,3 +76,15 @@ macbot --config tabletop.yaml replay --dir ./trials
 `eval_*.json` 保存每个种子的结果、平均回合长度和成功率的 95% Wilson 区间。
 当四个方块的中心都通过盒内判定时，场景记为成功；默认上限为 3,600 步。
 仿真成功不代表真机成功，仿真与真机数据应分开存放。
+
+## 实测结果
+
+脚本专家在种子 0–49 的 50 次尝试中成功 34 次（68.0%，95% Wilson 区间 54.2%–79.2%）。
+34 条成功回合提供了 35,039 帧训练数据。在 Apple M5 Pro 上使用 PyTorch MPS FP32
+和批大小 8 训练 ACT，5,000 步耗时 19 分 58 秒。
+
+用 30 步动作块在种子 1000–1049 评估，训练后策略的完整任务成功数为 **0/50**
+（95% Wilson 区间 0–7.1%），平均回合长度为 3,600 步。随机初始化的 ACT
+在相同种子和设置下也成功 0/50（95% Wilson 区间 0–7.1%，平均 3,600 步）。
+流程已跑通；
+这次训练得到的策略未能把四个方块全部放入盒中。
