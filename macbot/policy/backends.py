@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import platform
+import subprocess
 from dataclasses import dataclass
 from importlib.util import find_spec
 from typing import NamedTuple
@@ -31,11 +32,20 @@ class Qualification:
     modes: frozenset[str]
     compiled: bool
     packages: tuple[tuple[str, str], ...]
+    macos: str | None = None
 
 
 # Entries must link to a trained public checkpoint and matched fidelity and latency
 # results in docs/acceleration.md. Results from private checkpoints do not transfer.
-QUALIFIED: dict[str, tuple[Qualification, ...]] = {}
+QUALIFIED: dict[str, tuple[Qualification, ...]] = {
+    "smolvla": (
+        Qualification(
+            "mlx", "2eb08d204c50cd22492c3cb0494bb49e54e4b2811837a8b44ee539417525adf9",
+            "Mac17,9", frozenset({"chunk"}), True,
+            (("lerobot", "0.7.0"), ("torch", "2.11.0"), ("mlx", "0.32.4")), "27.0.1",
+        ),
+    ),
+}
 
 
 @dataclass(frozen=True)
@@ -66,8 +76,6 @@ def checkpoint_digest(path):
 
 
 def machine_model():
-    import subprocess
-
     return subprocess.check_output(["sysctl", "-n", "hw.model"], text=True).strip()
 
 
@@ -108,9 +116,13 @@ def select_backend(requested, path, metadata, args, *, bench=False):
     from importlib.metadata import PackageNotFoundError, version
 
     compiled = not getattr(args, "no_compile", False)
-    machine = machine_model()
+    try:
+        machine = machine_model()
+    except (OSError, subprocess.SubprocessError):
+        return fallback("Mac model could not be confirmed")
     applicable = [row for row in rows if row.backend == capability.name and mode in row.modes
-                  and row.machine == machine and row.compiled == compiled]
+                  and row.machine == machine and row.compiled == compiled
+                  and (row.macos is None or row.macos == platform.mac_ver()[0])]
     if not applicable:
         return fallback(f"no qualified {mode} result on this Mac with these compiler settings")
     try:

@@ -57,3 +57,7 @@ def test_smolvla_caches_cross_attention_and_predicts_a_chunk():
     assert not np.array_equal(np.array(a[1][0][:, :, -1]), np.array(b[1][0][:, :, -1]))
     actions = net.velocity(mx.zeros((1, 5, 3)), mx.ones((1, 6)), b)
     assert actions.shape == (1, 5, 3) and np.isfinite(np.array(actions)).all()
+    changed_noise = mx.concatenate((mx.zeros((1, 3, 3)), mx.ones((1, 2, 3))), axis=1)
+    changed = net.velocity(changed_noise, mx.ones((1, 6)), b)
+    np.testing.assert_allclose(np.array(actions[:, :3]), np.array(changed[:, :3]), atol=1e-6)
+    assert not np.allclose(np.array(actions[:, 3:]), np.array(changed[:, 3:]))

@@ -44,6 +44,7 @@ def _to_obs(torch, imgs: dict, q, task: str, rename: dict | None = None):
 class ACT:
     kind = "act"
     supports_rtc = False
+    single_readback = False
 
     def __init__(self, path: Path, device: str, task: str):
         import torch
@@ -64,7 +65,7 @@ class ACT:
         torch = self.torch
         with torch.inference_mode():
             a = self.post(self.pol.predict_action_chunk(self.pre(_to_obs(torch, imgs, q, self.task))))
-        if self.device == "mps":
+        if self.device == "mps" and not self.single_readback:
             torch.mps.synchronize()
         return a.squeeze(0).float().cpu().numpy()
 

@@ -47,6 +47,7 @@ from .models import (
     prep_image,
     use_generic,
 )
+from .torch_options import TorchOptions
 
 CAM_STALL_S = 0.5
 HOME_RAMP_S = 0.6                                         # homing speeds up over this time
@@ -124,6 +125,7 @@ class State:
         self.replay_transition = False
         self.executor = ""
         self.backend_selection = None
+        self.torch_options = None
         self.gripper, self.robot_info, self.limits = None, {}, {}
         self.binary_gripper = False
         self.watch = MotorWatch(cfg["safety"])
@@ -264,6 +266,8 @@ def save_rollout(st: State, rec: dict, result: str):
         meta["policy_hub"] = policy_hub
     if (selection := st.backend_selection) is not None:
         meta.update(backend=selection.backend, backend_requested=selection.requested, backend_reason=selection.reason)
+    if st.torch_options is not None:
+        meta["torch_options"] = vars(st.torch_options)
     record_motor_meta(rec, meta)
     if "grasp_miss" in st.cfg["robot"]:
         meta["grasp_miss_profile"] = st.cfg["robot"]["grasp_miss"]
@@ -401,11 +405,18 @@ def _control(st, srv, fps, gripper, cleanup):
         st.q = st.cmd = [0.0] * n_j
     gi = robot.gripper_index
     metadata = json.loads((args.policy / "config.json").read_text())
-    selection = select_backend(policy_backend(cfg, args), args.policy, metadata, args)
+    kind = metadata.get("type", "act")
+    requested = policy_backend(cfg, args)
+    experiments = TorchOptions.from_args(args)
+    experiments.validate(requested, kind, args.device)
+    if experiments != TorchOptions():
+        st.torch_options = experiments
+    if experiments.single_readback and getattr(args, "policy_impl", "auto") == "generic":
+        sys.exit("--torch-single-readback requires the built-in ACT wrapper")
+    selection = select_backend(requested, args.policy, metadata, args)
     st.backend_selection = selection
     backend = selection.backend
     selection.announce()
-    kind = metadata.get("type", "act")
     generic = use_generic(kind, getattr(args, "policy_impl", "auto"), backend)
     mapped_mlx = backend == "mlx" and kind != "pi05"
     if generic or mapped_mlx:
@@ -437,6 +448,7 @@ def _control(st, srv, fps, gripper, cleanup):
                           mlx_bits=args.mlx_bits, mlx_quantize=args.mlx_quantize, mlx_time_grid=args.mlx_time_grid)
     else:
         pol = load_policy(args.policy, args.device, cfg["task"]["instruction"], args.steps)
+    experiments.install(pol)
     if (mapped_mlx or not generic and pol.kind == "pi05") and not args.no_compile:
         pol.enable_compile()
         compiler = "mx.compile" if backend == "mlx" else "torch.compile"

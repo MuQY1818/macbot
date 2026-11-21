@@ -20,8 +20,10 @@ All notable changes to macbot will be documented here. This project follows
 - `bench --mode rtc` times guided inference for RTC-capable backends without connecting a robot.
 - Experimental π0 MLX backend for 224px PaliGemma 2B checkpoints, with chunk and guided RTC paths.
   Trained checkpoint fidelity and speed are not verified; `auto` does not select it.
-- Experimental SmolVLA MLX chunks for the stock SmolVLM2-500M architecture.
-  Trained checkpoint fidelity and speed are not verified; `auto` does not select it.
+- SmolVLA MLX chunks for the stock SmolVLM2-500M architecture. The public base checkpoint
+  qualifies for `auto` in the documented runtime and synchronous chunk mode.
+- Explicit PyTorch MPS experiments for ACT and Diffusion: autocast (potentially lossy), convolution
+  layout, single readback on ACT, and compilation on Diffusion. Existing defaults are unchanged.
 
 ### Changed
 

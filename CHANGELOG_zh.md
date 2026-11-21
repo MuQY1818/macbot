@@ -20,8 +20,10 @@ macbot 的主要变更记录在这里。本项目遵循
 - `bench --mode rtc` 可为支持 RTC 的后端测量有引导推理耗时，无需连接机器人。
 - 实验性 π0 MLX 后端，面向 224 像素 PaliGemma 2B checkpoint，提供分块和 RTC 引导路径。
   尚未核验训练权重的保真度和速度，`auto` 不会选用。
-- 实验性 SmolVLA MLX 分块后端，支持标准 SmolVLM2-500M 结构。
-  尚未核验训练权重的保真度和速度，`auto` 不会选用。
+- SmolVLA MLX 分块后端，支持标准 SmolVLM2-500M 结构。公开基座 checkpoint 在文档注明
+  的运行环境和同步分块模式下通过 `auto` 验证。
+- 增加 ACT 和 Diffusion 的 PyTorch MPS 实验选项：混合精度（可能有损）、卷积权重布局、
+  ACT 单次回读和 Diffusion 编译。原有默认行为不变。
 
 ### 变更
 

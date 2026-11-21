@@ -120,17 +120,23 @@ class SmolNetwork:
         h = self.linear(mx.concatenate((x, t), axis=-1), "action_time_mlp_in")
         x = self.linear(nn.silu(h), "action_time_mlp_out")
         after_prefix = cache[0][0].shape[-2]
+        # The prefix is visible to every action; self-attention in the suffix is causal.
+        iota = mx.arange(x.shape[1])
+        suffix_mask = iota[None, :] <= iota[:, None]
+        self_mask = mx.concatenate((mx.ones((x.shape[1], after_prefix), dtype=mx.bool_), suffix_mask), axis=-1)
         for i, (prefix_k, prefix_v) in enumerate(cache):
             root = f"{_EXPERT}layers.{i}."
             h = self.rms(x, root + "input_layernorm")
             if i % 2:
                 q = self.rope(self.heads(self.linear(h, root + "self_attn.q_proj")), 0)
                 k, v = prefix_k, prefix_v
+                mask = None
             else:
                 q, k, v = map(self.heads, self.project(h, root + "self_attn."))
                 q, k = self.rope(q, after_prefix), self.rope(k, after_prefix)
                 k, v = mx.concatenate((prefix_k, k), axis=2), mx.concatenate((prefix_v, v), axis=2)
-            x = self.residual(x, self.attention(q, k, v), root)
+                mask = self_mask
+            x = self.residual(x, self.attention(q, k, v, mask), root)
         return self.linear(self.rms(x, _EXPERT + "norm"), "action_out_proj").astype(mx.float32)
 
 

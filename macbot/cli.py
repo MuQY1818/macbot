@@ -216,6 +216,14 @@ def _backend_args(parser):
                         help="MLX Euler schedule; quadratic is an opt-in lossy experiment")
     parser.add_argument("--mlx-quantize", choices=["prefix", "expert", "both"], default="prefix",
                         help="weight groups to quantize with --mlx-bits")
+    parser.add_argument("--torch-autocast", choices=["fp16", "bf16"],
+                        help="potentially lossy ACT/Diffusion MPS autocast experiment")
+    parser.add_argument("--torch-channels-last", action="store_true",
+                        help="experimental ACT/Diffusion MPS Conv2d weight layout")
+    parser.add_argument("--torch-compile", action="store_true",
+                        help="experimental Diffusion MPS torch.compile (ACT is unsupported)")
+    parser.add_argument("--torch-single-readback", action="store_true",
+                        help="experimental ACT MPS: synchronize through CPU readback only")
 
 
 def main(argv=None):

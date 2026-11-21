@@ -43,11 +43,11 @@ macbot --config robot.yaml run --policy path/to/pretrained_model --fake --autost
 ```
 
 For `lerobot/smolvla_base`, include a third 256 × 256 camera mapped to `camera3`.
-The experimental SmolVLA MLX backend supports the stock SmolVLM2-500M geometry and
-chunk execution. Its trained checkpoint fidelity and speed are not verified.
+The SmolVLA MLX backend supports the stock SmolVLM2-500M geometry and chunk execution.
+The public base checkpoint qualifies for automatic selection in the tested configuration.
 For the tested two-camera X-VLA checkpoint, map `top` and `wrist` to `image` and `image2`.
 
-The experimental π0 `--backend mlx` path accepts a stock 224px PaliGemma 2B checkpoint
+The experimental π0 `--backend mlx` path accepts a stock 224px PaliGemma 2B checkpoint with absolute actions
 and uses `policy.camera_map` and the saved processors. It provides `--mode chunk` and
 guided `--mode rtc`, and defaults to chunks. Trained checkpoint fidelity and speed are
 not verified. Use offline checks and `--fake` to evaluate it.

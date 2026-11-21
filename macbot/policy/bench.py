@@ -14,6 +14,7 @@ from ..system import expand
 from .backends import select_backend
 from .models import load_generic, load_mapped_mlx, load_policy, policy_backend, raw_state_shape, use_generic
 from .profile import MLXStages, TorchStages
+from .torch_options import TorchOptions
 
 
 def run(cfg: Config, args):
@@ -21,10 +22,15 @@ def run(cfg: Config, args):
     metadata = json.loads((path / "config.json").read_text())
     state = raw_state_shape(path, metadata) or [7]
     q = [0.0] * state[0]
-    selection = select_backend(policy_backend(cfg, args), path, metadata, args, bench=True)
+    kind = metadata.get("type", "act")
+    requested = policy_backend(cfg, args)
+    experiments = TorchOptions.from_args(args)
+    experiments.validate(requested, kind, args.device)
+    if experiments.single_readback and getattr(args, "policy_impl", "auto") == "generic":
+        sys.exit("--torch-single-readback requires the built-in ACT wrapper")
+    selection = select_backend(requested, path, metadata, args, bench=True)
     selection.announce()
     backend = selection.backend
-    kind = metadata.get("type", "act")
     generic = use_generic(kind, getattr(args, "policy_impl", "auto"), backend)
     mapped_mlx = backend == "mlx" and kind != "pi05"
     steps = getattr(args, "steps", None)
@@ -41,6 +47,7 @@ def run(cfg: Config, args):
         pol = load_policy(path, args.device, cfg["task"]["instruction"], steps)
     else:
         pol = load_policy(path, args.device, cfg["task"]["instruction"])
+    experiments.install(pol)
     if (mapped_mlx or not generic and pol.kind == "pi05") and not args.no_compile:
         pol.enable_compile()
         print(f"{'mx.compile' if backend == 'mlx' else 'torch.compile'} on; the first calls compile", flush=True)
@@ -82,6 +89,8 @@ def run(cfg: Config, args):
         if sys.platform != "darwin":
             rss *= 1024
         print(f"Peak process RSS: {rss / 2**30:.2f} GiB; MLX allocation peak: {mx.get_peak_memory() / 2**30:.2f} GiB")
+        if mapped_mlx and not getattr(args, "profile", False):
+            return
         stages = MLXStages(mx)
         for _ in range(args.n):
             pol(imgs, q, stage=stages, **call_kwargs)

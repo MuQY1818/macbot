@@ -10,16 +10,44 @@ An optimization is **lossless** for a tested configuration when, using the same 
 starting noise or seed, its actions stay within documented tolerances against an FP32 CPU
 reference or the stated existing BF16/FP16 reference. Mean and p99 joint error in degrees
 and gripper error must each be no larger than the same statistic between two reference
-runs with different seeds. For a deterministic policy the seed spread is zero. Weight
+runs with different seeds. If a policy is deterministic and the measured seed spread is
+zero, use an absolute tolerance instead: mean and p99 joint error ≤ 0.01° and mean and
+p99 gripper error ≤ 0.1% of the documented gripper range. Weight
 quantization, fewer denoising steps and visual token dropping are lossy options.
 
 `--backend auto` is opt-in. It selects an alternative only for a matching checkpoint,
 machine, runtime, compile setting and execution mode with published evidence. It prints
-the choice or a one-line reason for falling back to PyTorch. No published checkpoint
-currently meets this batch's selection criteria; the historical π0.5 results below
-describe their tested checkpoint. Use `--backend mlx` to request MLX explicitly.
+the choice or a one-line reason for falling back to PyTorch. The qualified public
+checkpoint below uses MLX for synchronous chunks. Use `--backend mlx` to request it explicitly.
 The default backend and the default execution modes for explicit backends are unchanged.
 `bench --mode rtc` measures guided calls with a fixed leftover chunk and no robot.
+
+SmolVLA qualification: `lerobot/smolvla_base` revision
+`5e8d12a6e2975b0e5e5fce7c8caf47c371d257b6`, Mac17,9 (Apple M5 Pro),
+macOS 27.0.1, PyTorch 2.11.0, MLX 0.32.4, LeRobot 0.7.0. One 50-action chunk
+with 10 denoising steps, three 256 × 256 RGB views, saved processors, five warm-ups
+and 50 timed calls. The synthetic observations exercise the complete inference path;
+no robot is involved. The FP32 CPU reference strictly loads all weights from the checkpoint.
+The absolute caps for this comparison are 0.01° joint error and 0.01 gripper units for
+each statistic, in addition to the measured seed spread.
+
+| Backend | Median / p90 ms | Joint mean / p99 ° | Gripper mean / p99 |
+|---|---:|---:|---:|
+| Torch CPU FP32 | 1195.22 / 1411.72 | Reference | Reference |
+| Torch CPU FP32, other seed | 1067.91 / 1095.52 | 0.31330 / 1.47535 | 0.41570 / 2.23537 |
+| Torch MPS, BF16 backbone | 295.70 / 307.56 | 0.00387 / 0.01744 | 0.00478 / 0.03623 |
+| MLX FP16, compiled | 52.76 / 53.24 | 0.00062 / 0.00258 | 0.00059 / 0.00315 |
+
+## PyTorch MPS experiments
+
+For ACT or Diffusion on MPS, `--torch-channels-last` changes the layout of Conv2d
+weights, and `--torch-autocast fp16` or `bf16` changes inference precision and can
+be lossy. `--torch-single-readback` drops ACT's redundant explicit device barrier.
+`--torch-compile` experiments with compiling Diffusion's denoiser. ACT compilation
+is disabled after the tested MPS build failed to generate its Metal kernels.
+These flags are opt-in and excluded from `auto`. The Diffusion action queue and scheduler
+are unchanged. The offline runner `python -m tools.accel.compare_backend --help` can
+compare matched-input action chunks without opening robot or camera devices.
 
 ## Try it offline
 

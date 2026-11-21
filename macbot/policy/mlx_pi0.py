@@ -42,12 +42,17 @@ class PI0MLX(GuidedMLXFlow, MLXChunkIO):
     kind = "pi0"
 
     def __init__(self, path, task, steps=None, *, dtype=mx.float16, **io):
+        from importlib import import_module
+
         from lerobot.policies.common.vla_utils import create_sinusoidal_pos_embedding
 
+        import_module("lerobot.policies.pi0.processor_pi0")
         super().__init__(path, task, **io)
         config = self.config
         if config.paligemma_variant != "gemma_2b" or tuple(config.image_resolution) != (224, 224):
             raise ValueError("MLX pi0 requires the stock 224px Gemma 2B prefix")
+        if config.use_relative_actions:
+            raise ValueError("MLX pi0 requires an absolute-action checkpoint")
         self.steps = config.num_inference_steps if steps is None else steps
         if self.steps < 1:
             raise ValueError("At least one denoising step is required")
