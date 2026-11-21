@@ -6,6 +6,8 @@
 [SO-101 示例配置](../configs/so101_sim.yaml) 开始。首次运行会下载并执行固定版本的
 EnvHub Python 代码并加载 MuJoCo 资源；启用 `trust_remote_code` 前请先审阅。
 场景包含一条 SO-101 仿真机械臂、四个方块和一个盒子。
+macOS 会打印选用的离屏渲染器。默认使用硬件 CGL；如果创建失败，会告警并尝试软件渲染。
+软件渲染时，遥操作可能显著慢于场景的 30 Hz 时钟。
 
 ```bash
 pip install 'macbot[sim]'               # 或在源码目录运行 pip install -e '.[sim]'
@@ -51,7 +53,7 @@ macbot --config tabletop.yaml export --data ./demos --out ./dataset
 
 ```bash
 pip install 'lerobot[training]==0.7.0'
-lerobot-train --dataset.repo_id=local/so101-tabletop --dataset.root=./dataset \
+lerobot-train --dataset.repo_id=local/so101-tabletop --dataset.root=./dataset --dataset.video_backend=pyav \
   --policy.type=act --policy.device=mps --policy.push_to_hub=false \
   --policy.chunk_size=30 --policy.n_action_steps=30 \
   --steps=5000 --save_freq=1000 --batch_size=8 --num_workers=0 \

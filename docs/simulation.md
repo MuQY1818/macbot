@@ -6,6 +6,9 @@ Install on an Apple silicon Mac with Python 3.12 or later. Start from the
 [SO-101 example config](../configs/so101_sim.yaml). First use downloads and
 runs the pinned EnvHub Python code and MuJoCo assets; review them before enabling
 `trust_remote_code`. The scene puts an SO-101, four cubes, and a box on the table.
+On macOS the simulator prints the offscreen renderer it selected. Hardware CGL
+is the default; if it cannot create that context, it warns and tries software rendering.
+Software rendering can make teleoperation much slower than the 30 Hz scene clock.
 
 ```bash
 pip install 'macbot[sim]'               # or: pip install -e '.[sim]'
@@ -55,7 +58,7 @@ training progress and keep evaluation seeds separate from demonstration seeds.
 
 ```bash
 pip install 'lerobot[training]==0.7.0'
-lerobot-train --dataset.repo_id=local/so101-tabletop --dataset.root=./dataset \
+lerobot-train --dataset.repo_id=local/so101-tabletop --dataset.root=./dataset --dataset.video_backend=pyav \
   --policy.type=act --policy.device=mps --policy.push_to_hub=false \
   --policy.chunk_size=30 --policy.n_action_steps=30 \
   --steps=5000 --save_freq=1000 --batch_size=8 --num_workers=0 \

@@ -175,7 +175,8 @@ def run(cfg, args):
             result = "success" if row["success"] else "failure"
             name, _ = save_rollout(st, rec, result, simulation={**row, "delay_steps": args.delay_steps})
             rows.append({**row, "rollout": name})
-            print(f"seed {seed}: {result}, {row['steps']} steps, reward {row['reward']:g}", flush=True)
+            print(f"seed {seed}: {result}, {row['steps']} steps, "
+                  f"{row['steps'] / row['wall_seconds']:.1f} steps/s, reward {row['reward']:g}", flush=True)
             if args.videos:
                 from ..viz.video import run as video
 

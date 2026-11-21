@@ -279,7 +279,8 @@ class Recorder:
         return jpg.reshape(-1)
 
     def append_step(self, buf, row, cmd, elapsed, *, realtime):
-        late = realtime and elapsed > (len(buf["qpos"]) + 1) / self.st.fps
+        previous = buf["wall"][-1] if buf["wall"] else 0.0
+        late = realtime and elapsed - previous > 2 / self.st.fps
         row.update(action=cmd, wall=elapsed, late=late)
         for key, value in row.items():
             buf[key].append(value)
@@ -444,6 +445,7 @@ def _control(st, srv, T, open_browser=False):
         hz, soft = T["hz"], max(0.0, T["soft_start_s"])
         seed = T.get("seed") if st.sim_step_recording else None
         t_start = time.perf_counter()
+        deadline = t_start
         while not st.quit:
             tick = time.perf_counter()
             if st.sim:
@@ -460,7 +462,7 @@ def _control(st, srv, T, open_browser=False):
                         st.sim_outcome = None
                         st.key_sample = (0.0, frozenset())
                     st.command({"action": "start"}, scene_ready=True)
-                    tick = t_start
+                    tick = deadline = t_start
                 if robot.ended:
                     # Save the terminal frame sequence once; the next Start resets the scene.
                     st.command({"action": "save"})
@@ -485,7 +487,9 @@ def _control(st, srv, T, open_browser=False):
                                 recorder.append_step(buf, row, cmd, elapsed, realtime=True)
                                 st.sim_outcome = robot.outcome()
                                 buf["simulation"] = {"source": st.sim_input, "seed": seed, **st.sim_outcome}
-                    time.sleep(max(0.0, 1 / hz - (time.perf_counter() - tick)))
+                    now = time.perf_counter()
+                    deadline = max(deadline + 1 / hz, now)
+                    time.sleep(max(0.0, deadline - now))
                     continue
             q = robot.read()
             motors = robot.motor_telemetry()

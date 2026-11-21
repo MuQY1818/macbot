@@ -1,5 +1,6 @@
 """Simulation batch contracts without MuJoCo, a checkpoint download, or a GPU."""
 import json
+import sys
 from types import SimpleNamespace
 
 import numpy as np
@@ -7,7 +8,7 @@ import pytest
 
 from macbot.cli import main
 from macbot.policy import evaluate
-from macbot.robot import sim
+from macbot.robot import sim, sim_render
 from macbot.simulation import summary
 from macbot.viz.rollouts import Store
 
@@ -20,6 +21,36 @@ def test_wilson_endpoints():
 def test_eval_refuses_hardware_before_resolving_policy():
     with pytest.raises(SystemExit, match="eval requires robot.type: sim"):
         main(["--config", "configs/so101.yaml", "eval", "--policy", "unused"])
+
+
+def test_cgl_warns_and_tries_software_when_acceleration_is_unavailable(monkeypatch, capsys):
+    class CGLError(RuntimeError):
+        pass
+
+    attrs = ("OpenGLProfile", "ColorSize", "AlphaSize", "DepthSize", "StencilSize",
+             "Multisample", "SampleBuffers", "Sample", "Accelerated", "RendererID")
+    api = SimpleNamespace(
+        CGLError=CGLError, CGLContextObj=lambda: None,
+        CGLPixelFormatAttribute=SimpleNamespace(**{f"CGLPFA{a}": i for i, a in enumerate(attrs, 1)}),
+        CGLOpenGLProfile=SimpleNamespace(CGLOGLPVersion_Legacy=100),
+    )
+    gl = SimpleNamespace(GL_RENDERER=1, glGetString=lambda _: b"Apple Software Renderer")
+    monkeypatch.setitem(sys.modules, "mujoco.cgl", SimpleNamespace(cgl=api))
+    monkeypatch.setitem(sys.modules, "OpenGL.GL", gl)
+    formats = []
+
+    def select(self, values):
+        formats.append(values)
+        if len(formats) == 1:
+            raise CGLError("test hardware failure")
+
+    monkeypatch.setattr(sim_render.CGLContext, "_open", select)
+    sim_render.CGLContext(320, 240)
+    assert formats[0][-1] == api.CGLPixelFormatAttribute.CGLPFAAccelerated
+    assert formats[1][-2:] == [api.CGLPixelFormatAttribute.CGLPFARendererID, 0x00020400]
+    out = capsys.readouterr()
+    assert "trying slower software rendering" in out.err
+    assert "MuJoCo renderer: Apple Software Renderer" in out.out
 
 
 def test_eval_saves_seeded_normal_rollouts(tmp_path, monkeypatch, capsys):

@@ -8,6 +8,7 @@ import cv2
 
 from .base import Robot
 from .lerobot_generic import _config, joint_names
+from .sim_render import tabletop_renderer, use_tabletop_cgl
 from .telemetry import synthetic
 
 
@@ -42,6 +43,7 @@ class SimArm(Robot):
         self.teleop_type = self.teleop.get("type", "scripted")
         self.cartesian = None
         self._leader_connected = False
+        self.tabletop_cgl = use_tabletop_cgl(cfg.get("env"))
         if self.teleop_type not in {"scripted", "keyboard", "so101_leader"}:
             raise SystemExit("sim teleop.type must be scripted, keyboard, or so101_leader")
         self.follower = _make_sim(cfg.get("env"), cfg.get("task_id"))
@@ -99,7 +101,8 @@ class SimArm(Robot):
             self._leader_connected = True
             if not self.leader.is_calibrated:
                 raise SystemExit(f"calibration does not match {self.leader}; run lerobot-calibrate first")
-        self.follower.connect(calibrate=False)
+        with tabletop_renderer(self.tabletop_cgl):
+            self.follower.connect(calibrate=False)
         if leader and self.teleop_type == "keyboard":
             from .sim_cartesian import Cartesian, tabletop_world
 

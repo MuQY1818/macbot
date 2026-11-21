@@ -104,6 +104,6 @@ def run(cfg, args):
                 path = st._save(st.next_idx(), buf, st.instruction, batch=True)
             rows.append({**outcome, "steps": count, "wall_seconds": time.perf_counter() - start,
                          "episode": path.name if path else None})
-            print(f"seed {seed}: {'success' if outcome['success'] else 'failed'}, "
-                  f"{count} steps, reward {outcome['reward']:g}", flush=True)
+            print(f"seed {seed}: {'success' if outcome['success'] else 'failed'}, {count} steps, "
+                  f"{count / rows[-1]['wall_seconds']:.1f} steps/s, reward {outcome['reward']:g}", flush=True)
     write_summary(result_path(out, "demos"), rows, st.fps, scene=cfg["robot"]["env"], source="scripted")
