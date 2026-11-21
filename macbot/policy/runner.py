@@ -250,6 +250,8 @@ def save_rollout(st: State, rec: dict, result: str):
     meta.update(hand_marks=rec["hand_marks"], takeover_count=rec["takeover_count"],
                 takeover_seconds=round(rec["takeover_seconds"], 3), binary_gripper=st.binary_gripper,
                 safety=st.cfg["safety"])
+    if policy_hub := getattr(a, "policy_hub", None):
+        meta["policy_hub"] = policy_hub
     record_motor_meta(rec, meta)
     if "grasp_miss" in st.cfg["robot"]:
         meta["grasp_miss_profile"] = st.cfg["robot"]["grasp_miss"]

@@ -159,6 +159,15 @@ def cmd_health(args):
     run(_cfg(args), args)
 
 
+def _resolve_policy(args):
+    from .hub import resolve_policy
+
+    try:
+        args.policy, args.policy_hub = resolve_policy(args.policy)
+    except (ImportError, ValueError, OSError, RuntimeError) as exc:
+        raise SystemExit(str(exc)) from exc
+
+
 def cmd_run(args):
     cfg = _cfg(args)
     if not args.fake:
@@ -169,6 +178,7 @@ def cmd_run(args):
         except (OSError, ValueError, RuntimeError) as exc:
             raise SystemExit(str(exc)) from exc
         _preload(cfg)
+    _resolve_policy(args)
     from .policy.runner import run
     run(cfg, args)
 
@@ -184,6 +194,7 @@ def cmd_video(args):
 
 
 def cmd_bench(args):
+    _resolve_policy(args)
     from .policy.bench import run
     run(_cfg(args), args)
 
@@ -259,7 +270,7 @@ def main(argv=None):
     p.set_defaults(fn=cmd_health)
 
     p = sub.add_parser("run", help="run a policy on the robot (web page)")
-    p.add_argument("--policy", required=True, help="LeRobot pretrained_model folder")
+    p.add_argument("--policy", required=True, help="LeRobot pretrained_model folder or Hub model ID (owner/name[@revision])")
     p.add_argument("--mode", choices=["auto", "chunk", "ensemble", "async", "rtc", "step"], default="auto",
                    help="auto: ACT -> ensemble, torch pi0.5 -> rtc, MLX pi0.5 -> async, generic -> chunk or step")
     p.add_argument("--k", type=int, default=30, help="chunk mode: steps executed per chunk")
@@ -301,7 +312,7 @@ def main(argv=None):
     p.set_defaults(fn=cmd_video)
 
     p = sub.add_parser("bench", help="time policy inference")
-    p.add_argument("--policy", required=True)
+    p.add_argument("--policy", required=True, help="LeRobot pretrained_model folder or Hub model ID (owner/name[@revision])")
     p.add_argument("--device", default="mps")
     p.add_argument("-n", type=int, default=30)
     p.add_argument("--steps", type=int, help="pi0.5 denoising steps (default from checkpoint)")
