@@ -44,9 +44,9 @@ macbot run --policy ./pretrained_model       # or owner/model@revision
 macbot replay
 ```
 
-The reBot B601-RS is verified on hardware. The [SO-101 tabletop workflow](docs/simulation.md) is
-verified in simulation: the 5,000-step ACT checkpoint completed **0/50** tasks
-(PyTorch MPS FP32, 30-step chunks). See [robot support](docs/robots.md) for the scope of each profile.
+The reBot B601-RS is verified on hardware. The [SO-101 tabletop workflow](docs/simulation.md) runs
+end to end in simulation, from demonstrations and export through MPS training and seeded evaluation.
+A trained policy has not yet solved the task. See [robot support](docs/robots.md) for the scope of each profile.
 For π0.5, use an Apple silicon Mac with at least 32 GB of memory. See [policy support](docs/policies.md)
 for tested checkpoints.
 
