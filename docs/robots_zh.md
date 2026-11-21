@@ -6,7 +6,7 @@
 |---|---|---|
 | `rebot_b601` | Seeed reBot B601-RS 从臂与 Arm 102 主臂 | 已在 Apple 芯片 Mac 上验证真机。 |
 | `lerobot` | SO-100/101、Koch、OMX、OpenArm、YAM，以及其他兼容的 LeRobot 机械臂 | 通过 LeRobot 配置。仅 fake 模式：SO-101 已验证采集和导出；其他型号有内置关节布局或可提供 `robot.joints`。未验证真机。 |
-| `sim` | MuJoCo 中的 SO-101 桌面场景 | 已跑通示教、导出、MPS 训练和按种子评估。训练后的策略尚未完成任务。 |
+| `sim` | MuJoCo 中的 SO-101 桌面场景 | 已跑通遥操作、导出、到 GPU 机器训练及按种子评估的流程。 |
 
 运行 `macbot robots` 可列出已注册的 LeRobot 类型。列表取决于已安装的包，不代表验证结果。
 通用从臂必须接受关节位置（`.pos`）动作，并能观测这些关节。用于采集的主臂必须有相同的关节名。

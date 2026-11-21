@@ -45,8 +45,8 @@ macbot replay
 ```
 
 The reBot B601-RS is verified on hardware. The [SO-101 tabletop workflow](docs/simulation.md) runs
-end to end in simulation, from demonstrations and export through MPS training and seeded evaluation.
-A trained policy has not yet solved the task. See [robot support](docs/robots.md) for the scope of each profile.
+end to end in simulation: record and export demonstrations on the Mac, train on a GPU machine,
+then run seeded evaluation on the Mac. See [robot support](docs/robots.md) for the scope of each profile.
 For π0.5, use an Apple silicon Mac with at least 32 GB of memory. See [policy support](docs/policies.md)
 for tested checkpoints.
 

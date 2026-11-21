@@ -45,7 +45,7 @@ macbot replay
 ```
 
 reBot B601-RS 已做真机验证。[SO-101 桌面流程](docs/simulation_zh.md)已在仿真跑通，
-包括示教、导出、MPS 训练和按种子评估。训练后的策略尚未完成该任务。
+在 Mac 上采集和导出示教，在 GPU 机器上训练，再回到 Mac 按种子评估。
 各配置的验证范围见[机械臂支持](docs/robots_zh.md)。运行 π0.5 建议使用至少 32 GB 内存的 Apple 芯片 Mac。
 已测 checkpoint 见[策略支持](docs/policies_zh.md)。
 

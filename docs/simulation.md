@@ -54,18 +54,25 @@ macbot --config tabletop.yaml export --data ./demos --out ./dataset
 spawns can fail. It reports every attempt in `demos_*.json` and saves successful
 episodes by default. `--keep-failures` also saves the unsuccessful attempts.
 
-Train a local ACT checkpoint with LeRobot. This is a starting budget; check
-training progress and keep evaluation seeds separate from demonstration seeds.
+Transfer the complete exported `dataset` folder to a CUDA machine and train
+an ACT checkpoint there with LeRobot. Use `export --images` if you want to
+preserve the decoded recording pixels without another lossy encode.
 
 ```bash
 pip install 'lerobot[training]==0.7.0'
 lerobot-train --dataset.repo_id=local/so101-tabletop --dataset.root=./dataset --dataset.video_backend=pyav \
-  --policy.type=act --policy.device=mps --policy.push_to_hub=false \
+  --policy.type=act --policy.device=cuda --policy.push_to_hub=false \
   --policy.chunk_size=30 --policy.n_action_steps=30 \
   --steps=5000 --save_freq=1000 --batch_size=8 --num_workers=0 \
   --output_dir=./act-tabletop
+```
+
+Bring `act-tabletop/checkpoints/last/pretrained_model` back to the Mac as
+`./pretrained_model`. Evaluate it on seeds outside the demonstration set.
+
+```bash
 macbot --config tabletop.yaml eval \
-  --policy ./act-tabletop/checkpoints/last/pretrained_model \
+  --policy ./pretrained_model \
   --backend torch --mode chunk --k 30 --episodes 50 --seed 1000 --trace-only --out ./trials
 macbot --config tabletop.yaml health --data ./trials
 macbot --config tabletop.yaml replay --dir ./trials
@@ -84,17 +91,5 @@ when comparing runs.
 interval for the success rate. The scene succeeds when all four cube centers
 pass its box test; it times out at 3,600 steps by default. Simulation performance
 does not establish real robot performance. Keep simulation and hardware data separate.
-
-## Measured results
-
-The scripted expert completed 34 of 50 attempts, using reset seeds 0–49
-(68.0%, 95% Wilson interval 54.2–79.2%). The 34 successful episodes provided
-35,039 training frames. On an Apple M5 Pro, 5,000 ACT training steps took
-19 min 58 s, with batch size 8 and PyTorch MPS FP32.
-
-At 30 steps per action chunk, the trained checkpoint completed **0/50** full tasks
-on seeds 1000–1049 (95% Wilson interval 0–7.1%). Mean length was 3,600 steps.
-Randomly initialized ACT also completed 0/50 on the same seeds and settings
-(95% Wilson interval 0–7.1%; mean length 3,600 steps).
-The workflow ran end to end; this training budget did not produce a policy that
-could put all four cubes in the box.
+The workflow has run end to end. It does not establish that a trained policy
+solves the four-cube task.

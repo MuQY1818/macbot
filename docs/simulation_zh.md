@@ -50,17 +50,24 @@ macbot --config tabletop.yaml export --data ./demos --out ./dataset
 `--episodes` 指尝试次数。脚本读取场景位姿并用逆运动学抓放，困难的初始位置可能失败。
 `demos_*.json` 会记录每次尝试；默认只保存成功的示教，指定 `--keep-failures` 可保留失败回合。
 
-用 LeRobot 在本地训练 ACT。以下是起始预算，训练时请查看进度，评估应使用未出现在示教中的种子。
+把完整的 `dataset` 目录传到 CUDA 机器，在那里用 LeRobot 训练 ACT。
+如需保留录制画面的解码像素，导出时加 `--images`，避免再次进行有损编码。
 
 ```bash
 pip install 'lerobot[training]==0.7.0'
 lerobot-train --dataset.repo_id=local/so101-tabletop --dataset.root=./dataset --dataset.video_backend=pyav \
-  --policy.type=act --policy.device=mps --policy.push_to_hub=false \
+  --policy.type=act --policy.device=cuda --policy.push_to_hub=false \
   --policy.chunk_size=30 --policy.n_action_steps=30 \
   --steps=5000 --save_freq=1000 --batch_size=8 --num_workers=0 \
   --output_dir=./act-tabletop
+```
+
+将 `act-tabletop/checkpoints/last/pretrained_model` 带回 Mac，放在 `./pretrained_model`，
+使用未出现在示教中的种子评估。
+
+```bash
 macbot --config tabletop.yaml eval \
-  --policy ./act-tabletop/checkpoints/last/pretrained_model \
+  --policy ./pretrained_model \
   --backend torch --mode chunk --k 30 --episodes 50 --seed 1000 --trace-only --out ./trials
 macbot --config tabletop.yaml health --data ./trials
 macbot --config tabletop.yaml replay --dir ./trials
@@ -76,15 +83,4 @@ macbot --config tabletop.yaml replay --dir ./trials
 `eval_*.json` 保存每个种子的结果、平均回合长度和成功率的 95% Wilson 区间。
 当四个方块的中心都通过盒内判定时，场景记为成功；默认上限为 3,600 步。
 仿真成功不代表真机成功，仿真与真机数据应分开存放。
-
-## 实测结果
-
-脚本专家在种子 0–49 的 50 次尝试中成功 34 次（68.0%，95% Wilson 区间 54.2%–79.2%）。
-34 条成功回合提供了 35,039 帧训练数据。在 Apple M5 Pro 上使用 PyTorch MPS FP32
-和批大小 8 训练 ACT，5,000 步耗时 19 分 58 秒。
-
-用 30 步动作块在种子 1000–1049 评估，训练后策略的完整任务成功数为 **0/50**
-（95% Wilson 区间 0–7.1%），平均回合长度为 3,600 步。随机初始化的 ACT
-在相同种子和设置下也成功 0/50（95% Wilson 区间 0–7.1%，平均 3,600 步）。
-流程已跑通；
-这次训练得到的策略未能把四个方块全部放入盒中。
+流程已跑通；这并不代表训练后的策略已经能完成四方块任务。
