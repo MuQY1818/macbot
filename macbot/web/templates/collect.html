@@ -19,6 +19,12 @@
   #sim-shadow { position: absolute; width: 14px; height: 10px; border: 2px solid #e9fff9; border-radius: 50%;
     box-shadow: 0 0 0 1px #102726; transform: translate(-50%, -50%); pointer-events: none; }
   #sim-shadow::after { content: ""; position: absolute; inset: 2px 4px; background: #e9fff9; box-shadow: 0 0 0 1px #102726; }
+  @media (max-width: 760px) {
+    #views[tabindex] { flex-direction: row; gap: 8px; }
+    #views[tabindex] .view { flex: var(--ar, 1.333) 1 0; width: auto; }
+    #views[tabindex] .view .age { display: none; }
+    #views[tabindex] ~ .card .table-wrap { overflow-x: auto; }
+  }
 </style>
 </head>
 <body>
