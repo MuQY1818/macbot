@@ -79,6 +79,15 @@ def machine_model():
     return subprocess.check_output(["sysctl", "-n", "hw.model"], text=True).strip()
 
 
+def mlx_runtime_available():
+    try:
+        import mlx.core as mx
+
+        return mx.metal.is_available()
+    except (ImportError, OSError, RuntimeError):
+        return False
+
+
 def select_backend(requested, path, metadata, args, *, bench=False):
     if requested != "auto":
         return Selection(requested, requested, "configured")
@@ -129,6 +138,8 @@ def select_backend(requested, path, metadata, args, *, bench=False):
         digest = checkpoint_digest(path)
         for row in applicable:
             if row.checkpoint == digest and all(version(name) == expected for name, expected in row.packages):
+                if not mlx_runtime_available():
+                    return fallback("MLX could not access the Apple GPU")
                 return Selection("auto", row.backend, f"qualified {kind} checkpoint for {mode}")
     except (OSError, PackageNotFoundError):
         return fallback("checkpoint or runtime identity could not be confirmed")
