@@ -46,7 +46,17 @@ def cmd_init(args):
     if not args.yes and any((args.family, args.leader_serial, args.follower_serial)):
         raise SystemExit("--family and --*-serial are for macbot init --yes")
     try:
-        setup = Setup(expand(args.config).absolute() if args.config else None, source=args.source)
+        path = expand(args.config).absolute() if args.config else None
+        if args.from_lerobot is not None:
+            from .lerobot_command import parse
+            if any((args.family, args.leader_serial, args.follower_serial)):
+                raise ValueError("--from-lerobot already supplies arm types and ports.")
+            imported = parse(args.from_lerobot)
+            for note in imported.notes:
+                print(note, file=sys.stderr)
+            setup = Setup(path, imported=imported)
+        else:
+            setup = Setup(path, source=args.source)
         if args.yes:
             setup.refresh()
             status, output = setup.automatic(family=args.family, leader=args.leader_serial, follower=args.follower_serial)
@@ -145,8 +155,24 @@ def cmd_export(args):
 
 
 def cmd_health(args):
+    from .data import lerobot_v3
+
+    if args.dataset is not None or lerobot_v3.recognize(args.data):
+        try:
+            return lerobot_v3.health(lerobot_v3.Dataset(args.dataset or args.data), args.split)
+        except (ImportError, OSError, KeyError, TypeError, ValueError, RuntimeError) as exc:
+            raise SystemExit(str(exc)) from exc
     from .data.health import run
     run(_cfg(args), args)
+
+
+def _resolve_policy(args):
+    from .hub import resolve_policy
+
+    try:
+        args.policy, args.policy_hub = resolve_policy(args.policy)
+    except (ImportError, ValueError, OSError, RuntimeError) as exc:
+        raise SystemExit(str(exc)) from exc
 
 
 def cmd_run(args):
@@ -159,6 +185,7 @@ def cmd_run(args):
         except (OSError, ValueError, RuntimeError) as exc:
             raise SystemExit(str(exc)) from exc
         _preload(cfg)
+    _resolve_policy(args)
     from .policy.runner import run
     run(cfg, args)
 
@@ -174,6 +201,7 @@ def cmd_video(args):
 
 
 def cmd_bench(args):
+    _resolve_policy(args)
     from .policy.bench import run
     run(_cfg(args), args)
 
@@ -198,7 +226,9 @@ def main(argv=None):
     sub = ap.add_subparsers(dest="cmd", required=True, metavar="command")
 
     p = sub.add_parser("init", help="detect arms and cameras and create a configuration")
-    p.add_argument("--from", dest="source", help="reuse framing and calibration from an existing macbot YAML")
+    init_source = p.add_mutually_exclusive_group()
+    init_source.add_argument("--from", dest="source", help="reuse framing and calibration from an existing macbot YAML")
+    init_source.add_argument("--from-lerobot", help="import quoted lerobot-record or lerobot-teleoperate flags")
     p.add_argument("--yes", action="store_true", help="configure without a browser when roles are unambiguous")
     p.add_argument("--family", choices=FAMILIES, help="confirm a robot model for scripted setup")
     p.add_argument("--leader-serial", help="confirm the leader's USB serial for scripted setup")
@@ -242,12 +272,14 @@ def main(argv=None):
     p.set_defaults(fn=cmd_export)
 
     p = sub.add_parser("health", help="tracking, timing and motor health of episodes or policy trials")
-    p.add_argument("--data", help="episode or rollout folder (default <data_root>/raw/<task>)")
+    health_source = p.add_mutually_exclusive_group()
+    health_source.add_argument("--data", help="episode, rollout or local LeRobot dataset folder (default <data_root>/raw/<task>)")
+    health_source.add_argument("--dataset", help="LeRobot v3 dataset folder or Hub dataset ID (owner/name[@revision])")
     p.add_argument("--split", type=int, help="compare episodes before / from this index (e.g. after a repair)")
     p.set_defaults(fn=cmd_health)
 
     p = sub.add_parser("run", help="run a policy on the robot (web page)")
-    p.add_argument("--policy", required=True, help="LeRobot pretrained_model folder")
+    p.add_argument("--policy", required=True, help="LeRobot pretrained_model folder or Hub model ID (owner/name[@revision])")
     p.add_argument("--mode", choices=["auto", "chunk", "ensemble", "async", "rtc", "step"], default="auto",
                    help="auto: ACT -> ensemble, torch pi0.5 -> rtc, MLX pi0.5 -> async, generic -> chunk or step")
     p.add_argument("--k", type=int, default=30, help="chunk mode: steps executed per chunk")
@@ -277,7 +309,9 @@ def main(argv=None):
     p.set_defaults(fn=cmd_run)
 
     p = sub.add_parser("replay", help="browse recorded rollouts")
-    p.add_argument("--dir", help="rollout folder (default <data_root>/rollouts/<task>)")
+    replay_source = p.add_mutually_exclusive_group()
+    replay_source.add_argument("--dir", help="rollout or local LeRobot dataset folder (default <data_root>/rollouts/<task>)")
+    replay_source.add_argument("--dataset", help="LeRobot v3 dataset folder or Hub dataset ID (owner/name[@revision])")
     p.add_argument("--port", type=int, help="replay console port (default: 8768 or replay.port)")
     p.add_argument("--no-browser", action="store_true", help="print the console URL without opening it")
     p.set_defaults(fn=cmd_replay)
@@ -289,7 +323,7 @@ def main(argv=None):
     p.set_defaults(fn=cmd_video)
 
     p = sub.add_parser("bench", help="time policy inference")
-    p.add_argument("--policy", required=True)
+    p.add_argument("--policy", required=True, help="LeRobot pretrained_model folder or Hub model ID (owner/name[@revision])")
     p.add_argument("--device", default="mps")
     p.add_argument("-n", type=int, default=30)
     p.add_argument("--steps", type=int, help="pi0.5 denoising steps (default from checkpoint)")

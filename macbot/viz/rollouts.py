@@ -262,8 +262,9 @@ class Store:
 
 def serve_rollouts(handler, store, path, *, method="GET", lease=nullcontext):
     """Return whether the request belongs to replay. The lease never covers socket writes."""
-    trial = re.fullmatch(r"/api/rollout/(rollout_\d+)", path) if method == "GET" else None
-    frame = re.fullmatch(r"/api/rollout/(rollout_\d+)/(\w{1,80})/(\d{1,10})", path) if method == "GET" else None
+    kind = "episode" if getattr(store, "readonly", False) else "rollout"
+    trial = re.fullmatch(rf"/api/rollout/({kind}_\d+)", path) if method == "GET" else None
+    frame = re.fullmatch(rf"/api/rollout/({kind}_\d+)/(\w{{1,80}})/(\d{{1,10}})", path) if method == "GET" else None
     edit = re.fullmatch(r"/api/rollout/(rollout_\d+)/annotation", path) if method == "POST" else None
     index = method == "GET" and path == "/api/rollouts"
     if not (index or trial or frame or edit):

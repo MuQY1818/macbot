@@ -38,9 +38,11 @@ class State:
     def inventory(self):
         source = self.setup.source_framing()
         matches = self.setup.camera_matches()
+        imported = self.setup.imported
         return {
             "revision": self.revision, "token": self.token, "families": FAMILIES,
-            "roles": list(dict.fromkeys([*ROLES, *(source or {})])),
+            "roles": list(imported.camera_addresses) if imported else list(dict.fromkeys([*ROLES, *(source or {})])),
+            "imported": imported is not None,
             "devices": [{**asdict(d), "adapter": d.hint[0], "suggestions": d.hint[1]} for d in self.setup.devices],
             "cameras": [asdict(c) for c in self.setup.cameras], "notes": self.setup.notes,
             "remembered": self.setup.remembered(), "exists": self.setup.path.is_file(),

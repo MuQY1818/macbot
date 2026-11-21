@@ -10,11 +10,12 @@ const isEditing = e => e.target.closest("input,select,textarea,button,[contented
 const FRAME_INTERVAL_MS = 1000 / 15;
 
 class RolloutViewer {
-  constructor({ status, change, result, trialHeading = false }) {
+  constructor({ status, change, result, trialHeading = false, dataset = false }) {
     this.status = status;
     this.change = change;
     this.result = result;
     this.trialHeading = trialHeading;
+    this.dataset = dataset;
     if (trialHeading) delete $("rinfo-title").dataset.i18n;
     $("rplay").onclick = () => this.togglePlay();
     $("rspeed").onchange = () => { if (this.timer) { this.stop(); this.togglePlay(); } };
@@ -25,7 +26,8 @@ class RolloutViewer {
       this.stop();
       this.seek(this.frameAt(((e.clientX - b.left) / b.width) * this.duration));
     };
-    $("rreview").onsubmit = e => { e.preventDefault(); this.save(); };
+    $("rreview").hidden = dataset;
+    $("rreview").onsubmit = e => { e.preventDefault(); if (!dataset) this.save(); };
     $("rexclude").onchange = () => this.toggleReason();
     $("rtimeline").onclick = $("rplot").onclick;
   }
@@ -108,24 +110,32 @@ class RolloutViewer {
         `<title>${t(key)} · ${ts.toFixed(2)} s</title></line>`;
     }).join("");
     $("rtimeline").innerHTML = spans(14) + events(14);
-    drawTraces($("rplot"), $("rlegend"), r.q, r.cmd, r.meta.joint_names, marks + events(190), r.t.map(fraction), spans(190));
-    $("rlegend").innerHTML += `<span style="--c:transparent">${t("chunk_marks")}</span>`;
+    drawTraces($("rplot"), $("rlegend"), r.q, r.cmd, r.meta.joint_names,
+      marks + events(190), r.t.map(fraction), spans(190), this.dataset);
+    if (!this.dataset) $("rlegend").innerHTML += `<span style="--c:transparent">${t("chunk_marks")}</span>`;
     for (const [show, color, key] of [
       [r.takeover_spans?.some(s => s.kind === 1), "--ok", "following"],
       [r.takeover_spans?.some(s => s.kind === 2), "--warn", "aligning"],
       [r.meta.hand_marks?.length, "--brand-ink", "hand_in_scene"],
       [r.misses?.length, "--bad", "grasp_miss"],
     ]) if (show) $("rlegend").innerHTML += `<span style="--c:var(${color})">${t(key)}</span>`;
-    for (const c of r.cams) $("r-tag-" + c).textContent = `${camLabel(c)} · ${t("replay")}`;
+    for (const c of r.cams) $("r-tag-" + c).textContent = `${r.camera_labels?.[c] || camLabel(c)} · ${t("replay")}`;
     if (this.shown != null) this.position(this.shown);
     this.info();
   }
 
   info() {
     const r = this.data, m = r.meta;
-    $("rtitle").textContent = `${this.name} · ${this.duration.toFixed(1)} s`;
+    $("rtitle").textContent = `${this.name} · ${(r.timing?.seconds ?? this.duration).toFixed(1)} s`;
     if (this.trialHeading) $("rinfo-title").textContent = t("trial_heading", this.name);
     const tile = (key, value, unit = "") => `<div class="tile"><div class="k">${t(key)}</div><div class="v">${esc(value)}<small> ${unit}</small></div></div>`;
+    if (this.dataset) {
+      $("rtiles").innerHTML = tile("length", r.timing.seconds.toFixed(2), "s") +
+        tile("dataset_frames", r.timing.frames) + tile("dataset_missing", r.timing.missing) +
+        tile("dataset_late", r.timing.late) + tile("dataset_gap", r.timing.max_dt_ms, "ms");
+      $("rinfo").innerHTML = `<dt>${t("instruction")}</dt><dd>${esc(m.instruction)}</dd>`;
+      return;
+    }
     $("rtiles").innerHTML = tile("length", this.duration.toFixed(1), "s") + tile("chunks", r.chunks) +
       tile("median_infer", r.infer_ms == null ? "–" : Math.round(r.infer_ms), "ms") + tile("speed", `×${m.speed ?? "–"}`) +
       tile("grasp_misses", r.miss_count ?? t("grasp_unknown"));
@@ -268,12 +278,13 @@ class RolloutViewer {
 }
 
 class RolloutList {
-  constructor(body, open, { toggle = null, timed = false, rate = null } = {}) {
+  constructor(body, open, { toggle = null, timed = false, rate = null, dataset = false } = {}) {
     this.body = body;
     this.open = open;
     this.toggle = toggle;
     this.timed = timed;
     this.rate = rate;
+    this.dataset = dataset;
     this.items = [];
     this.enabled = true;
     if (toggle) toggle.onclick = () => { this.expanded = !this.expanded; this.render(); };
@@ -307,6 +318,9 @@ class RolloutList {
     this.body.closest("table").setAttribute("aria-disabled", !this.enabled);
     this.body.innerHTML = items.length ? items.map(r => {
       const id = esc(r.name.split("_")[1]), ok = r.result === "success";
+      if (this.dataset) return `<tr data-n="${esc(r.name)}" class="${r.name === this.selected ? "sel" : ""}">` +
+        `<td class="num">${id}</td><td>LeRobot v3.0</td><td class="num rollout-duration">${esc(r.s)}&nbsp;s</td>` +
+        `<td class="acts"><button>${t("replay_btn")}</button></td></tr>`;
       const result = `<td><span class="pill ${r.exclude ? "" : ok ? "ok" : "bad"}">${t(r.exclude ? "excluded" : ok ? "success" : "failure")}</span></td>`;
       const misses = r.miss_count == null ? t("grasp_unknown") : `${r.miss_count}${r.unknown_closes ? " + ?" : ""}`;
       const uncertain = r.unknown_closes ? ` title="${t("grasp_uncertain", r.unknown_closes)}"` : "";
@@ -316,7 +330,8 @@ class RolloutList {
         `<td class="acts"><button${disabled}>${t("replay_btn")}</button></td>`;
       return `<tr data-n="${esc(r.name)}" class="${r.name === this.selected ? "sel" : ""}"><td class="num">${first}</td>` +
         `${result}<td${uncertain}>${misses}</td><td class="num rollout-duration">${esc(r.s)}&nbsp;s</td>${last}</tr>`;
-    }).join("") : `<tr><td colspan="5" class="empty">${t(this.timed ? "no_trials" : "no_rollouts")}</td></tr>`;
+    }).join("") : `<tr><td colspan="${this.dataset ? 4 : 5}" class="empty">` +
+      `${t(this.dataset ? "dataset_empty" : this.timed ? "no_trials" : "no_rollouts")}</td></tr>`;
     if (this.toggle) {
       this.toggle.hidden = this.items.length <= 5;
       this.toggle.textContent = this.expanded ? t("show_less") : t("show_all", this.items.length);
