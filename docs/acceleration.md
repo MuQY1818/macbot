@@ -14,11 +14,15 @@ runs with different seeds. If a policy is deterministic and the measured seed sp
 zero, use an absolute tolerance instead: mean and p99 joint error ≤ 0.01° and mean and
 p99 gripper error ≤ 0.1% of the documented gripper range. Weight
 quantization, fewer denoising steps and visual token dropping are lossy options.
+For the recorded π0.5 and π0 comparisons, MLX must be faster and either meet all
+four absolute limits or stay at or below the deployed BF16 path's error against
+the same FP32 reference on all four metrics. The seed spread is reported separately.
 
 `--backend auto` is opt-in. It checks the policy architecture, saved processor layout,
 execution mode, compile setting and availability of a supported MLX runtime. It prints
 the public checkpoint used to qualify the implementation or a one-line reason for falling
 back to PyTorch. Compatible SmolVLA checkpoints use MLX for synchronous chunks.
+Compatible π0.5 and π0 checkpoints use compiled MLX for synchronous chunks and RTC.
 The measurements below describe the tested Apple silicon machine and dependency versions;
 they do not restrict selection to that machine. Use `--backend mlx` to request it explicitly.
 The default backend and the default execution modes for explicit backends are unchanged.
@@ -40,7 +44,40 @@ each statistic, in addition to the measured seed spread.
 | Torch MPS, BF16 backbone | 295.70 / 307.56 | 0.00387 / 0.01744 | 0.00478 / 0.03623 |
 | MLX FP16, compiled | 52.76 / 53.24 | 0.00062 / 0.00258 | 0.00059 / 0.00315 |
 
-### Public π0.5 checkpoint
+### π0.5 on recorded observations
+
+We replayed 25 frames across five episodes (0, 12, 24, 36, 49) from
+`zz4321/so101_cube@a34feb2f19718483fd6db7fac1d47927c84a5b4e` using
+`zz4321/so101_pi05@dbd6d5754bbf78318808aea1706ff23beeb8b663`. All variants
+used the recorded state, RGB and task with saved processors. Each variant timed
+50 calls after five warm-ups (two passes over the 25 frames), on the same system
+as SmolVLA. For RTC we reused an FP32 plan from four frames earlier, shifted
+four steps, with a 20-step guidance horizon and linear guidance capped at 10.
+
+The reference is MPS FP32 eager (seed 941), with median / p90 latency of
+1057.14 / 1068.51 ms for chunk and 1093.42 / 1111.33 ms for RTC. The BF16 rows
+use macbot's compiled inference path; only the checkpoint's own incompatible
+`max-autotune` wrapper was disabled. MLX used compiled FP16. Joint and gripper
+units are as described in the synthetic comparison below.
+
+| Mode | Backend | Median / p90 ms | Joint mean / p99 ° | Gripper mean / p99 |
+|---|---|---:|---:|---:|
+| Chunk | Torch BF16, compiled | 330.30 / 335.94 | 0.401 / 3.961 | 0.111 / 0.790 |
+| Chunk | MLX FP16, compiled | 222.81 / 229.14 | 0.074 / 0.886 | 0.017 / 0.158 |
+| Chunk | Torch FP32, seed 942 | 1072.99 / 1087.34 | 11.425 / 104.201 | 4.034 / 23.821 |
+| RTC | Torch BF16, compiled | 346.87 / 367.02 | 0.342 / 4.532 | 0.069 / 0.637 |
+| RTC | MLX FP16, compiled | 226.67 / 277.24 | 0.056 / 0.841 | 0.009 / 0.113 |
+| RTC | Torch FP32, seed 942 | 1087.41 / 1102.96 | 8.798 / 100.508 | 2.552 / 22.653 |
+
+Both modes qualify through the BF16 comparison; the joint p99 exceeds the
+absolute 0.50° cap. The earlier 0.082° / 0.416° result below used our own
+checkpoint, different recorded episodes and BF16 as the reference. Direct
+MLX-to-BF16 error for this public checkpoint is 0.393° / 3.965° in chunk mode
+and 0.330° / 4.257° in RTC. Against FP32 on these frames, MLX is the closer
+backend on all four statistics. The public retest and earlier result describe
+different checkpoints and reference protocols.
+
+### Public π0.5 checkpoint on synthetic observations
 
 `zz4321/so101_pi05` revision `dbd6d5754bbf78318808aea1706ff23beeb8b663` was
 trained for 5,000 steps on `zz4321/so101_cube`. It used the same machine and software
@@ -70,9 +107,40 @@ encoder ticks. Gripper error is in native 0–100 units.
 MLX was faster and all four errors were below the corresponding seed spread
 in both modes. Both modes exceeded the absolute caps set for this test: joint
 mean / p99 of 0.10° / 0.50° and gripper mean / p99 of 0.10 / 0.50.
-π0.5 remains on PyTorch with `--backend auto`.
+This preliminary synthetic test used BF16 as its reference and did not qualify either mode.
+The recorded FP32 comparison above is the basis for current automatic selection.
 
-### Public π0 checkpoint
+### π0 on recorded observations
+
+We used `zz4321/so101_pi0_cube@ec54d7a73d8959a7640edd7dad2690f460e64af2` and
+25 frames from episodes 0, 7, 14, 21 and 29 of
+`zz4321/so101_stick@06f6856ea2a7dd43bfb72696a99e1087649a268b`. This is the same
+replay protocol as above, with two recorded views. The checkpoint's saved
+`max-autotune` failed on MPS in both modes with `NoValidChoicesError`. The BF16
+comparison uses the same saved BF16 configuration with that compiler disabled.
+The RTC reference calls the LeRobot guided sampler directly because the generic
+wrapper uses inference mode.
+
+The FP32 reference (seed 941) ran at 692.58 / 718.63 ms median / p90 for chunk
+and 704.17 / 718.71 ms for RTC.
+
+| Mode | Backend | Median / p90 ms | Joint mean / p99 ° | Gripper mean / p99 |
+|---|---|---:|---:|---:|
+| Chunk | Torch BF16, eager | 368.02 / 374.15 | 0.151 / 0.800 | 0.050 / 0.840 |
+| Chunk | MLX FP16, compiled | 160.28 / 163.59 | 0.027 / 0.135 | 0.012 / 0.159 |
+| Chunk | Torch FP32, seed 942 | 695.33 / 738.39 | 6.162 / 40.905 | 2.401 / 22.928 |
+| RTC | Torch BF16, eager | 383.45 / 388.20 | 0.093 / 0.832 | 0.039 / 0.704 |
+| RTC | MLX FP16, compiled | 169.65 / 175.58 | 0.015 / 0.101 | 0.007 / 0.114 |
+| RTC | Torch FP32, seed 942 | 727.07 / 749.78 | 4.461 / 40.704 | 1.809 / 23.799 |
+
+Both modes qualify under the absolute caps and against the BF16 baseline.
+
+Use `python -m tools.accel.recorded_observations --help` to extract the frame archive
+from the dataset shards, and `python -m tools.accel.compare_backend --help` to time
+the policies with `--observations`. `--pi-fp32` sets up the eager Torch reference;
+`--save-rtc-leftovers` and `--rtc-leftovers` share the history across backends.
+
+### Public π0 checkpoint on synthetic observations
 
 `zz4321/so101_pi0_cube` revision `ec54d7a73d8959a7640edd7dad2690f460e64af2` was
 trained for 5,000 steps on `zz4321/so101_stick`. It used two 640 × 480 views and
@@ -92,7 +160,7 @@ inference mode. MLX used the compiled FP16 path.
 
 Both MLX modes beat the eager reference on latency and stayed below the seed
 spread. Joint mean and p99 exceeded the absolute caps in both modes; chunk
-gripper p99 also exceeded the cap. π0 on MLX stays experimental and explicit.
+gripper p99 also exceeded the cap. This run preceded the recorded FP32 comparison.
 
 ## PyTorch MPS experiments
 

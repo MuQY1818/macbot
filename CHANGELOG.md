@@ -18,8 +18,8 @@ All notable changes to macbot will be documented here. This project follows
 - Opt-in `--backend auto` for `run` and `bench`, with checkpoint compatibility checks and a reason when it
   falls back to PyTorch. Trials save the backend decision and `macbot policies` lists implemented backends.
 - `bench --mode rtc` times guided inference for RTC-capable backends without connecting a robot.
-- Experimental π0 MLX backend for 224px PaliGemma 2B checkpoints, with chunk and guided RTC paths.
-  The tested public fine-tune exceeded the absolute fidelity limits; `auto` does not select it.
+- π0 MLX backend for compatible 224px PaliGemma 2B checkpoints, with chunk and guided RTC paths.
+  Both modes met the absolute fidelity limits on recorded observations and are eligible for `auto`.
 - SmolVLA MLX chunks for the stock SmolVLM2-500M architecture. `auto` uses the public base
   benchmark to select MLX for compatible checkpoints in synchronous chunk mode.
 - Explicit PyTorch MPS experiments for ACT and Diffusion: autocast (potentially lossy), convolution
@@ -29,7 +29,8 @@ All notable changes to macbot will be documented here. This project follows
 
 - The README starts with the workflow for bringing an existing LeRobot setup to the Mac.
 - π0 and π0.5 on MLX can read checkpoints that save SigLIP under `vision_model`.
-  The public π0.5 comparison exceeded the absolute fidelity limits, so `auto` still uses PyTorch.
+- `--backend auto` uses MLX for compatible π0.5 chunk and RTC inference. On recorded observations it was
+  faster and closer to FP32 than the compiled BF16 path.
 
 ## [0.3.2] - 2026-11-20
 

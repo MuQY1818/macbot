@@ -39,3 +39,58 @@ def test_auto_refuses_lossy_options(tmp_path, options):
     args = SimpleNamespace(device="mps", **options)
     with pytest.raises(SystemExit, match="[Ee]xplicit"):
         backends.select_backend("auto", tmp_path, {"type": "pi05", "num_inference_steps": 10}, args)
+
+
+def test_pi05_auto_maps_cameras_only_for_qualified_modes(monkeypatch, tmp_path):
+    (tmp_path / "model.safetensors").touch()
+    norm = {"norm_map": {"VISUAL": "IDENTITY", "STATE": "QUANTILES", "ACTION": "QUANTILES"}}
+    for side, steps in (
+        ("pre", [("rename_observations_processor", {}), ("to_batch_processor", {}),
+                 ("relative_actions_processor", {"enabled": False}), ("normalizer_processor", norm),
+                 ("pi05_prepare_state_tokenizer_processor_step", {}),
+                 ("tokenizer_processor", {"padding_side": "right"}), ("device_processor", {})]),
+        ("post", [("unnormalizer_processor", norm), ("device_processor", {})]),
+    ):
+        (tmp_path / f"policy_{side}processor.json").write_text(
+            json.dumps({"steps": [{"registry_name": name, "config": config} for name, config in steps]}),
+        )
+    monkeypatch.setattr(backends.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(backends.platform, "machine", lambda: "arm64")
+    monkeypatch.setattr(backends, "find_spec", lambda _: object())
+    monkeypatch.setattr(backends, "supported_mlx_dependencies", lambda: True)
+    monkeypatch.setattr(backends, "mlx_runtime_available", lambda: True)
+    meta = {"type": "pi05", "input_features": {
+        f"observation.images.{name}": {"type": "VISUAL"} for name in ("top", "left_wrist_0_rgb")
+    }}
+    cfg = {"cameras": {"top": {}, "wrist": {}}}
+    args = SimpleNamespace(device="mps", mode="chunk")
+    for mode in ("chunk", "rtc", "auto"):
+        args.mode = mode
+        choice = backends.select_backend("auto", tmp_path, meta, args, config=cfg)
+        assert choice.backend == "mlx" and choice.camera_map == {"top": "top", "wrist": "left_wrist_0_rgb"}
+    assert backends.select_backend("mlx", tmp_path, meta, args, config=cfg).camera_map is None
+    choice = backends.select_backend("auto", tmp_path, meta, args, config={"cameras": {"top": {}}})
+    assert choice.backend == "torch" and "camera mapping" in choice.reason
+    args.mode = "async"
+    assert backends.select_backend("auto", tmp_path, meta, args, config=cfg).backend == "torch"
+
+
+def test_pi0_qualification_requires_its_trained_processor_layout(tmp_path):
+    (tmp_path / "model.safetensors").touch()
+    norm = {"norm_map": {"VISUAL": "IDENTITY", "STATE": "MEAN_STD", "ACTION": "MEAN_STD"}}
+    pre = [("rename_observations_processor", {}), ("to_batch_processor", {}), ("pi0_new_line_processor", {}),
+           ("tokenizer_processor", {"padding_side": "right"}), ("device_processor", {}), ("normalizer_processor", norm)]
+    post = [("unnormalizer_processor", norm), ("device_processor", {})]
+
+    def write(side, steps):
+        (tmp_path / f"policy_{side}processor.json").write_text(
+            json.dumps({"steps": [{"registry_name": name, "config": config} for name, config in steps]}),
+        )
+
+    write("pre", pre)
+    write("post", post)
+    assert backends.compatible_pi(tmp_path, {"type": "pi0"})
+    assert not backends.compatible_pi(tmp_path, {"type": "pi0", "use_relative_actions": True})
+    post[0] = ("unnormalizer_processor", {"norm_map": {"ACTION": "QUANTILES"}})
+    write("post", post)
+    assert not backends.compatible_pi(tmp_path, {"type": "pi0"})

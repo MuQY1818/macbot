@@ -47,11 +47,10 @@ The SmolVLA MLX backend supports the stock SmolVLM2-500M geometry and chunk exec
 The public base checkpoint qualifies for automatic selection in the tested configuration.
 For the tested two-camera X-VLA checkpoint, map `top` and `wrist` to `image` and `image2`.
 
-The experimental π0 `--backend mlx` path accepts a stock 224px PaliGemma 2B checkpoint with absolute actions
+The π0 `--backend mlx` path accepts a stock 224px PaliGemma 2B checkpoint with absolute actions
 and uses `policy.camera_map` and the saved processors. It provides `--mode chunk` and
-guided `--mode rtc`, and defaults to chunks. The public SO-101 fine-tune ran faster on MLX
-but exceeded the [absolute fidelity caps](acceleration.md#public-π0-checkpoint) in both modes.
-`--backend auto` keeps the PyTorch backend for π0.
+guided `--mode rtc`, and defaults to chunks. `--backend auto` selects compiled MLX for compatible
+π0 and π0.5 checkpoints in both modes based on the [recorded comparisons](acceleration.md#π0-on-recorded-observations).
 
 `bench` measures observation conversion through action output. Use `--device cpu` for a
 CPU comparison. `--profile` adds a separate synchronized pass for observation conversion,

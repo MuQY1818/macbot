@@ -413,7 +413,7 @@ def _control(st, srv, fps, gripper, cleanup):
         st.torch_options = experiments
     if experiments.single_readback and getattr(args, "policy_impl", "auto") == "generic":
         sys.exit("--torch-single-readback requires the built-in ACT wrapper")
-    selection = select_backend(requested, args.policy, metadata, args)
+    selection = select_backend(requested, args.policy, metadata, args, config=cfg)
     st.backend_selection = selection
     backend = selection.backend
     selection.announce()
@@ -448,6 +448,8 @@ def _control(st, srv, fps, gripper, cleanup):
                           mlx_bits=args.mlx_bits, mlx_quantize=args.mlx_quantize, mlx_time_grid=args.mlx_time_grid)
     else:
         pol = load_policy(args.policy, args.device, cfg["task"]["instruction"], args.steps)
+    if selection.camera_map is not None:
+        pol.rename = selection.camera_map
     experiments.install(pol)
     if (mapped_mlx or not generic and pol.kind == "pi05") and not args.no_compile:
         pol.enable_compile()

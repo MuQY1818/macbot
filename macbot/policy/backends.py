@@ -70,9 +70,82 @@ def compatible_smolvla(path, metadata):
     return (path / "model.safetensors").is_file() and not (path / "adapter_config.json").is_file()
 
 
+def compatible_pi(path, metadata):
+    stock = {
+        "paligemma_variant": "gemma_2b", "action_expert_variant": "gemma_300m", "n_obs_steps": 1,
+        "image_resolution": [224, 224], "empty_cameras": 0, "use_relative_actions": False,
+        "chunk_size": 50, "n_action_steps": 50, "max_state_dim": 32, "max_action_dim": 32,
+        "num_inference_steps": 10, "min_period": 0.004, "max_period": 4.0,
+    }
+    if any(metadata.get(k, default) != default for k, default in stock.items()):
+        return False
+    pi05 = metadata["type"] == "pi05"
+    common = ("rename_observations_processor", "to_batch_processor")
+    expected = {
+        "pre": common + (("normalizer_processor", "pi05_prepare_state_tokenizer_processor_step",
+                          "tokenizer_processor", "device_processor") if pi05 else
+                         ("pi0_new_line_processor", "tokenizer_processor", "device_processor", "normalizer_processor")),
+        "post": ("unnormalizer_processor", "device_processor"),
+    }
+    normalization = "QUANTILES" if pi05 else "MEAN_STD"
+    for side, layout in expected.items():
+        steps = json.loads((path / f"policy_{side}processor.json").read_text())["steps"]
+        active_steps = [s for s in steps
+                        if not (s["registry_name"] in {"relative_actions_processor", "absolute_actions_processor"}
+                                and s.get("config", {}).get("enabled") is False)]
+        if tuple(s["registry_name"] for s in active_steps) != layout:
+            return False
+        active = {s["registry_name"]: s.get("config", {}) for s in active_steps}
+        norm = active["normalizer_processor" if side == "pre" else "unnormalizer_processor"]
+        if norm.get("norm_map") != {"VISUAL": "IDENTITY", "STATE": normalization, "ACTION": normalization}:
+            return False
+        if side == "pre":
+            if active["tokenizer_processor"].get("padding_side") != "right":
+                return False
+            mapping = active["rename_observations_processor"].get("rename_map", {})
+            if any(key in metadata.get("input_features", {}) and key != value for key, value in mapping.items()):
+                return False
+    return (path / "model.safetensors").is_file() and not (path / "adapter_config.json").is_file()
+
+
+def pi05_camera_map(config, metadata):
+    from .models import PI05
+
+    prefix = "observation.images."
+    expected = {name.removeprefix(prefix) for name, feature in metadata.get("input_features", {}).items()
+                if name.startswith(prefix) and feature.get("type") == "VISUAL"}
+    explicit = config.get("policy", {}).get("camera_map", {})
+    cameras = config["cameras"]
+    if explicit.keys() - cameras.keys():
+        raise ValueError("policy.camera_map names unknown cameras")
+    result = {}
+    for name in cameras:
+        if name in explicit:
+            target = explicit[name].removeprefix(prefix)
+            if target not in expected:
+                raise ValueError(f"camera {name!r} maps to an unknown feature")
+        elif name in expected:
+            target = name
+        else:
+            target = PI05.RENAME.get(name, name)
+        if target in expected:
+            if target in result.values():
+                raise ValueError(f"multiple cameras map to {target!r}")
+            result[name] = target
+    if not expected or set(result.values()) != expected or result.keys() != cameras.keys():
+        raise ValueError("configured cameras do not cover the checkpoint views")
+    return result
+
+
 # Entries must link to a trained public checkpoint and matched fidelity and latency
 # results in docs/acceleration.md. Results from private checkpoints do not transfer.
 QUALIFIED: dict[str, tuple[Qualification, ...]] = {
+    "pi05": (
+        Qualification("mlx", "zz4321/so101_pi05", frozenset({"chunk", "rtc"}), True, compatible_pi),
+    ),
+    "pi0": (
+        Qualification("mlx", "zz4321/so101_pi0_cube", frozenset({"chunk", "rtc"}), True, compatible_pi),
+    ),
     "smolvla": (
         Qualification(
             "mlx", "lerobot/smolvla_base", frozenset({"chunk"}), True, compatible_smolvla,
@@ -86,6 +159,7 @@ class Selection:
     requested: str
     backend: str
     reason: str
+    camera_map: dict[str, str] | None = None
 
     def announce(self):
         prefix = "Backend auto selected" if self.requested == "auto" else "Backend"
@@ -115,7 +189,7 @@ def mlx_runtime_available():
         return False
 
 
-def select_backend(requested, path, metadata, args, *, bench=False):
+def select_backend(requested, path, metadata, args, *, bench=False, config=None):
     if requested != "auto":
         return Selection(requested, requested, "configured")
     if (getattr(args, "mlx_bits", None) is not None or getattr(args, "mlx_time_grid", "uniform") != "uniform"):
@@ -161,7 +235,14 @@ def select_backend(requested, path, metadata, args, *, bench=False):
             if row.compatible(path, metadata):
                 if not mlx_runtime_available():
                     return fallback("MLX could not access the Apple GPU")
-                return Selection("auto", row.backend, f"compatible {kind} {mode}; measured on {row.evidence}")
+                camera_map = None
+                if kind == "pi05" and config is not None:
+                    try:
+                        camera_map = pi05_camera_map(config, metadata)
+                    except (AttributeError, KeyError, TypeError, ValueError) as exc:
+                        return fallback(f"cannot confirm pi0.5 camera mapping: {exc}")
+                return Selection("auto", row.backend, f"compatible {kind} {mode}; measured on {row.evidence}",
+                                 camera_map)
     except (OSError, ValueError, KeyError, TypeError):
         return fallback("checkpoint processor layout could not be confirmed")
     return fallback("checkpoint layout does not match the qualified implementation")

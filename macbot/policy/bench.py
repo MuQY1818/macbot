@@ -28,7 +28,7 @@ def run(cfg: Config, args):
     experiments.validate(requested, kind, args.device)
     if experiments.single_readback and getattr(args, "policy_impl", "auto") == "generic":
         sys.exit("--torch-single-readback requires the built-in ACT wrapper")
-    selection = select_backend(requested, path, metadata, args, bench=True)
+    selection = select_backend(requested, path, metadata, args, bench=True, config=cfg)
     selection.announce()
     backend = selection.backend
     generic = use_generic(kind, getattr(args, "policy_impl", "auto"), backend)
@@ -47,6 +47,8 @@ def run(cfg: Config, args):
         pol = load_policy(path, args.device, cfg["task"]["instruction"], steps)
     else:
         pol = load_policy(path, args.device, cfg["task"]["instruction"])
+    if selection.camera_map is not None:
+        pol.rename = selection.camera_map
     experiments.install(pol)
     if (mapped_mlx or not generic and pol.kind == "pi05") and not args.no_compile:
         pol.enable_compile()
