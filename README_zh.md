@@ -6,7 +6,7 @@
 </p>
 
 <p align="center"><b>在 MacBook 上跑 LeRobot。</b><br>
-把已有的 LeRobot 机械臂、校准、数据集和 checkpoint 搬到 MacBook。</p>
+把已有的 LeRobot 机械臂、校准、数据集和 checkpoint 搬到 MacBook，在 Apple 芯片上加速推理。</p>
 
 <p align="center">
   <img alt="macOS" src="https://img.shields.io/badge/macOS-Apple%20silicon-18171F">
@@ -29,11 +29,13 @@
 
 已经在 Linux 上用 LeRobot？按[迁移指南](docs/migrate_zh.md)复用校准并导入原命令。
 从空白环境开始，见[快速开始](docs/quickstart_zh.md)。
-macbot 处理 Mac 设备配置，数据集和 checkpoint 保持 LeRobot 格式，可在两台机器间直接使用。
+使用 Apple 芯片 Mac 和 Python 3.12 或更高版本。数据集和 checkpoint 保持 LeRobot 格式，可在两台机器间直接使用。
 
 ```bash
+pip install macbot
 macbot doctor
-macbot init --from-lerobot "$LEROBOT_COMMAND"   # 原 lerobot-record 或 lerobot-teleoperate 命令
+macbot init
+# 已有 LeRobot 命令？改用 macbot init --from-lerobot "$LEROBOT_COMMAND"。
 macbot collect
 macbot health
 macbot export --out ./dataset
@@ -42,8 +44,8 @@ macbot run --policy ./pretrained_model       # 也可用 owner/model@revision
 macbot replay
 ```
 
-真机和仿真验证范围见[机械臂支持](docs/robots_zh.md)，已测 checkpoint 见[策略支持](docs/policies_zh.md)。
-没有机械臂也可以运行 `collect --fake`。
+reBot B601-RS 已做真机验证。其他 LeRobot 机械臂目前只有 fake 或仿真证据，具体见[机械臂支持](docs/robots_zh.md)。
+运行 π0.5 建议使用至少 32 GB 内存的 Apple 芯片 Mac。已测 checkpoint 见[策略支持](docs/policies_zh.md)。
 
 以下数据在 MacBook Pro（M5 Pro，48 GB）上实测，为每个动作块的大致耗时：
 
@@ -65,8 +67,21 @@ macbot replay
 
 <p align="center"><img src="https://raw.githubusercontent.com/MuQY1818/macbot/main/docs/img/collect_zh.jpg" alt="macbot 采集控制台" width="100%"></p>
 
-通过 `health --dataset` 和 `replay --dataset` 只读查看本地或 Hub 上的 LeRobot v3.0 数据集。
-采集、执行策略和试验回放见[工作流程](docs/guide_zh.md)；相机权限和 reBot CAN 驱动见[安装指南](docs/setup_zh.md)。
+| 跑策略 | 回放试验 |
+|---|---|
+| <img src="https://raw.githubusercontent.com/MuQY1818/macbot/main/docs/img/run_zh.jpg" alt="跑策略"> | <img src="https://raw.githubusercontent.com/MuQY1818/macbot/main/docs/img/replay_zh.jpg" alt="回放"> |
+
+- `init` 引导选择机械臂和相机，并检查已有的 LeRobot 校准。
+- `collect` 提供相机预览和逐条检查；没有机械臂可以试 `collect --fake`。
+- `health --dataset` 和 `replay --dataset` 只读查看本地或 Hub 上的 LeRobot v3.0 数据集。
+- `run` 加载 LeRobot checkpoint，并记录每次试验的画面和时序。
+- `replay` 同步回放试验画面、关节曲线和动作块，详见[工作流程](docs/guide_zh.md)。
+
+## 在 macOS 上跑起来要解决的问题
+
+- **sudo 下的 CAN：**macbot 预载 PCBUSB，并把生成的录制文件交回调用用户。
+- **相机识别：**用 AVFoundation unique ID 固定 UVC 相机角色，避开 iPhone 连续互通相机。
+- **π0.5 推理：**macbot 支持 PyTorch MPS 编译和可选的 MLX 后端，数据见上面的基准。
 
 ## 参与贡献
 

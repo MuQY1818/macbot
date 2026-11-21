@@ -6,7 +6,7 @@
 </p>
 
 <p align="center"><b>LeRobot on a MacBook.</b><br>
-Bring your LeRobot arms, calibration, datasets and checkpoints to a MacBook.</p>
+Bring your LeRobot arms, calibration, datasets and checkpoints to a MacBook, with fast inference on Apple silicon.</p>
 
 <p align="center">
   <img alt="macOS" src="https://img.shields.io/badge/macOS-Apple%20silicon-18171F">
@@ -29,11 +29,13 @@ Bring your LeRobot arms, calibration, datasets and checkpoints to a MacBook.</p>
 
 Already using LeRobot on Linux? Follow the [migration guide](docs/migrate.md) to reuse your
 calibration and import your command. Setting up from scratch? See the [quickstart](docs/quickstart.md).
-macbot handles Mac device setup; LeRobot datasets and checkpoints move between machines as-is.
+Use Python 3.12+ on Apple silicon. LeRobot datasets and checkpoints move between machines as-is.
 
 ```bash
+pip install macbot
 macbot doctor
-macbot init --from-lerobot "$LEROBOT_COMMAND"   # your lerobot-record or lerobot-teleoperate command
+macbot init
+# Already have a LeRobot command? Use macbot init --from-lerobot "$LEROBOT_COMMAND" instead.
 macbot collect
 macbot health
 macbot export --out ./dataset
@@ -42,8 +44,9 @@ macbot run --policy ./pretrained_model       # or owner/model@revision
 macbot replay
 ```
 
-See [robot support](docs/robots.md) for hardware and simulator evidence, and
-[policy support](docs/policies.md) for tested checkpoints. Try `collect --fake` without an arm.
+The reBot B601-RS is verified on hardware. Other LeRobot arms have fake or simulator evidence only;
+see [robot support](docs/robots.md) for the exact scope. For π0.5, use an Apple silicon Mac with at
+least 32 GB of memory. See [policy support](docs/policies.md) for tested checkpoints.
 
 Measured on a MacBook Pro (M5 Pro, 48 GB). Approximate time per action chunk:
 
@@ -69,9 +72,21 @@ base checkpoint and X-VLA the SO-101 fine-tune. Method and full results are in
 
 <p align="center"><img src="https://raw.githubusercontent.com/MuQY1818/macbot/main/docs/img/collect_en.jpg" alt="The macbot collection console" width="100%"></p>
 
-Use `health --dataset` and `replay --dataset` to inspect existing LeRobot v3.0 data in place,
-including Hub datasets. The [workflow guide](docs/guide.md) covers collection, policy execution,
-and trial review. See [setup](docs/setup.md) for camera permissions and the reference reBot CAN driver.
+| Run a policy | Replay a trial |
+|---|---|
+| <img src="https://raw.githubusercontent.com/MuQY1818/macbot/main/docs/img/run_en.jpg" alt="Policy runner"> | <img src="https://raw.githubusercontent.com/MuQY1818/macbot/main/docs/img/replay_en.jpg" alt="Trial replay"> |
+
+- `init` guides arm and camera selection and checks saved LeRobot calibration.
+- `collect` records with live cameras and checks each episode; try `collect --fake` without an arm.
+- `health --dataset` and `replay --dataset` inspect local or Hub LeRobot v3.0 data in place.
+- `run` loads LeRobot checkpoints and records each trial with cameras and timing.
+- `replay` aligns trial video, joint traces and action chunks. See the [workflow guide](docs/guide.md).
+
+## What it took to run this on macOS
+
+- **CAN under sudo:** macbot preloads PCBUSB and gives recorded files back to the invoking user.
+- **Camera selection:** AVFoundation unique IDs keep UVC roles separate from iPhone Continuity Camera.
+- **π0.5 inference:** macbot compiles the PyTorch MPS path and offers an optional MLX backend; see the benchmarks above.
 
 ## Contributing
 
