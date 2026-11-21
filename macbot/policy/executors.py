@@ -280,7 +280,7 @@ class AsyncChunk(Executor, threading.Thread):
                     delay = 0
             try:
                 imgs, q = self.observe()
-                if self.pol.kind == "pi05":
+                if self.pol.kind == "pi05" or (self.guide and getattr(self.pol, "supports_rtc", False)):
                     a, raw = self.pol(imgs, q, leftover=leftover, delay=delay, horizon=self.horizon, return_raw=True)
                 else:
                     a, raw = self.pol(imgs, q), None

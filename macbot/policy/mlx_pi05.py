@@ -36,8 +36,23 @@ class Geometry:
 STOCK_GEOMETRY = Geometry()
 
 
-class PI05Network:
-    """Inference graph with immutable prefix K/V and FP32 Euler accumulation."""
+def _weight_names(weights):
+    wrapped_vision = _VISION + "vision_model."
+    canonical = {}
+    for name, value in weights.items():
+        name = name.removeprefix("model.")
+        if name.startswith(wrapped_vision):
+            name = _VISION + name.removeprefix(wrapped_vision)
+        if name in canonical:
+            raise ValueError(f"Ambiguous PaliGemma policy weight: {name}")
+        canonical[name] = value
+    return canonical
+
+
+class PaliGemmaNetwork:
+    """Shared SigLIP, Gemma prefix cache, and action expert primitives."""
+
+    adaptive_expert = True
 
     def __init__(self, weights, geometry=STOCK_GEOMETRY, *, dtype=mx.bfloat16, bits=None, quantize="prefix",
                  fused_attention=True, fused_rope=False, pack_linears=False, gelu_fp32=False):
@@ -46,7 +61,7 @@ class PI05Network:
         self.fused_attention = fused_attention
         self.fused_rope = fused_rope
         self.gelu_fp32 = gelu_fp32
-        self.w = {k.removeprefix("model."): v for k, v in weights.items()}
+        self.w = _weight_names(weights)
         embed = _PREFIX + "embed_tokens.weight"
         head = "paligemma_with_expert.paligemma.lm_head.weight"
         if head in self.w:  # LeRobot maps the tied LM head onto the input embedding on load.
@@ -117,7 +132,7 @@ class PI05Network:
 
         def width(key, axis=0):
             if key not in self.w or self.w[key].ndim <= axis:
-                raise ValueError(f"Missing or invalid PI05 weight: {key}")
+                    raise ValueError(f"Missing or invalid PaliGemma policy weight: {key}")
             return self.w[key].shape[axis]
 
         v = width(_VISION + "embeddings.patch_embedding.weight")
@@ -138,7 +153,7 @@ class PI05Network:
             h = width(root + "mlp.fc1.weight")
             add(root + "mlp.fc1", (h, v), True)
             add(root + "mlp.fc2", (v, h), True)
-        for stem, dim, adaptive in ((_PREFIX, p, False), (_EXPERT, a, True)):
+        for stem, dim, adaptive in ((_PREFIX, p, False), (_EXPERT, a, self.adaptive_expert)):
             norms = [stem + "norm"]
             for i in range(g.text_depth):
                 root = f"{stem}layers.{i}."
@@ -157,16 +172,13 @@ class PI05Network:
                     add(name + ".dense", (3 * dim, dim), True)
                 else:
                     add(name, (dim,))
-        for name, shape in (
-            ("action_in_proj", (a, d)), ("action_out_proj", (d, a)),
-            ("time_mlp_in", (a, a)), ("time_mlp_out", (a, a)),
-        ):
+        for name, shape in self.flow_shapes(a, d):
             add(name, shape, True)
         missing = shapes.keys() - self.w.keys()
         unexpected = self.w.keys() - shapes.keys()
         malformed = [k for k in shapes.keys() & self.w.keys() if tuple(self.w[k].shape) != shapes[k]]
         if missing or unexpected or malformed:
-            raise ValueError(f"Unsupported PI05 weights: missing={sorted(missing)[:4]}, "
+            raise ValueError(f"Unsupported PaliGemma policy weights: missing={sorted(missing)[:4]}, "
                              f"unexpected={sorted(unexpected)[:4]}, shape mismatch={sorted(malformed)[:4]}")
 
     def linear(self, x, name):
@@ -295,6 +307,16 @@ class PI05Network:
         keep = mx.concatenate((valid, mx.ones((valid.shape[0], horizon), dtype=mx.bool_)), axis=1)
         return positions, keep[:, None, None, :]
 
+
+class PI05Network(PaliGemmaNetwork):
+    """PI05 flow with an adaptively normalized expert."""
+
+    def flow_shapes(self, a, d):
+        return (
+            ("action_in_proj", (a, d)), ("action_out_proj", (d, a)),
+            ("time_mlp_in", (a, a)), ("time_mlp_out", (a, a)),
+        )
+
     def time_condition(self, time, min_period, max_period):
         width = self.w["time_mlp_in.weight"].shape[1]
         period = min_period * (max_period / min_period) ** mx.linspace(0.0, 1.0, width // 2)
@@ -318,9 +340,39 @@ class PI05Network:
         return self.linear(self.norm(x, _EXPERT + "norm", cond, final_mod)[0], "action_out_proj")
 
 
-class PI05MLX:
-    kind = "pi05"
+class GuidedMLXFlow:
     supports_rtc = True
+
+    def enable_rtc(self, beta, schedule="linear"):
+        if not np.isfinite(beta) or beta <= 0:
+            raise ValueError("RTC guidance weight must be finite and positive")
+        if schedule not in RTC_SCHEDULES:
+            raise ValueError(f"RTC schedule must be one of {', '.join(RTC_SCHEDULES)}")
+        self.rtc_beta, self.rtc_schedule = float(beta), schedule
+
+    def rtc_target(self, leftover, delay, horizon, shape):
+        if self.rtc_beta is None:
+            raise ValueError("Enable RTC before supplying a guided prefix")
+        left = np.asarray(leftover, dtype=np.float32)
+        _, length, width = shape
+        if left.ndim != 2 or not (0 < left.shape[1] <= width and len(left) <= length):
+            raise ValueError("RTC leftover must fit the model action chunk")
+        end = min(horizon or len(left), len(left))
+        if end < 1:
+            raise ValueError("RTC horizon must be positive")
+        start = min(delay, end)
+        weights = np.zeros(length, dtype=np.float32)
+        weights[:start] = 1
+        ramp = np.linspace(1, 0, end - start + 2)[1:-1]
+        if getattr(self, "rtc_schedule", "linear") == "exp":       # Black et al. 2025, as LeRobot's EXP schedule
+            ramp = ramp * np.expm1(ramp) / (np.e - 1)
+        weights[start:end] = ramp
+        target = np.pad(left, ((0, length - len(left)), (0, width - left.shape[1])))
+        return mx.array(target[None]), mx.array(weights[None, :, None])
+
+
+class PI05MLX(GuidedMLXFlow):
+    kind = "pi05"
 
     def __init__(self, path, task, steps=None, *, bits=None, quantize="prefix", trim=False, fused_attention=True,
                  fused_rope=False, dtype=mx.bfloat16, precompute_adarms=False, pack_linears=False, gelu_fp32=False,
@@ -404,33 +456,6 @@ class PI05MLX:
             if mask[0, :length].all() and not mask[0, length:].any():
                 tokens, mask = tokens[:, :length], mask[:, :length]
         return mx.array(np.concatenate(images, axis=0)), mx.array(tokens, dtype=mx.int32), mx.array(mask), bool(mask.all())
-
-    def enable_rtc(self, beta, schedule="linear"):
-        if not np.isfinite(beta) or beta <= 0:
-            raise ValueError("RTC guidance weight must be finite and positive")
-        if schedule not in RTC_SCHEDULES:
-            raise ValueError(f"RTC schedule must be one of {', '.join(RTC_SCHEDULES)}")
-        self.rtc_beta, self.rtc_schedule = float(beta), schedule
-
-    def rtc_target(self, leftover, delay, horizon, shape):
-        if self.rtc_beta is None:
-            raise ValueError("Enable RTC before supplying a guided prefix")
-        left = np.asarray(leftover, dtype=np.float32)
-        _, length, width = shape
-        if left.ndim != 2 or not (0 < left.shape[1] <= width and len(left) <= length):
-            raise ValueError("RTC leftover must fit the model action chunk")
-        end = min(horizon or len(left), len(left))
-        if end < 1:
-            raise ValueError("RTC horizon must be positive")
-        start = min(delay, end)
-        weights = np.zeros(length, dtype=np.float32)
-        weights[:start] = 1
-        ramp = np.linspace(1, 0, end - start + 2)[1:-1]
-        if getattr(self, "rtc_schedule", "linear") == "exp":       # Black et al. 2025, as LeRobot's EXP schedule
-            ramp = ramp * np.expm1(ramp) / (np.e - 1)
-        weights[start:end] = ramp
-        target = np.pad(left, ((0, length - len(left)), (0, width - left.shape[1])))
-        return mx.array(target[None]), mx.array(weights[None, :, None])
 
     def stages(self, images, tokens, mask, all_valid, noise, *, stage=None, guidance=None):
         def run(name, fn, *args):

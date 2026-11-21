@@ -1,10 +1,12 @@
 import json
 import threading
 import time
+from types import SimpleNamespace
 
 import numpy as np
 
 from macbot.data.chunks import align, switch_shifts, tracking_lag
+from macbot.policy import executors
 from macbot.policy.executors import AsyncChunk, SyncChunk
 from macbot.policy.runner import stack_chunks
 
@@ -118,29 +120,40 @@ def test_switch_shifts_on_a_saved_rollout(tmp_path):
         assert len(switch_shifts(d)[0]) == 0                    # older rollouts without chunks
 
 
-def test_async_query_every_spaces_queries():
-    times, stop = [], threading.Event()
-    ex = AsyncChunk(Pol(delay=0.005), _observe, 30, lambda t, ms, **k: times.append(time.time()),
-                    every=6, stop=stop.is_set)
+def test_async_query_every_spaces_queries(monkeypatch):
+    now = 100.0
+    requested, finished = [], []
+
+    def clock():
+        return now
+
+    def advance(seconds):
+        nonlocal now
+        now += seconds
+
+    def observe():
+        requested.append(now)
+        return _observe()
+
+    def policy(imgs, q):
+        advance(0.15 if len(requested) == 2 else 0.01)
+        return ramp(20, dims=7)
+
+    monkeypatch.setattr(executors, "time", SimpleNamespace(time=clock, sleep=lambda s: advance(s + 0.002)))
+    policy.kind = "act"
+    ex = AsyncChunk(policy, observe, 30, lambda *_args, **_kwargs: finished.append(now),
+                    every=6, stop=lambda: len(finished) == 4)
     assert "query every 6 steps" in ex.describe()
-    ex.start()
-    try:
-        ex.reset(True)
-        deadline = time.time() + 3
-        while len(times) < 4 and time.time() < deadline:
-            time.sleep(0.01)
-    finally:
-        stop.set()
-        ex.join(1)
-    gaps = np.diff(times[1:4])                                   # after the first chunk: one query per 6 steps
-    assert len(gaps) >= 2 and (gaps > 0.18).all()
+    ex.reset(True)
+    ex.run()
+    gaps = np.diff(requested)
+    assert (gaps >= 0.2 - 1e-9).all() and (gaps <= 0.202 + 1e-9).all()
+    assert finished[2] - finished[1] < 0.18  # Faster inference can finish sooner without an early query.
 
 
 def test_mlx_rtc_exponential_schedule():
     import pytest
     pytest.importorskip("mlx.core")
-    from types import SimpleNamespace
-
     from macbot.policy.mlx_pi05 import PI05MLX
     weights = {}
     for schedule in ("linear", "exp"):

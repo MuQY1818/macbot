@@ -207,7 +207,8 @@ def cmd_bench(args):
 
 
 def _backend_args(parser):
-    parser.add_argument("--backend", choices=["torch", "mlx"], help="policy backend (default: torch or YAML setting)")
+    parser.add_argument("--backend", choices=["torch", "mlx", "auto"],
+                        help="policy backend (default: torch or YAML setting); auto uses qualified lossless results")
     parser.add_argument("--policy-impl", choices=["auto", "generic"], default="auto",
                         help="use the generic LeRobot adapter even for ACT or pi0.5 (torch only)")
     parser.add_argument("--mlx-bits", type=int, choices=[4, 8], help="experimental lossy MLX weight quantization")
@@ -215,6 +216,14 @@ def _backend_args(parser):
                         help="MLX Euler schedule; quadratic is an opt-in lossy experiment")
     parser.add_argument("--mlx-quantize", choices=["prefix", "expert", "both"], default="prefix",
                         help="weight groups to quantize with --mlx-bits")
+    parser.add_argument("--torch-autocast", choices=["fp16", "bf16"],
+                        help="potentially lossy ACT/Diffusion MPS autocast experiment")
+    parser.add_argument("--torch-channels-last", action="store_true",
+                        help="experimental ACT/Diffusion MPS Conv2d weight layout")
+    parser.add_argument("--torch-compile", action="store_true",
+                        help="experimental Diffusion MPS torch.compile (ACT is unsupported)")
+    parser.add_argument("--torch-single-readback", action="store_true",
+                        help="experimental ACT MPS: synchronize through CPU readback only")
 
 
 def main(argv=None):
@@ -295,8 +304,8 @@ def main(argv=None):
     p.add_argument("--grip-debounce", type=float, default=0.6, help="binary gripper: seconds of 'open' before opening")
     p.add_argument("--grip-lead", type=float, default=0.0,
                    help="binary gripper: also close when the policy plans to close this many seconds ahead (try 0.35)")
-    p.add_argument("--steps", type=int, help="pi0.5 denoising steps (default from checkpoint)")
-    p.add_argument("--no-compile", action="store_true", help="pi0.5: skip backend compilation")
+    p.add_argument("--steps", type=int, help="pi0.5 or MLX pi0 denoising steps (fewer than default is lossy)")
+    p.add_argument("--no-compile", action="store_true", help="skip backend compilation for pi0.5 and MLX policies")
     p.add_argument("--allow-framing-mismatch", action="store_true", help="run despite a known camera framing mismatch")
     _backend_args(p)
     p.add_argument("--speed", type=float, help="0.1-1.0, default from config")
@@ -326,7 +335,9 @@ def main(argv=None):
     p.add_argument("--policy", required=True, help="LeRobot pretrained_model folder or Hub model ID (owner/name[@revision])")
     p.add_argument("--device", default="mps")
     p.add_argument("-n", type=int, default=30)
-    p.add_argument("--steps", type=int, help="pi0.5 denoising steps (default from checkpoint)")
+    p.add_argument("--steps", type=int, help="pi0.5 or MLX pi0 denoising steps (fewer than default is lossy)")
+    p.add_argument("--mode", choices=["auto", "chunk", "step", "rtc"], default="auto",
+                   help="time native inference or an explicit execution mode; rtc times guided inference")
     p.add_argument("--no-compile", action="store_true")
     p.add_argument("--profile", action="store_true", help="also report synchronized generic or pi0.5 stage timings")
     _backend_args(p)

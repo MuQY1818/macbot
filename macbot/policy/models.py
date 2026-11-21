@@ -44,6 +44,7 @@ def _to_obs(torch, imgs: dict, q, task: str, rename: dict | None = None):
 class ACT:
     kind = "act"
     supports_rtc = False
+    single_readback = False
 
     def __init__(self, path: Path, device: str, task: str):
         import torch
@@ -64,7 +65,7 @@ class ACT:
         torch = self.torch
         with torch.inference_mode():
             a = self.post(self.pol.predict_action_chunk(self.pre(_to_obs(torch, imgs, q, self.task))))
-        if self.device == "mps":
+        if self.device == "mps" and not self.single_readback:
             torch.mps.synchronize()
         return a.squeeze(0).float().cpu().numpy()
 
@@ -153,8 +154,8 @@ class PI05:
 
 def policy_backend(cfg, args):
     backend = getattr(args, "backend", None) or cfg.get("policy", {}).get("backend", "torch")
-    if backend not in ("torch", "mlx"):
-        sys.exit("policy.backend must be torch or mlx")
+    if backend not in ("torch", "mlx", "auto"):
+        sys.exit("policy.backend must be torch, mlx or auto")
     return backend
 
 
@@ -179,13 +180,27 @@ def load_generic(path, cfg, args, joint_count=None):
         sys.exit(f"Cannot load generic policy: {exc}")
 
 
+def load_mapped_mlx(path, cfg, args, joint_count=None):
+    try:
+        return load_policy(
+            path, args.device, cfg["task"]["instruction"], getattr(args, "steps", None), backend="mlx",
+            mlx_bits=args.mlx_bits, mlx_quantize=args.mlx_quantize, mlx_time_grid=args.mlx_time_grid,
+            cameras={k: v["save_size"] for k, v in cfg["cameras"].items()},
+            camera_map=cfg.get("policy", {}).get("camera_map", {}), joint_count=joint_count,
+        )
+    except (OSError, ValueError, RuntimeError) as exc:
+        sys.exit(f"Cannot load MLX policy: {exc}")
+
+
 def load_policy(path: Path, device: str, task: str, steps: int | None = None, *,
                 backend: str = "torch", mlx_bits: int | None = None, mlx_quantize: str = "prefix",
-                mlx_time_grid: str = "uniform"):
+                mlx_time_grid: str = "uniform", cameras=None, camera_map=None, joint_count=None):
     typ = json.loads((Path(path) / "config.json").read_text()).get("type", "act")
     if backend == "mlx":
-        if typ != "pi05":
-            sys.exit("The MLX backend requires a stock pi0.5 checkpoint")
+        from .backends import MLX_BACKENDS
+
+        if typ not in MLX_BACKENDS:
+            sys.exit(f"No MLX backend is implemented for {typ}")
         if device != "mps":
             sys.exit("The MLX backend runs on the Apple GPU; use --device mps")
         try:
@@ -196,6 +211,19 @@ def load_policy(path: Path, device: str, task: str, steps: int | None = None, *,
             if exc.name and exc.name.startswith("mlx"):
                 sys.exit("Install the optional MLX backend with: pip install 'macbot[mlx]'")
             raise
+        if typ != "pi05":
+            if mlx_bits is not None or mlx_time_grid != "uniform":
+                sys.exit("MLX quantization and alternative time grids are only supported for pi0.5")
+            io = dict(cameras=cameras or {}, camera_map=camera_map, joint_count=joint_count)
+            if typ == "pi0":
+                from .mlx_pi0 import PI0MLX
+
+                return PI0MLX(Path(path), task, steps, **io)
+            if steps is not None:
+                sys.exit("--steps is only supported for pi0.5 and MLX pi0")
+            from .mlx_smolvla import SmolVLAMLX
+
+            return SmolVLAMLX(Path(path), task, **io)
         return PI05MLX(
             Path(path), task, steps, bits=mlx_bits, quantize=mlx_quantize, trim=True, precompute_adarms=True,
             dtype=mx.float16 if mlx_bits is None else mx.bfloat16, pack_linears=mlx_bits is None,

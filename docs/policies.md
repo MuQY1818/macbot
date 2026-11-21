@@ -6,6 +6,10 @@
 ACT and π0.5 use their original wrappers and defaults. Other policy types use the generic
 PyTorch adapter; pass `--policy-impl generic` to opt into that adapter for ACT or π0.5.
 
+`run` and `bench` accept `--backend auto` or `policy: {backend: auto}` in YAML.
+`policies` lists implemented backends independently of installed extras and
+[lossless qualification](acceleration.md#automatic-backend-selection).
+
 ## Bring a checkpoint
 
 Use a local LeRobot `pretrained_model` directory with `config.json`, weights,
@@ -39,7 +43,14 @@ macbot --config robot.yaml run --policy path/to/pretrained_model --fake --autost
 ```
 
 For `lerobot/smolvla_base`, include a third 256 × 256 camera mapped to `camera3`.
+The SmolVLA MLX backend supports the stock SmolVLM2-500M geometry and chunk execution.
+The public base checkpoint qualifies for automatic selection in the tested configuration.
 For the tested two-camera X-VLA checkpoint, map `top` and `wrist` to `image` and `image2`.
+
+The π0 `--backend mlx` path accepts a stock 224px PaliGemma 2B checkpoint with absolute actions
+and uses `policy.camera_map` and the saved processors. It provides `--mode chunk` and
+guided `--mode rtc`, and defaults to chunks. `--backend auto` selects compiled MLX for compatible
+π0 and π0.5 checkpoints in both modes based on the [recorded comparisons](acceleration.md#π0-on-recorded-observations).
 
 `bench` measures observation conversion through action output. Use `--device cpu` for a
 CPU comparison. `--profile` adds a separate synchronized pass for observation conversion,

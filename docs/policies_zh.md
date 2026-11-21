@@ -5,7 +5,18 @@
 `macbot policies` 列出 LeRobot 0.7.0 注册的策略及实测状态。ACT 和 π0.5 保留原有封装和运行默认值。
 其他类型走 PyTorch 通用适配器；也可以用 `--policy-impl generic` 显式让 ACT 或 π0.5 使用通用适配器。
 
+`run` 和 `bench` 可使用 `--backend auto`，也可在 YAML 中设置 `policy: {backend: auto}`。
+`policies` 列出已实现的后端，附加依赖的安装状态和[保真验证](acceleration_zh.md#自动选择后端)另计。
+
 ## 使用自己的 checkpoint
+
+π0 `--backend mlx` 路径接受使用绝对动作的标准 224 像素 PaliGemma 2B checkpoint，使用
+`policy.camera_map` 和随权重保存的处理器。提供 `--mode chunk` 和 RTC 引导，默认分块。
+根据[录制观测对比](acceleration_zh.md#π0-录制观测实测)，`--backend auto` 在两个模式中为兼容的
+π0 和 π0.5 checkpoint 选择编译后的 MLX。
+
+SmolVLA MLX 后端支持标准 SmolVLM2-500M 结构和分块推理。
+`lerobot/smolvla_base` 需要第三路 256 × 256 相机；通过验证的配置可自动选择 MLX。
 
 使用本地 LeRobot `pretrained_model` 目录，包含 `config.json`、模型权重、
 `policy_preprocessor.json`、`policy_postprocessor.json` 及处理器引用的状态文件。
