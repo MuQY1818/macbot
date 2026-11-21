@@ -53,6 +53,27 @@ def test_cgl_warns_and_tries_software_when_acceleration_is_unavailable(monkeypat
     assert "MuJoCo renderer: Apple Software Renderer" in out.out
 
 
+def test_rtc_switches_on_the_simulated_delivery_step():
+    inputs = []
+
+    def policy(obs, q, **kwargs):
+        inputs.append(kwargs)
+        chunk = (np.arange(8, dtype=np.float32) + 10 * q[0])[:, None]
+        return chunk, chunk
+
+    args = SimpleNamespace(mode="rtc", k=30, query_every=3, delay_steps=2, rtc_horizon=5)
+    clock = evaluate.StepClock(policy, args, fps=30, joints=1, limit_chunk=False)
+    actions = []
+    for step in range(6):
+        action, chunk_id = clock.target(step, {}, [step], lambda *_a, **_kw: None)
+        actions.append((float(action[0]), chunk_id))
+        if step == 3:
+            assert clock.ahead(step, 4)[0] == 7
+    assert actions == [(0, 0), (1, 0), (2, 0), (3, 0), (4, 0), (32, 1)]
+    np.testing.assert_array_equal(inputs[1]["leftover"].ravel(), np.arange(3, 8))
+    assert inputs[1]["delay"] == 2
+
+
 def test_eval_saves_seeded_normal_rollouts(tmp_path, monkeypatch, capsys):
     class Env:
         descriptor = SimpleNamespace(fps=30, control_mode="position", semantics="test")

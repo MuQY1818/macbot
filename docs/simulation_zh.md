@@ -15,6 +15,7 @@ cp configs/so101_sim.yaml ./tabletop.yaml
 macbot --config tabletop.yaml doctor
 ```
 
+仿真直接由 YAML 配置；USB 设置向导用于实体机械臂。
 示例保留原有的正弦输入，用于快速检查流程。在配置副本中设置 `teleop.type: keyboard`，
 保留 `teleop.hz: 30`。运行 `macbot --config tabletop.yaml collect`，按 **S** 开始。
 让采集页面获得焦点，展开**键盘控制**可查看按键：

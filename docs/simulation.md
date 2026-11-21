@@ -16,6 +16,7 @@ cp configs/so101_sim.yaml ./tabletop.yaml
 macbot --config tabletop.yaml doctor
 ```
 
+The YAML sets up the simulator; the USB setup wizard is for physical arms.
 The example keeps the existing sine input for pipeline smoke tests. Choose
 `teleop.type: keyboard` in your copy and retain `teleop.hz: 30`. Run
 `macbot --config tabletop.yaml collect` and start with **S**. Focus the
