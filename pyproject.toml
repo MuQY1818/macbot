@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "macbot"
-version = "0.3.2"
+version = "0.3.3"
 description = "LeRobot on a MacBook: one standard workflow to teleoperate, record, export and run LeRobot policies such as ACT, pi0.5 and SmolVLA, with fast inference on Apple silicon."
 readme = "README.md"
 requires-python = ">=3.12"
