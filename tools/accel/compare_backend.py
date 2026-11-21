@@ -32,14 +32,19 @@ def machine():
                  for key in ("hw.model", "machdep.cpu.brand_string"))
 
 
-def error(candidate, reference, gripper, joint_units):
+def error(candidate, reference, gripper, joint_units, degrees_per_unit=None):
     if candidate.shape != reference.shape:
         raise ValueError("Candidate and reference actions have different shapes")
     if not 0 <= gripper < candidate.shape[-1]:
         raise ValueError("Gripper index is outside the checkpoint's action vector")
     differences = np.abs(candidate - reference)
     joints = np.delete(differences, gripper, axis=-1)
-    if joint_units == "rad":
+    if degrees_per_unit is not None:
+        scale = np.asarray(degrees_per_unit)
+        if scale.shape != (joints.shape[-1],) or not np.all(np.isfinite(scale) & (scale > 0)):
+            raise ValueError("Provide one positive, finite degree scale per non-gripper joint")
+        joints = joints * scale
+    elif joint_units == "rad":
         joints = np.rad2deg(joints)
     return {
         name: {"mean": float(values.mean()), "p99": float(np.percentile(values, 99))}
@@ -209,7 +214,10 @@ def run(args):
         "torch_options": vars(options), "compile_mlx": args.compile_mlx, "compile_pi05_torch": args.compile_pi05_torch,
     }
     if args.reference:
-        result["fidelity"] = error(actions, np.load(args.reference), args.gripper_index, args.joint_units)
+        result["fidelity"] = error(actions, np.load(args.reference), args.gripper_index,
+                                   args.joint_units, args.joint_degrees_per_unit)
+    if args.joint_degrees_per_unit is not None:
+        result["joint_degrees_per_unit"] = args.joint_degrees_per_unit
     np.save(args.out.with_suffix(".npy"), actions)
     args.out.with_suffix(".json").write_text(json.dumps(result, indent=2) + "\n")
     print(json.dumps(result), flush=True)
@@ -232,7 +240,10 @@ def main():
     parser.add_argument("--torch-single-readback", action="store_true")
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--reference", type=Path)
-    parser.add_argument("--joint-units", choices=("deg", "rad"), required=True)
+    units = parser.add_mutually_exclusive_group(required=True)
+    units.add_argument("--joint-units", choices=("deg", "rad"), help="units of the checkpoint's joint outputs")
+    units.add_argument("--joint-degrees-per-unit", type=float, nargs="+", metavar="SCALE",
+                       help="degrees per normalized unit, in non-gripper joint order")
     parser.add_argument("--gripper-index", type=int, required=True)
     parser.add_argument("--seed", type=int, default=941)
     parser.add_argument("--calls", type=int, default=50)
