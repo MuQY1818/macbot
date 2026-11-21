@@ -179,13 +179,27 @@ def load_generic(path, cfg, args, joint_count=None):
         sys.exit(f"Cannot load generic policy: {exc}")
 
 
+def load_mapped_mlx(path, cfg, args, joint_count=None):
+    try:
+        return load_policy(
+            path, args.device, cfg["task"]["instruction"], getattr(args, "steps", None), backend="mlx",
+            mlx_bits=args.mlx_bits, mlx_quantize=args.mlx_quantize, mlx_time_grid=args.mlx_time_grid,
+            cameras={k: v["save_size"] for k, v in cfg["cameras"].items()},
+            camera_map=cfg.get("policy", {}).get("camera_map", {}), joint_count=joint_count,
+        )
+    except (OSError, ValueError, RuntimeError) as exc:
+        sys.exit(f"Cannot load MLX policy: {exc}")
+
+
 def load_policy(path: Path, device: str, task: str, steps: int | None = None, *,
                 backend: str = "torch", mlx_bits: int | None = None, mlx_quantize: str = "prefix",
-                mlx_time_grid: str = "uniform"):
+                mlx_time_grid: str = "uniform", cameras=None, camera_map=None, joint_count=None):
     typ = json.loads((Path(path) / "config.json").read_text()).get("type", "act")
     if backend == "mlx":
-        if typ != "pi05":
-            sys.exit("The MLX backend requires a stock pi0.5 checkpoint")
+        from .backends import MLX_BACKENDS
+
+        if typ not in MLX_BACKENDS:
+            sys.exit(f"No MLX backend is implemented for {typ}")
         if device != "mps":
             sys.exit("The MLX backend runs on the Apple GPU; use --device mps")
         try:
@@ -196,6 +210,13 @@ def load_policy(path: Path, device: str, task: str, steps: int | None = None, *,
             if exc.name and exc.name.startswith("mlx"):
                 sys.exit("Install the optional MLX backend with: pip install 'macbot[mlx]'")
             raise
+        if typ == "pi0":
+            from .mlx_pi0 import PI0MLX
+
+            if mlx_bits is not None or mlx_time_grid != "uniform":
+                sys.exit("MLX quantization and alternative time grids are only supported for pi0.5")
+            return PI0MLX(Path(path), task, steps, cameras=cameras or {}, camera_map=camera_map,
+                          joint_count=joint_count)
         return PI05MLX(
             Path(path), task, steps, bits=mlx_bits, quantize=mlx_quantize, trim=True, precompute_adarms=True,
             dtype=mx.float16 if mlx_bits is None else mx.bfloat16, pack_linears=mlx_bits is None,

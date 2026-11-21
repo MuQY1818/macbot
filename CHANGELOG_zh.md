@@ -18,6 +18,8 @@ macbot 的主要变更记录在这里。本项目遵循
 - `run` 和 `bench` 可显式使用 `--backend auto`，按 checkpoint 的证据选择后端，回退到 PyTorch 时说明原因。
   试验记录后端选择，`macbot policies` 列出已实现的后端。
 - `bench --mode rtc` 可为支持 RTC 的后端测量有引导推理耗时，无需连接机器人。
+- 实验性 π0 MLX 后端，面向 224 像素 PaliGemma 2B checkpoint，提供分块和 RTC 引导路径。
+  尚未核验训练权重的保真度和速度，`auto` 不会选用。
 
 ### 变更
 

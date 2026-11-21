@@ -296,8 +296,8 @@ def main(argv=None):
     p.add_argument("--grip-debounce", type=float, default=0.6, help="binary gripper: seconds of 'open' before opening")
     p.add_argument("--grip-lead", type=float, default=0.0,
                    help="binary gripper: also close when the policy plans to close this many seconds ahead (try 0.35)")
-    p.add_argument("--steps", type=int, help="pi0.5 denoising steps (fewer than the checkpoint default is lossy)")
-    p.add_argument("--no-compile", action="store_true", help="pi0.5: skip backend compilation")
+    p.add_argument("--steps", type=int, help="pi0.5 or MLX pi0 denoising steps (fewer than default is lossy)")
+    p.add_argument("--no-compile", action="store_true", help="skip backend compilation for pi0.5 and MLX policies")
     p.add_argument("--allow-framing-mismatch", action="store_true", help="run despite a known camera framing mismatch")
     _backend_args(p)
     p.add_argument("--speed", type=float, help="0.1-1.0, default from config")
@@ -327,7 +327,7 @@ def main(argv=None):
     p.add_argument("--policy", required=True, help="LeRobot pretrained_model folder or Hub model ID (owner/name[@revision])")
     p.add_argument("--device", default="mps")
     p.add_argument("-n", type=int, default=30)
-    p.add_argument("--steps", type=int, help="pi0.5 denoising steps (fewer than the checkpoint default is lossy)")
+    p.add_argument("--steps", type=int, help="pi0.5 or MLX pi0 denoising steps (fewer than default is lossy)")
     p.add_argument("--mode", choices=["auto", "chunk", "step", "rtc"], default="auto",
                    help="time native inference or an explicit execution mode; rtc times guided inference")
     p.add_argument("--no-compile", action="store_true")

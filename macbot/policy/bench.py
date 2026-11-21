@@ -12,7 +12,7 @@ import numpy as np
 from ..config import Config
 from ..system import expand
 from .backends import select_backend
-from .models import load_generic, load_policy, policy_backend, raw_state_shape, use_generic
+from .models import load_generic, load_mapped_mlx, load_policy, policy_backend, raw_state_shape, use_generic
 from .profile import MLXStages, TorchStages
 
 
@@ -24,10 +24,15 @@ def run(cfg: Config, args):
     selection = select_backend(policy_backend(cfg, args), path, metadata, args, bench=True)
     selection.announce()
     backend = selection.backend
-    generic = use_generic(metadata.get("type", "act"), getattr(args, "policy_impl", "auto"), backend)
+    kind = metadata.get("type", "act")
+    generic = use_generic(kind, getattr(args, "policy_impl", "auto"), backend)
+    mapped_mlx = backend == "mlx" and kind != "pi05"
     steps = getattr(args, "steps", None)
     if generic:
         pol = load_generic(path, cfg, args)
+        q = [0.0] * pol.width
+    elif mapped_mlx:
+        pol = load_mapped_mlx(path, cfg, args)
         q = [0.0] * pol.width
     elif backend == "mlx":
         pol = load_policy(path, args.device, cfg["task"]["instruction"], steps, backend="mlx",
@@ -36,7 +41,7 @@ def run(cfg: Config, args):
         pol = load_policy(path, args.device, cfg["task"]["instruction"], steps)
     else:
         pol = load_policy(path, args.device, cfg["task"]["instruction"])
-    if not generic and pol.kind == "pi05" and not args.no_compile:
+    if (mapped_mlx or not generic and pol.kind == "pi05") and not args.no_compile:
         pol.enable_compile()
         print(f"{'mx.compile' if backend == 'mlx' else 'torch.compile'} on; the first calls compile", flush=True)
     imgs = {c: np.zeros((v["save_size"][1], v["save_size"][0], 3), np.uint8) for c, v in cfg["cameras"].items()}

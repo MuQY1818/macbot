@@ -45,6 +45,11 @@ macbot --config robot.yaml run --policy path/to/pretrained_model --fake --autost
 For `lerobot/smolvla_base`, include a third 256 × 256 camera mapped to `camera3`.
 For the tested two-camera X-VLA checkpoint, map `top` and `wrist` to `image` and `image2`.
 
+The experimental π0 `--backend mlx` path accepts a stock 224px PaliGemma 2B checkpoint
+and uses `policy.camera_map` and the saved processors. It provides `--mode chunk` and
+guided `--mode rtc`, and defaults to chunks. Trained checkpoint fidelity and speed are
+not verified. Use offline checks and `--fake` to evaluate it.
+
 `bench` measures observation conversion through action output. Use `--device cpu` for a
 CPU comparison. `--profile` adds a separate synchronized pass for observation conversion,
 preprocessing, model inference, postprocessing and copying the result. In `run`, `--mode auto`

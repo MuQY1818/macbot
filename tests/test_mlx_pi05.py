@@ -101,6 +101,32 @@ def test_missing_checkpoint_weight_rejected(tiny):
         PI05Network(weights, g)
 
 
+def test_pi0_uses_state_token_and_block_attention(tiny):
+    from macbot.policy.mlx_pi0 import PI0Network
+
+    g, weights, images, noise = tiny
+    for name in list(weights):
+        if name.startswith(_EXPERT) and ".dense." in name:
+            if name.endswith(".weight"):
+                weights[name.removesuffix(".dense.weight") + ".weight"] = mx.zeros((6,))
+            del weights[name]
+    weights["state_proj.weight"] = mx.ones((6, 3))
+    weights["state_proj.bias"] = mx.zeros((6,))
+    weights["time_mlp_in.weight"] = mx.concatenate((weights["time_mlp_in.weight"],) * 2, axis=1)
+    net = PI0Network(weights, g, dtype=mx.float32)
+    valid, cache = net.prefix(net.vision(images), mx.array([[1, 2]]), mx.array([[True, True]]), False)
+    pos, keep = net.expert_inputs(valid, noise.shape[1])
+    assert np.array(keep)[0, 0, 0].tolist() == [True] * 11 + [False] * 5
+    assert np.array(keep)[0, 0, 1:].all()
+    time = mx.ones((1, 6))
+    zero = net.linear(mx.zeros((1, 3)), "state_proj")[:, None]
+    nonzero = net.linear(mx.ones((1, 3)), "state_proj")[:, None]
+    a, b = (np.array(net.velocity(noise, state, time, cache, pos, keep)) for state in (zero, nonzero))
+    assert a.shape == b.shape == noise.shape
+    assert np.isfinite(a).all() and np.isfinite(b).all()
+    assert not np.allclose(a, b)
+
+
 def test_gemma_embedding_is_scaled(tiny):
     g, weights, *_ = tiny
     net = PI05Network(weights, g, dtype=mx.float32)

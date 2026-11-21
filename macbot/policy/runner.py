@@ -38,7 +38,15 @@ from ..viz.rollouts import Store, serve_rollouts
 from .backends import select_backend
 from .executors import AsyncChunk, Ensemble, Step, SyncChunk
 from .gripper import BinaryGripper, find_gripper_config, takeover_gripper_alignment
-from .models import check_joint_dimensions, load_generic, load_policy, policy_backend, prep_image, use_generic
+from .models import (
+    check_joint_dimensions,
+    load_generic,
+    load_mapped_mlx,
+    load_policy,
+    policy_backend,
+    prep_image,
+    use_generic,
+)
 
 CAM_STALL_S = 0.5
 HOME_RAMP_S = 0.6                                         # homing speeds up over this time
@@ -397,10 +405,12 @@ def _control(st, srv, fps, gripper, cleanup):
     st.backend_selection = selection
     backend = selection.backend
     selection.announce()
-    generic = use_generic(metadata.get("type", "act"), getattr(args, "policy_impl", "auto"), backend)
-    if generic:
+    kind = metadata.get("type", "act")
+    generic = use_generic(kind, getattr(args, "policy_impl", "auto"), backend)
+    mapped_mlx = backend == "mlx" and kind != "pi05"
+    if generic or mapped_mlx:
         if not (args.fake or st.sim) and cfg.get("policy", {}).get("action_space") != "joint_position":
-            sys.exit("Generic policies require policy.action_space: joint_position for hardware. "
+            sys.exit("Checkpoint-mapped policies require policy.action_space: joint_position for hardware. "
                      "First verify absolute joint order and units with --fake.")
     else:
         check_joint_dimensions(args.policy, names)
@@ -417,15 +427,20 @@ def _control(st, srv, fps, gripper, cleanup):
         args.mode = mode
         if mode == "chunk" and args.k < 1:
             sys.exit("--k must be positive")
+    elif mapped_mlx:
+        pol = load_mapped_mlx(args.policy, cfg, args, n_j)
+        args.mode = "chunk" if args.mode == "auto" else args.mode
+        if args.mode == "chunk" and args.k < 1:
+            sys.exit("--k must be positive")
     elif backend == "mlx":
         pol = load_policy(args.policy, args.device, cfg["task"]["instruction"], args.steps, backend="mlx",
                           mlx_bits=args.mlx_bits, mlx_quantize=args.mlx_quantize, mlx_time_grid=args.mlx_time_grid)
     else:
         pol = load_policy(args.policy, args.device, cfg["task"]["instruction"], args.steps)
-    if not generic and pol.kind == "pi05" and not args.no_compile:
+    if (mapped_mlx or not generic and pol.kind == "pi05") and not args.no_compile:
         pol.enable_compile()
         compiler = "mx.compile" if backend == "mlx" else "torch.compile"
-        print(f"pi0.5: {compiler} on; the first inference compiles.", flush=True)
+        print(f"{'pi0.5' if pol.kind == 'pi05' else pol.kind}: {compiler} on; the first inference compiles.", flush=True)
     if args.mode == "auto":
         args.mode = ("async" if selection.requested == "mlx" else "rtc") if pol.kind == "pi05" else "ensemble"
     if getattr(args, "query_every", 0) and args.mode not in ("async", "rtc"):
@@ -433,7 +448,7 @@ def _control(st, srv, fps, gripper, cleanup):
     if args.mode == "step" and not generic:
         sys.exit("--mode step requires a generic policy that uses select_action")
     if args.mode == "rtc" and not pol.supports_rtc:
-        sys.exit("--mode rtc needs pi0.5")
+        sys.exit(f"--mode rtc is not supported by {pol.kind} on {backend}")
     sizes = {c: tuple(cfg["cameras"][c]["save_size"]) for c in st.cam_names}
     if pol.shapes is not None and set(pol.shapes) != set(st.cam_names):
         sys.exit(f"policy cameras {sorted(pol.shapes)} do not match config cameras {sorted(st.cam_names)}")
@@ -451,7 +466,7 @@ def _control(st, srv, fps, gripper, cleanup):
             if not generic:
                 raise
             sys.exit(f"{pol.kind} warm-up failed on {args.device}: {exc}")
-    if generic:
+    if generic or mapped_mlx:
         pol.reset()
     if a.shape[-1] != n_j:
         sys.exit(f"policy outputs {a.shape[-1]} values per step, but {robot.kind} has {n_j} joints ({', '.join(names)})")
@@ -492,7 +507,7 @@ def _control(st, srv, fps, gripper, cleanup):
     if args.mode == "step":
         ex = Step(pol, observe, rate, st.log_chunk)
     elif args.mode == "chunk":
-        ex = SyncChunk(pol, observe, rate, st.log_chunk, min(args.k, pol.H) if generic else args.k)
+        ex = SyncChunk(pol, observe, rate, st.log_chunk, min(args.k, pol.H) if generic or mapped_mlx else args.k)
     elif args.mode == "ensemble":
         ex = Ensemble(pol, observe, rate, st.log_chunk, args.te_m, args.te_hz, stop)
     else:
@@ -523,7 +538,7 @@ def _control(st, srv, fps, gripper, cleanup):
                 st.set_mode(mode)
 
     def restart_policy():
-        if generic and args.mode == "chunk":
+        if (generic or mapped_mlx) and args.mode == "chunk":
             pol.reset()
         ex.reset(True)
 

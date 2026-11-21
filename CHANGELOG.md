@@ -18,6 +18,8 @@ All notable changes to macbot will be documented here. This project follows
 - Opt-in `--backend auto` for `run` and `bench`, with checkpoint-specific evidence and a reason when it
   falls back to PyTorch. Trials save the backend decision and `macbot policies` lists implemented backends.
 - `bench --mode rtc` times guided inference for RTC-capable backends without connecting a robot.
+- Experimental π0 MLX backend for 224px PaliGemma 2B checkpoints, with chunk and guided RTC paths.
+  Trained checkpoint fidelity and speed are not verified; `auto` does not select it.
 
 ### Changed
 

@@ -16,7 +16,7 @@ STATUS = {
     "act": ("verified", "built-in wrapper and generic chunks"),
     "diffusion": ("runs, tiny checkpoint", "generic select_action; tiny DDIM checkpoint"),
     "gaussian_actor": ("runs, tiny checkpoint", "generic select_action; continuous actions"),
-    "pi0": ("runs, random weights", "generic chunks; six-joint random checkpoint with 2B prefix"),
+    "pi0": ("runs, random weights", "torch generic chunks; MLX port has no trained-checkpoint verification"),
     "pi0_fast": ("not verified", "weights loaded; random tokens failed FAST action decoding"),
     "tdmpc": ("runs, tiny checkpoint", "generic select_action; one camera named observation.image"),
     "vqbet": ("runs, tiny checkpoint", "generic select_action; one camera"),
