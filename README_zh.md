@@ -46,6 +46,7 @@ macbot replay
 
 reBot B601-RS 已做真机验证。其他 LeRobot 机械臂目前只有 fake 或仿真证据，具体见[机械臂支持](docs/robots_zh.md)。
 运行 π0.5 建议使用至少 32 GB 内存的 Apple 芯片 Mac。已测 checkpoint 见[策略支持](docs/policies_zh.md)。
+没有机械臂也可以按[仿真指南](docs/simulation_zh.md)开始。
 
 以下数据在 MacBook Pro（M5 Pro，48 GB）上实测，为每个动作块的大致耗时：
 

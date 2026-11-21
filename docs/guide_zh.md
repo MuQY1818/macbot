@@ -287,6 +287,8 @@ macbot export --rollouts --segments --min-segment-s 1.0 --pre-takeover-s 1.7
 
 ## 物理仿真
 
+笛卡尔键盘控制、脚本示教、本地 ACT 训练和按种子评估见[仿真指南](simulation_zh.md)。
+
 安装 [MuJoCo 依赖](setup_zh.md#本地-mujoco-仿真)，各步骤使用同一个配置：
 
 ```bash

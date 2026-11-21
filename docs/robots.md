@@ -6,7 +6,7 @@
 |---|---|---|
 | `rebot_b601` | Seeed reBot B601-RS follower and Arm 102 leader | Tested on hardware on Apple silicon. |
 | `lerobot` | SO-100/101, Koch, OMX, OpenArm, YAM and other compatible LeRobot arms | Configured through LeRobot. Fake mode only: the SO-101 collect/export path was exercised; other arms have layout support or can supply `robot.joints`. No hardware validation. |
-| `sim` | SO-101 tabletop in MuJoCo | Collection, export, ACT inference and replay run end to end (randomly initialised ACT; task success not measured). Collection uses a scripted leader, not teleoperation. |
+| `sim` | SO-101 tabletop in MuJoCo | Collection, export, ACT inference and replay run end to end with random weights. Synthetic keyboard input completed a task; trained policy success is not verified. |
 
 Run `macbot robots` to list registered LeRobot types. The list reflects installed packages;
 it is not a list of validated arms. Generic followers must accept joint-position (`.pos`)
@@ -50,10 +50,10 @@ driver's units. Reuse the same IDs and calibration directories when recording or
 
 ## Local simulation
 
-Install `macbot[sim]` (or `pip install -e ".[sim]"` from source) and use the complete
-[`configs/so101_sim.yaml`](../configs/so101_sim.yaml). Run `macbot --config configs/so101_sim.yaml collect`
-without `--fake`. This profile uses a scripted leader; its rates must match the scene.
-The pinned EnvHub scene downloads and executes Python on first use.
+Follow the [simulation guide](simulation.md) for setup, keyboard teleoperation, scripted
+demonstrations, and policy evaluation. The complete [`configs/so101_sim.yaml`](../configs/so101_sim.yaml)
+keeps scripted sine input for smoke tests. Run collection without `--fake`.
+The pinned EnvHub scene downloads and executes Python on first use; the control rates must match it.
 
 ```yaml
 robot:
@@ -73,7 +73,7 @@ cameras:
 Run them separately with the same device types,
 ports, IDs and optional `calibration_dir`. Use `--robot.*` for the follower and `--teleop.*`
 for the leader; see the [setup guide](setup.md) for commands. macbot connects with
-`calibrate=False`. Simulation and fake mode need no calibration.
+`calibrate=False`. Simulation without a physical leader, and fake mode, need no calibration.
 
 Run `macbot --config my.yaml doctor` to check the selected profile. For generic arms it checks
 driver imports, configured serial paths and calibration file presence without opening a device.

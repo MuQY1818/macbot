@@ -347,6 +347,9 @@ to the ordered joint names when using `--fake`.
 
 ## Simulation
 
+See the [simulation guide](simulation.md) for Cartesian keyboard control, scripted task
+demonstrations, local ACT training, and seeded policy evaluation.
+
 Install the [MuJoCo extra](setup.md#local-mujoco-simulator) and use the same config throughout:
 
 ```bash
