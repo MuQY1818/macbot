@@ -4,8 +4,6 @@
 
 保留原有 LeRobot 校准文件、v3.0 数据集和完整策略 checkpoint。在 Mac 上采集、检查、推理和回放，
 训练仍放在 GPU 机器上。先按[快速开始](quickstart_zh.md)装好 Python 和相机依赖。
-如果已安装的版本在 `macbot init --help` 里没有 `--from-lerobot`，在源码目录运行
-`python -m pip install -e .`。
 
 ## 迁移校准文件
 
@@ -82,6 +80,7 @@ macbot replay
 | reBot 参考配置 | 此前真机测试 |
 | 导入命令、重选设备 | 模拟设备测试 |
 | 数据集检查与回放 | LeRobot 0.7.0 本地输出、模拟 Hub |
+| Hub checkpoint | 公开 ACT 已下载，在 CPU 上测速并跑假机 |
 | SO-101 采集与导出 | 此前 fake 和仿真测试 |
 | 通用机械臂在 Mac 上运动 | 未验证 |
 

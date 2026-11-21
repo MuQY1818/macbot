@@ -4,9 +4,7 @@
 
 Keep your LeRobot calibration files, v3.0 datasets and complete policy checkpoints. Use the Mac
 for collection, checks, inference and replay, and keep training on your GPU machine.
-Start with the Python and camera setup in [quickstart](quickstart.md). If your installed release
-does not list `--from-lerobot` in `macbot init --help`, install the source checkout with
-`python -m pip install -e .`.
+Start with the Python and camera setup in [quickstart](quickstart.md).
 
 ## Bring the calibration files
 
@@ -95,6 +93,7 @@ aligned with the checkpoint. See [policy support](policies.md) for layouts and m
 | Reference reBot profile | Prior hardware test |
 | Command import and remapping | Synthetic device tests |
 | Dataset inspection and playback | LeRobot 0.7.0 local output; mocked Hub |
+| Hub checkpoints | Public ACT downloaded, benchmarked and run on a fake arm (CPU) |
 | SO-101 collection and export | Prior fake and sim runs |
 | Generic arm motion on the Mac | Not verified |
 
