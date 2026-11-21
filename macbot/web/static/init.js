@@ -104,7 +104,7 @@ function remember(inventory) {
   data = inventory;
   select = {family: "", cameras: {}, ...data.remembered};
   const external = data.cameras.map((cam, i) => [cam, i]).filter(([cam]) => !cam.builtin && cam.mode);
-  if (!Object.keys(select.cameras).length && external.length === 1) select.cameras.top = external[0][1];
+  if (!data.imported && !Object.keys(select.cameras).length && external.length === 1) select.cameras.top = external[0][1];
   stage = 0;
   result = null;
 }
@@ -129,7 +129,8 @@ function armStage() {
   const motion = select.family && select.family !== "rebot_b601" && available(true).length >= 2;
   return `<p>${t("setup_confirm")}</p><ul class="setup-inventory">${devices || `<li>${t("setup_noArms")}</li>`}</ul>
     <div class="setup-fields"><label>${t("setup_model")}<select id="family">
-    ${option("", t("setup_choose"), select.family)}${Object.entries(data.families).map(([k, v]) => option(k, v, select.family)).join("")}
+    ${option("", t("setup_choose"), select.family)}${Object.entries(data.families)
+      .filter(([k]) => !data.imported || k === data.remembered.family).map(([k, v]) => option(k, v, select.family)).join("")}
     </select></label>${armSelect("leader")}${armSelect("follower")}</div>
     ${motion ? `<div class="btn-row"><button id="move" type="button">${t("setup_move")}</button>
       <span class="setup-note">${t("setup_moveHint")}</span></div>` : ""}`;
@@ -187,7 +188,8 @@ function syncButtons() {
   $("back").disabled = busy;
   $("next").hidden = !data || !!collection;
   const allowed = [select.family && Number.isInteger(select.leader) && Number.isInteger(select.follower) &&
-    select.leader !== select.follower, Object.keys(select.cameras || {}).length,
+    select.leader !== select.follower, data.imported ? data.roles.every(r => Object.hasOwn(select.cameras, r)) :
+    Object.keys(select.cameras || {}).length,
     files.length && files.every(f => f.ready), !data?.exists || select.overwrite || result?.ok];
   $("next").disabled = busy || !allowed[stage];
   $("next").textContent = t(stage !== 3 ? "setup_next" : result?.ok ? "setup_collect" : "setup_save");

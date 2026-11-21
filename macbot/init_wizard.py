@@ -53,7 +53,8 @@ def calibration_info(robot):
         except (OSError, ValueError):
             ready = False
         result.append({"role": role, "path": str(path), "ready": ready,
-                       "command": shlex.join(["lerobot-calibrate", *(f"--{prefix}.{k}={v}" for k, v in spec.items())])})
+                       "command": shlex.join(["lerobot-calibrate", *(f"--{prefix}.{k}={v}" for k, v in spec.items()
+                                                                     if v is not None)])})
     return result
 
 
@@ -114,9 +115,11 @@ def check_profile(cfg):
 
 class Setup:
     def __init__(self, path=None, *, scan=scan_adapters, cameras=discover_cameras, positions=detect_leader,
-                 preview=open_preview, calibration=calibration_info, check=check_profile, source=None):
+                 preview=open_preview, calibration=calibration_info, check=check_profile, source=None, imported=None):
         self.path = Path(path) if path is not None else setup_path()
-        self.source_path = expand(source) if source is not None else self.path if self.path.is_file() else None
+        self.imported = imported
+        self.source_path = (expand(source) if source is not None else
+                            self.path if imported is None and self.path.is_file() else None)
         self.source = load(self.source_path) if self.source_path is not None else None
         self.scan, self.discover = scan, cameras
         self.positions, self.preview, self.calibration, self.check = positions, preview, calibration, check
@@ -125,6 +128,8 @@ class Setup:
     def refresh(self):
         self.devices = self.scan()
         self.cameras, self.notes = self.discover()
+        if self.imported:
+            self.notes = [*self.imported.notes, *self.notes]
 
     def _adapter(self, index, *, serial=True):
         if type(index) is not int or not 0 <= index < len(self.devices):
@@ -168,6 +173,12 @@ class Setup:
         old = self.source["robot"] if self.source is not None else {}
         follower_role = "can" if family == "rebot_b601" else "follower"
         bindings = {role: usb_binding(d, self.devices) for role, d in [("leader", leader), (follower_role, follower)]}
+        if self.imported:
+            if family != self.imported.family:
+                raise ValueError("Select the arm model from the imported command.")
+            robot = self.imported.profile["robot"]
+            return {**robot, "usb": bindings, "leader": {**robot["leader"], "port": leader.port},
+                    "follower": {**robot["follower"], "port": follower.port}}
 
         def same_device(role, old_port, new_port):
             if binding := old.get("usb", {}).get(role):
@@ -197,6 +208,13 @@ class Setup:
         return robot
 
     def camera_matches(self):
+        if self.imported:
+            # OpenCV numbers and Linux video device paths are not AVFoundation identities.
+            matches = {
+                role: i for role, address in self.imported.camera_addresses.items()
+                for i, cam in enumerate(self.cameras) if cam.kind == "uvc" and cam.uid == address and cam.mode
+            }
+            return {role: i for role, i in matches.items() if list(matches.values()).count(i) == 1}
         if self.source is None:
             return {}
         matches = {}
@@ -238,10 +256,24 @@ class Setup:
     def profile(self, selection):
         robot = self.robot_config(selection)
         assignments = selection.get("cameras", {})
-        if not isinstance(assignments, dict) or not assignments:
+        if not isinstance(assignments, dict) or (not assignments and not self.imported):
             raise ValueError("Assign at least one camera role.")
         if any(type(i) is not int or not 0 <= i < len(self.cameras) for i in assignments.values()):
             raise ValueError("Select cameras from the inventory.")
+        if self.imported:
+            profile = deepcopy(self.imported.profile)
+            expected = profile["cameras"]
+            if set(assignments) != set(expected) or len(set(assignments.values())) != len(assignments):
+                raise ValueError("Assign one camera to each imported role: " + (", ".join(expected) or "(none)"))
+            cameras = {}
+            for role, i in assignments.items():
+                cam = self.cameras[i]
+                if cam.kind != "uvc":
+                    raise ValueError(f"{role}: select a USB or built-in UVC camera for the imported OpenCV camera.")
+                config = cam.config()
+                config["save_size"] = config["expect_size"]
+                cameras[role] = config | expected[role]
+            return {**profile, "robot": robot, "cameras": cameras}
         roles = set(ROLES) | (self.source["cameras"].keys() if self.source is not None else set())
         if set(assignments) - roles or len(set(assignments.values())) != len(assignments):
             raise ValueError("Assign each camera and each role only once.")
@@ -281,6 +313,16 @@ class Setup:
     def automatic(self, *, family=None, leader=None, follower=None):
         """Non-interactive setup never samples a motor bus or assigns ambiguous roles."""
         exists = self.path.is_file()
+        if self.imported:
+            if exists:
+                raise ValueError("A target profile already exists. Omit --yes to review and replace it.")
+            selection = self.remembered()
+            if not {"follower", "leader"} <= selection.keys() or (
+                set(selection["cameras"]) != set(self.imported.camera_addresses)
+            ):
+                raise ValueError("Imported ports or camera addresses need Mac device assignments. Omit --yes to "
+                                 "select them in the setup console.")
+            return self.save(selection)
         if exists and self.source_path is not None and self.source_path.resolve() != self.path.resolve():
             raise ValueError("A target profile already exists. Run macbot init without --yes to review and replace it.")
         if exists and not any((family, leader, follower)):
@@ -324,6 +366,14 @@ class Setup:
         return self.save({"family": family, "leader": a, "follower": b, "cameras": {"top": cams[0]}})
 
     def remembered(self):
+        if self.imported:
+            robot = self.imported.profile["robot"]
+            selection = {"family": self.imported.family, "cameras": self.camera_matches()}
+            for role in ("leader", "follower"):
+                hits = [i for i, d in enumerate(self.devices) if d.port and d.port == robot[role].get("port")]
+                if len(hits) == 1:
+                    selection[role] = hits[0]
+            return selection
         if self.source is None:
             return {}
         cfg = self.source

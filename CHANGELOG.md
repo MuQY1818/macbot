@@ -9,6 +9,10 @@ All notable changes to macbot will be documented here. This project follows
 
 ## [Unreleased]
 
+### Added
+
+- `init --from-lerobot` imports serial arm settings, camera roles, recording rate and task instructions. Confirm Mac device assignments and reuse the existing calibration IDs.
+
 ## [0.3.2] - 2026-11-20
 
 ### Added
