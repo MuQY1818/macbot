@@ -21,7 +21,7 @@ STATUS = {
     "tdmpc": ("runs, tiny checkpoint", "generic select_action; one camera named observation.image"),
     "vqbet": ("runs, tiny checkpoint", "generic select_action; one camera"),
     "pi05": ("verified", "built-in PyTorch MPS and MLX wrappers"),
-    "smolvla": ("verified", "generic chunks; official SmolVLA base checkpoint"),
+    "smolvla": ("verified", "torch generic chunks; MLX port has no trained-checkpoint verification"),
     "xvla": ("verified", "SO-101 joint checkpoint; end-effector variants are unsupported"),
     "groot": ("not verified", "GR00T base model and robot-specific embodiment checkpoint needed"),
     "wall_x": ("not verified", "needs a compatible WALL-X checkpoint and Qwen vision-language assets"),

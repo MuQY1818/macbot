@@ -210,13 +210,19 @@ def load_policy(path: Path, device: str, task: str, steps: int | None = None, *,
             if exc.name and exc.name.startswith("mlx"):
                 sys.exit("Install the optional MLX backend with: pip install 'macbot[mlx]'")
             raise
-        if typ == "pi0":
-            from .mlx_pi0 import PI0MLX
-
+        if typ != "pi05":
             if mlx_bits is not None or mlx_time_grid != "uniform":
                 sys.exit("MLX quantization and alternative time grids are only supported for pi0.5")
-            return PI0MLX(Path(path), task, steps, cameras=cameras or {}, camera_map=camera_map,
-                          joint_count=joint_count)
+            io = dict(cameras=cameras or {}, camera_map=camera_map, joint_count=joint_count)
+            if typ == "pi0":
+                from .mlx_pi0 import PI0MLX
+
+                return PI0MLX(Path(path), task, steps, **io)
+            if steps is not None:
+                sys.exit("--steps is only supported for pi0.5 and MLX pi0")
+            from .mlx_smolvla import SmolVLAMLX
+
+            return SmolVLAMLX(Path(path), task, **io)
         return PI05MLX(
             Path(path), task, steps, bits=mlx_bits, quantize=mlx_quantize, trim=True, precompute_adarms=True,
             dtype=mx.float16 if mlx_bits is None else mx.bfloat16, pack_linears=mlx_bits is None,

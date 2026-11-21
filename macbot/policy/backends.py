@@ -17,6 +17,7 @@ CHUNK = frozenset({"chunk", "ensemble", "async"})
 MLX_BACKENDS = {
     "pi0": Backend("mlx", CHUNK | {"rtc"}),
     "pi05": Backend("mlx", CHUNK | {"rtc"}),
+    "smolvla": Backend("mlx", CHUNK),
 }
 
 

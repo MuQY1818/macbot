@@ -14,6 +14,9 @@
 `policy.camera_map` 和随权重保存的处理器。提供 `--mode chunk` 和 RTC 引导，默认分块。
 尚未验证训练权重的保真度和速度，请用离线检查及 `--fake` 评估。
 
+实验性的 SmolVLA MLX 后端支持标准 SmolVLM2-500M 结构和分块推理。
+`lerobot/smolvla_base` 需要第三路 256 × 256 相机；训练权重的保真度和速度尚未验证。
+
 使用本地 LeRobot `pretrained_model` 目录，包含 `config.json`、模型权重、
 `policy_preprocessor.json`、`policy_postprocessor.json` 及处理器引用的状态文件。
 如果只保存了 PEFT adapter，先合并到底座模型再导出。
