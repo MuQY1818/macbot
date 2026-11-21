@@ -113,6 +113,7 @@ class State:
         with self.lock:
             eps = [v[1] for _, v in sorted(self.summaries.items())][::-1]
             rec = self.phase == "recording"
+            sim = {"sim_input": self.sim_input, "sim_outcome": self.sim_outcome} if self.sim else {}
             return {"phase": self.phase, "ready": self.ready, "fake": self.fake, "sim": self.sim,
                     "elapsed": time.time() - self.t0 if rec else 0.0,
                     "frames": len(self.buf["qpos"]) if (rec and self.buf) else 0,
@@ -120,8 +121,7 @@ class State:
                     "target": self.cfg["task"]["target_episodes"], "count": len(eps), "saving": self.saving,
                     "q": self.q, "cmd": self.cmd, "names": self.joints, "limits": self.limits, "episodes": eps,
                     "fps": self.fps, "cams": self.cam_info, "cam_names": self.cam_names, "out": str(self.out),
-                    "cam_age": ages, "stall_s": CAM_STALL_S, "motor_health": self.watch.status(),
-                    "sim_input": self.sim_input, "sim_outcome": self.sim_outcome}
+                    "cam_age": ages, "stall_s": CAM_STALL_S, "motor_health": self.watch.status(), **sim}
 
     def set_keys(self, keys):
         from ..robot.sim_cartesian import KEYS
@@ -189,7 +189,7 @@ class State:
                     self.msg = tr("Shutting down: the follower returns home, then disables.",
                                   "正在结束：从臂慢速回到起始位后失能。")
 
-    def _save(self, idx, buf, instruction, *, diagnostic=False):
+    def _save(self, idx, buf, instruction, *, diagnostic=False, batch=False):
         try:
             arr = {k: np.asarray(v) for k, v in buf.items() if not k.endswith("_jpg")
                    and k not in ("motor", "watchdog_events", "motor_at_trip", "simulation")}
@@ -227,6 +227,8 @@ class State:
             if diagnostic:
                 print(f"watchdog diagnostic saved: {path}", flush=True)
                 return
+            if batch:
+                return path
             items = chk["errors"] + chk["warnings"]
             en, zh = "; ".join(text(x, "en") for x in items), "；".join(text(x, "zh") for x in items)
             with self.lock:
@@ -238,13 +240,15 @@ class State:
                                   f"已保存第 {idx:03d} 条（{n / self.fps:.1f} 秒）" + (f"，注意：{zh}" if zh else "，检查通过")
                                   + f"。共 {k} 条。复位场景后按 S 录下一条。")
         except Exception as e:
+            if batch:
+                raise
             if diagnostic:
                 print(f"saving watchdog diagnostic failed: {e}", flush=True)
             with self.lock:
                 if self.watch.trip is None:
                     self.msg = tr(f"Saving episode {idx:03d} failed: {e}", f"保存第 {idx:03d} 条失败：{e}")
         finally:
-            if not diagnostic:
+            if not (diagnostic or batch):
                 with self.lock:
                     self.saving -= 1
 
@@ -359,7 +363,13 @@ def make_handler(st: State):
 
         def do_POST(self):
             if self.path == "/api/teleop/keys" and st.sim_input == "keyboard":
-                st.set_keys(self.body_json().get("keys"))
+                try:
+                    keys = self.body_json()["keys"]
+                except (ValueError, TypeError, KeyError):
+                    return self.json({"error": "Expected a list of pressed keys"}, 400)
+                if not isinstance(keys, list):
+                    return self.json({"error": "Expected a list of pressed keys"}, 400)
+                st.set_keys(keys)
                 return self.send(204, b"", "text/plain")
             if self.path != "/api/cmd":
                 return self.send(404, b"", "text/plain")

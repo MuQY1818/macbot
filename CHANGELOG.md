@@ -12,6 +12,7 @@ All notable changes to macbot will be documented here. This project follows
 ### Added
 
 - Opt-in Cartesian keyboard and calibrated SO-101 leader input in the simulation collection console.
+- Generate seeded tabletop demonstrations with `macbot sim demos`, with environment outcomes and standard episode files.
 
 ## [0.3.3] - 2026-11-21
 

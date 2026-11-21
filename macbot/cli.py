@@ -154,6 +154,25 @@ def cmd_export(args):
     run(_cfg(args), args)
 
 
+def _sim_cfg(args):
+    cfg = _cfg(args)
+    if cfg["robot"].get("type") != "sim":
+        raise SystemExit(f"{args.cmd} requires robot.type: sim")
+    return cfg
+
+
+def cmd_sim_demos(args):
+    from .collect.sim_demos import run
+
+    run(_sim_cfg(args), args)
+
+
+def _sim_batch_args(parser):
+    parser.add_argument("--episodes", type=int, default=1, help="number of attempts")
+    parser.add_argument("--seed", type=int, default=0, help="first reset seed (then increment by one)")
+    parser.add_argument("--out", help="output folder (default: the configured task folder)")
+
+
 def cmd_health(args):
     from .data import lerobot_v3
 
@@ -260,6 +279,13 @@ def main(argv=None):
     p.add_argument("--out", help="episode folder (default <data_root>/raw/<task>)")
     p.add_argument("--no-browser", action="store_true", help="print the console URL without opening it")
     p.set_defaults(fn=cmd_collect)
+
+    p = sub.add_parser("sim", help="simulation utilities")
+    sim = p.add_subparsers(dest="sim_command", required=True)
+    p = sim.add_parser("demos", help="generate scripted SO-101 tabletop demonstrations")
+    _sim_batch_args(p)
+    p.add_argument("--keep-failures", action="store_true", help="also save unsuccessful attempts as episodes")
+    p.set_defaults(fn=cmd_sim_demos)
 
     p = sub.add_parser("export", help="recorded episodes -> LeRobot dataset")
     p.add_argument("--rollouts", action="store_true", help="export reviewed policy trials with binary gripper and frame labels")
