@@ -36,6 +36,19 @@ class Geometry:
 STOCK_GEOMETRY = Geometry()
 
 
+def _weight_names(weights):
+    wrapped_vision = _VISION + "vision_model."
+    canonical = {}
+    for name, value in weights.items():
+        name = name.removeprefix("model.")
+        if name.startswith(wrapped_vision):
+            name = _VISION + name.removeprefix(wrapped_vision)
+        if name in canonical:
+            raise ValueError(f"Ambiguous PaliGemma policy weight: {name}")
+        canonical[name] = value
+    return canonical
+
+
 class PaliGemmaNetwork:
     """Shared SigLIP, Gemma prefix cache, and action expert primitives."""
 
@@ -48,7 +61,7 @@ class PaliGemmaNetwork:
         self.fused_attention = fused_attention
         self.fused_rope = fused_rope
         self.gelu_fp32 = gelu_fp32
-        self.w = {k.removeprefix("model."): v for k, v in weights.items()}
+        self.w = _weight_names(weights)
         embed = _PREFIX + "embed_tokens.weight"
         head = "paligemma_with_expert.paligemma.lm_head.weight"
         if head in self.w:  # LeRobot maps the tied LM head onto the input embedding on load.

@@ -101,6 +101,17 @@ def test_missing_checkpoint_weight_rejected(tiny):
         PI05Network(weights, g)
 
 
+def test_wrapped_siglip_checkpoint_uses_same_weights(tiny):
+    g, weights, images, _ = tiny
+    wrapped = {
+        "model." + (_VISION + "vision_model." + key.removeprefix(_VISION) if key.startswith(_VISION) else key): value
+        for key, value in weights.items()
+    }
+    direct = PI05Network(weights, g, dtype=mx.float32)
+    converted = PI05Network(wrapped, g, dtype=mx.float32)
+    np.testing.assert_array_equal(np.array(direct.vision(images)), np.array(converted.vision(images)))
+
+
 def test_pi0_uses_state_token_and_block_attention(tiny):
     from macbot.policy.mlx_pi0 import PI0Network
 
