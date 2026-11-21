@@ -34,10 +34,16 @@ def _make_sim(spec, task_id):
 class SimArm(Robot):
     kind = "sim"
 
-    def __init__(self, cfg):
+    def __init__(self, cfg, teleop=None):
         super().__init__()
         if cfg.get("leader") or cfg.get("follower"):
-            raise SystemExit("robot.type sim uses robot.env and a scripted leader")
+            raise SystemExit("robot.type sim uses robot.env; select the input with teleop.type")
+        self.teleop = dict(teleop or {})
+        self.teleop_type = self.teleop.get("type", "scripted")
+        self.cartesian = None
+        self._leader_connected = False
+        if self.teleop_type not in {"scripted", "keyboard", "so101_leader"}:
+            raise SystemExit("sim teleop.type must be scripted, keyboard, or so101_leader")
         self.follower = _make_sim(cfg.get("env"), cfg.get("task_id"))
         try:
             desc = self.follower.descriptor
@@ -74,12 +80,48 @@ class SimArm(Robot):
         self._t0 = time.monotonic()
 
     def connect(self, leader=False):
+        if leader and self.teleop_type == "so101_leader":
+            from .lerobot_generic import make_leader, require_calibration
+
+            options = {k: v for k, v in self.teleop.items()
+                       if k not in {"port", "hz", "soft_start_s", "align_max_deg", "leader_port", "seed"}}
+            # The top-level port is the collect console port.
+            options["port"] = self.teleop.get("leader_port")
+            if not options["port"]:
+                raise SystemExit("sim SO-101 teleoperation needs the serial device in teleop.port")
+            if options.get("use_degrees", True) is not True:
+                raise SystemExit("sim requires a SO-101 leader with use_degrees: true")
+            self.leader = make_leader(options)
+            if set(joint_names(self.leader)) != set(self.joints):
+                raise SystemExit("SO-101 leader and simulator joint names do not match")
+            require_calibration(self.leader)
+            self.leader.connect(calibrate=False)
+            self._leader_connected = True
+            if not self.leader.is_calibrated:
+                raise SystemExit(f"calibration does not match {self.leader}; run lerobot-calibrate first")
         self.follower.connect(calibrate=False)
+        if leader and self.teleop_type == "keyboard":
+            from .sim_cartesian import Cartesian, tabletop_world
+
+            self.cartesian = Cartesian(tabletop_world(self))
         self._set_start()
 
-    def reset_scene(self):
-        self.follower.start_episode()
+    def reset_scene(self, seed=None):
+        if seed is None:
+            self.follower.start_episode()
+        else:
+            self.follower.start_episode(seed=seed)
         self._set_start()
+        if self.cartesian is not None:
+            self.cartesian.reset()
+
+    def outcome(self):
+        latest = self.follower.latest
+        return {"reward": float(latest.reward[0]), "success": bool(latest.is_success[0]),
+                "terminated": bool(latest.terminated[0]), "truncated": bool(latest.truncated[0])}
+
+    def episode_limit(self):
+        return int(self.follower._env.call("_max_episode_steps")[0])
 
     @property
     def ended(self):
@@ -94,7 +136,11 @@ class SimArm(Robot):
     def motor_telemetry(self):
         return self._telemetry
 
-    def read_leader(self):
+    def read_leader(self, keys=()):
+        if self.leader is not None:
+            return super().read_leader()
+        if self.cartesian is not None:
+            return self.cartesian.keys(keys)
         elapsed = time.monotonic() - self._t0
         return [self.clamp(n, q + (12 if n == self.gripper else 18)
                            * math.sin(0.8 * elapsed) * math.cos(0.4 * elapsed + i))
@@ -108,7 +154,11 @@ class SimArm(Robot):
         return sent
 
     def shutdown(self, moved=True):
-        self.follower.disconnect()
+        try:
+            if self.leader is not None and (self._leader_connected or self.leader.is_connected):
+                self.leader.disconnect()
+        finally:
+            self.follower.disconnect()
 
     def info(self):
         return {"kind": self.kind, "robot_type": self.follower.robot_type,

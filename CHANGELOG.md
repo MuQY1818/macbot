@@ -9,6 +9,10 @@ All notable changes to macbot will be documented here. This project follows
 
 ## [Unreleased]
 
+### Added
+
+- Opt-in Cartesian keyboard and calibrated SO-101 leader input in the simulation collection console.
+
 ## [0.3.3] - 2026-11-21
 
 ### Added

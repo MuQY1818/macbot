@@ -12,7 +12,7 @@ from .base import Robot
 from .telemetry import MotorSample
 
 
-def open_robot(rcfg: dict, fake: bool = False, leader: bool = False, *, fresh_leader=False) -> Robot:
+def open_robot(rcfg: dict, fake: bool = False, leader: bool = False, *, fresh_leader=False, teleop=None) -> Robot:
     typ = rcfg.get("type", "rebot_b601")
     if fake:
         from .fake import fake_for
@@ -27,7 +27,7 @@ def open_robot(rcfg: dict, fake: bool = False, leader: bool = False, *, fresh_le
         return LeRobotArm(rcfg, leader)
     if typ == "sim":
         from .sim import SimArm
-        return SimArm(rcfg)
+        return SimArm(rcfg, teleop)
     raise SystemExit(f"unknown robot.type {typ!r}: use rebot_b601, lerobot, or sim")
 
 

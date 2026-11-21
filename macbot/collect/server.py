@@ -41,6 +41,10 @@ class State:
     def __init__(self, cfg: Config, out, fake: bool):
         self.cfg, self.out, self.fake = cfg, out, fake
         self.sim = not fake and cfg["robot"].get("type") == "sim"
+        self.sim_input = cfg["teleop"].get("type", "scripted") if self.sim else None
+        self.sim_step_recording = self.sim_input in {"keyboard", "so101_leader"}
+        self.sim_outcome = None
+        self.key_sample = (0.0, frozenset())
         self.start_requested = False
         self.cam_names = list(cfg["cameras"])
         self.fps = int(cfg["record"]["fps"])
@@ -116,7 +120,20 @@ class State:
                     "target": self.cfg["task"]["target_episodes"], "count": len(eps), "saving": self.saving,
                     "q": self.q, "cmd": self.cmd, "names": self.joints, "limits": self.limits, "episodes": eps,
                     "fps": self.fps, "cams": self.cam_info, "cam_names": self.cam_names, "out": str(self.out),
-                    "cam_age": ages, "stall_s": CAM_STALL_S, "motor_health": self.watch.status()}
+                    "cam_age": ages, "stall_s": CAM_STALL_S, "motor_health": self.watch.status(),
+                    "sim_input": self.sim_input, "sim_outcome": self.sim_outcome}
+
+    def set_keys(self, keys):
+        from ..robot.sim_cartesian import KEYS
+
+        if self.sim_input == "keyboard" and isinstance(keys, list):
+            with self.lock:
+                self.key_sample = (time.monotonic(), frozenset(k for k in keys if isinstance(k, str) and k in KEYS))
+
+    def keys(self):
+        with self.lock:
+            stamp, keys = self.key_sample
+        return keys if time.monotonic() - stamp < 0.3 else ()
 
     def command(self, c, *, scene_ready=False):
         a = c.get("action")
@@ -175,7 +192,7 @@ class State:
     def _save(self, idx, buf, instruction, *, diagnostic=False):
         try:
             arr = {k: np.asarray(v) for k, v in buf.items() if not k.endswith("_jpg")
-                   and k not in ("motor", "watchdog_events", "motor_at_trip")}
+                   and k not in ("motor", "watchdog_events", "motor_at_trip", "simulation")}
             rc = self.cfg["record"]
             chk = ({"ok": False, "errors": [self.watch.blocked()], "warnings": []} if diagnostic else
                    check_episode(arr, self.cam_names, self.fps, self.cfg["checks"], rc["min_episode_s"],
@@ -189,6 +206,8 @@ class State:
                     "robot": self.ff, "fake": self.fake, "safety": self.cfg["safety"],
                     "saved_at": time.strftime("%Y-%m-%d %H:%M:%S"), "check": chk, "writer": "macbot"}
             record_motor_meta(buf, meta)
+            if "simulation" in buf:
+                meta["simulation"] = buf["simulation"]
             if diagnostic:
                 meta["result"] = "watchdog"
             extra = motor_arrays(buf["motor"], len(self.joints))
@@ -233,11 +252,33 @@ class State:
 class Recorder:
     """Samples joints and cameras on a fixed 1/fps grid while recording."""
 
-    def __init__(self, st: State):
+    def __init__(self, st: State, *, threaded=True):
         self.st = st
         self.size = {k: tuple(st.cfg["cameras"][k]["save_size"]) for k in st.cam_names}
         self.q = int(st.cfg["record"]["jpeg_quality"])
-        threading.Thread(target=self._loop, daemon=True).start()
+        if threaded:
+            threading.Thread(target=self._loop, daemon=True).start()
+
+    def frame(self, q, motors):
+        """Read the observation before applying the action for this frame."""
+        now = time.time()
+        row = {"qpos": q, "motor": motors}
+        for c in self.st.cam_names:
+            img, stamp = self.st.cams[c].latest()
+            row[f"{c}_jpg"] = self.jpeg(c, img)
+            row[f"{c}_age"], row[f"{c}_repeat"] = max(0.0, now - stamp), False
+        return row
+
+    def jpeg(self, c, img):
+        _, jpg = cv2.imencode(".jpg", cv2.resize(img, self.size[c], interpolation=cv2.INTER_AREA),
+                              [cv2.IMWRITE_JPEG_QUALITY, self.q])
+        return jpg.reshape(-1)
+
+    def append_step(self, buf, row, cmd, elapsed, *, realtime):
+        late = realtime and elapsed > (len(buf["qpos"]) + 1) / self.st.fps
+        row.update(action=cmd, wall=elapsed, late=late)
+        for key, value in row.items():
+            buf[key].append(value)
 
     def _loop(self):
         st, dt = self.st, 1.0 / self.st.fps
@@ -272,9 +313,7 @@ class Recorder:
                     break
                 for c in st.cam_names:
                     img, stamp = st.cams[c].latest()
-                    _, jpg = cv2.imencode(".jpg", cv2.resize(img, self.size[c], interpolation=cv2.INTER_AREA),
-                                          [cv2.IMWRITE_JPEG_QUALITY, self.q])
-                    row[f"{c}_jpg"], row[f"{c}_age"], row[f"{c}_repeat"] = jpg.reshape(-1), now - stamp, stamp == last[c]
+                    row[f"{c}_jpg"], row[f"{c}_age"], row[f"{c}_repeat"] = self.jpeg(c, img), now - stamp, stamp == last[c]
                     last[c] = stamp
                 with st.lock:
                     if st.buf is not buf:
@@ -319,6 +358,9 @@ def make_handler(st: State):
             self.send(404, b"not found", "text/plain")
 
         def do_POST(self):
+            if self.path == "/api/teleop/keys" and st.sim_input == "keyboard":
+                st.set_keys(self.body_json().get("keys"))
+                return self.send(204, b"", "text/plain")
             if self.path != "/api/cmd":
                 return self.send(404, b"", "text/plain")
             try:
@@ -345,7 +387,8 @@ def run(cfg: Config, fake: bool = False, port: int | None = None, out=None, *, l
 
 def _control(st, srv, T, open_browser=False):
     from ..robot import open_robot
-    robot = open_robot(st.cfg["robot"], fake=st.fake, leader=True)
+    robot = (open_robot(st.cfg["robot"], leader=True, teleop=T) if st.sim
+             else open_robot(st.cfg["robot"], fake=st.fake, leader=True))
     names = robot.joints
     with st.lock:
         st.joints, st.gripper = names, robot.gripper
@@ -356,13 +399,15 @@ def _control(st, srv, T, open_browser=False):
     try:
         if st.sim:
             robot.check_rate(T["hz"], "teleop.hz")
+        if st.sim_step_recording:
+            robot.check_rate(st.fps, "record.fps")
         st.cams = open_cameras(st.cfg["cameras"], st.fps, st.fake, robot)
         threading.Thread(target=srv.serve_forever, daemon=True).start()
         serving = True
         print(f"web page: {srv.url}   data: {st.out}", flush=True)
         if open_browser:
             web.show(srv)
-        Recorder(st)
+        recorder = Recorder(st, threaded=not st.sim_step_recording)
         robot.connect(leader=True)
         st.ff = robot.info()
         a0, q0 = robot.read_leader(), robot.read()
@@ -387,6 +432,7 @@ def _control(st, srv, T, open_browser=False):
         started = True
         print(f"teleoperation running ({robot.kind}: {', '.join(names)})", flush=True)
         hz, soft = T["hz"], max(0.0, T["soft_start_s"])
+        seed = T.get("seed") if st.sim_step_recording else None
         t_start = time.perf_counter()
         while not st.quit:
             tick = time.perf_counter()
@@ -394,19 +440,42 @@ def _control(st, srv, T, open_browser=False):
                 with st.lock:
                     reset, st.start_requested = st.start_requested, False
                 if reset:
-                    robot.reset_scene()
+                    robot.reset_scene() if seed is None else robot.reset_scene(seed)
                     q0, t_start = robot.read(), time.perf_counter()
                     cmd = q0
                     with st.lock:
                         st.q = st.cmd = q0
                         st.motors = robot.motor_telemetry()
                         st.watch.reset_motion()
+                        st.sim_outcome = None
+                        st.key_sample = (0.0, frozenset())
                     st.command({"action": "start"}, scene_ready=True)
                     tick = t_start
                 if robot.ended:
                     # Save the terminal frame sequence once; the next Start resets the scene.
                     st.command({"action": "save"})
                     time.sleep(1 / hz)
+                    continue
+                if st.sim_step_recording:
+                    with st.lock:
+                        buf = st.buf
+                        st.ready = True
+                    if buf is not None:
+                        q = robot.read()
+                        elapsed = time.perf_counter() - t_start
+                        row = recorder.frame(q, robot.motor_telemetry())
+                        act = robot.read_leader(st.keys())
+                        if robot.leader is not None and soft:
+                            ramp = min(1.0, elapsed / soft)
+                            act = [x + (a - x) * ramp for x, a in zip(q0, act, strict=True)]
+                        cmd = robot.send(act, q)
+                        with st.lock:
+                            st.q, st.cmd = robot.read(), cmd
+                            if buf is st.buf:
+                                recorder.append_step(buf, row, cmd, elapsed, realtime=True)
+                                st.sim_outcome = robot.outcome()
+                                buf["simulation"] = {"source": st.sim_input, "seed": seed, **st.sim_outcome}
+                    time.sleep(max(0.0, 1 / hz - (time.perf_counter() - tick)))
                     continue
             q = robot.read()
             motors = robot.motor_telemetry()
