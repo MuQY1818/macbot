@@ -241,11 +241,12 @@ def stack_chunks(rows) -> np.ndarray:
     return out
 
 
-def save_rollout(st: State, rec: dict, result: str):
+def save_rollout(st: State, rec: dict, result: str, *, simulation=None, record_images=True):
     p = (diagnostic_path(st.out, "rollout") if result == "watchdog"
          else st.out / f"rollout_{st.next_idx():03d}.npz")
     arrs = motor_arrays(rec["motor"], len(st.joints))
-    for c in st.cam_names:
+    cameras = st.cam_names if record_images else []
+    for c in cameras:
         js = rec[f"{c}_jpg"]
         arrs[f"{c}_offsets"] = np.cumsum([0] + [len(j) for j in js]).astype(np.int64)
         arrs[f"{c}_jpeg"] = np.concatenate(js) if js else np.zeros(0, np.uint8)
@@ -256,7 +257,7 @@ def save_rollout(st: State, rec: dict, result: str):
             "rtc_horizon": getattr(a, "rtc_horizon", None), "rtc_schedule": getattr(a, "rtc_schedule", "linear"),
             "query_every": getattr(a, "query_every", 0),
             "grip_debounce": a.grip_debounce, "grip_lead": getattr(a, "grip_lead", 0.0), "speed": a.speed, "max_vel": st.cfg["run"]["max_vel"], "result": result,
-            "fps": fps, "frames": len(rec["t"]), "joint_names": st.joints, "gripper": st.gripper, "robot": st.robot_info, "cameras": st.cam_names,
+            "fps": fps, "frames": len(rec["t"]), "joint_names": st.joints, "gripper": st.gripper, "robot": st.robot_info, "cameras": cameras,
             "camera_framing": framing(st.cfg["cameras"], fps),
             "saved_at": time.strftime("%Y-%m-%d %H:%M:%S"), "fake": a.fake, "writer": "macbot"}
     meta.update(hand_marks=rec["hand_marks"], takeover_count=rec["takeover_count"],
@@ -268,6 +269,8 @@ def save_rollout(st: State, rec: dict, result: str):
         meta.update(backend=selection.backend, backend_requested=selection.requested, backend_reason=selection.reason)
     if st.torch_options is not None:
         meta["torch_options"] = vars(st.torch_options)
+    if simulation is not None:
+        meta["simulation"] = simulation
     record_motor_meta(rec, meta)
     if "grasp_miss" in st.cfg["robot"]:
         meta["grasp_miss_profile"] = st.cfg["robot"]["grasp_miss"]
@@ -340,7 +343,7 @@ def start_trace_worker():
         os.nice(5)
 
 
-def _run(cfg, args, srv, cleanup):
+def check_policy_framing(cfg, args):
     args.policy = expand(args.policy)
     current = framing(cfg["cameras"], cfg["record"]["fps"])
     try:
@@ -348,6 +351,10 @@ def _run(cfg, args, srv, cleanup):
     except (ValueError, OSError) as exc:
         raise SystemExit(f"Cannot read training camera framing: {exc}") from None
     check_framing(expected, current, override=args.allow_framing_mismatch)
+
+
+def _run(cfg, args, srv, cleanup):
+    check_policy_framing(cfg, args)
     start_log(cfg.log_dir, "run")
     rc = cfg["run"]
     args.speed = args.speed if args.speed is not None else rc["speed"]
@@ -398,12 +405,29 @@ def _control(st, srv, fps, gripper, cleanup):
              else open_robot(cfg["robot"], fake=args.fake))
     started = False
     cleanup.callback(lambda: robot.shutdown(moved=started))
+
+    def mark_started():
+        nonlocal started
+        started = True
+
     names, n_j = robot.joints, len(robot.joints)
     with st.lock:
         st.joints, st.gripper = names, robot.gripper
         st.watch.set_joints(names, robot.gripper)
         st.q = st.cmd = [0.0] * n_j
     gi = robot.gripper_index
+    if st.sim:
+        robot.check_rate(rc["hz"], "run.hz")
+    if gripper is not None and gi is None:
+        sys.exit("gripper.json found but the robot has no joint named gripper; use --gripper raw")
+    pol, sizes, jq, limit_chunk = prepare_policy(st, robot)
+    _rollout(st, srv, cleanup, robot, fps, gripper, pol, sizes, jq, limit_chunk, mark_started)
+
+
+def prepare_policy(st, robot, *, warmup=True):
+    """Load and validate the same policy, backend and camera contract for run and eval."""
+    cfg, args = st.cfg, st.args
+    names, n_j = robot.joints, len(robot.joints)
     metadata = json.loads((args.policy / "config.json").read_text())
     kind = metadata.get("type", "act")
     requested = policy_backend(cfg, args)
@@ -425,10 +449,6 @@ def _control(st, srv, fps, gripper, cleanup):
                      "First verify absolute joint order and units with --fake.")
     else:
         check_joint_dimensions(args.policy, names)
-    if st.sim:
-        robot.check_rate(rc["hz"], "run.hz")
-    if gripper is not None and gi is None:
-        sys.exit("gripper.json found but the robot has no joint named gripper; use --gripper raw")
     print(f"loading policy {args.policy} on {args.device}", flush=True)
     if generic:
         pol = load_generic(args.policy, cfg, args, n_j)
@@ -471,6 +491,10 @@ def _control(st, srv, fps, gripper, cleanup):
         if pol.shapes.get(c) != want:
             sys.exit(f"policy input {c} is {pol.shapes.get(c)}, but the camera config gives {want}")
     jq = int(cfg["record"]["jpeg_quality"])
+    if not warmup:
+        if args.mode == "rtc":
+            pol.enable_rtc(args.rtc_beta, getattr(args, "rtc_schedule", "linear"))
+        return pol, sizes, jq, generic or mapped_mlx
     dummy = {c: np.zeros((sizes[c][1], sizes[c][0], 3), np.uint8) for c in st.cam_names}
     for _ in range(3):                                   # warm-up (MPS is slow at first; compile happens here)
         t = time.perf_counter()
@@ -494,7 +518,12 @@ def _control(st, srv, fps, gripper, cleanup):
         t = time.perf_counter()
         pol(dummy, [0.0] * n_j, leftover=lo, delay=8)
         print(f"rtc warm-up: {(time.perf_counter() - t) * 1e3:.0f} ms per guided inference", flush=True)
+    return pol, sizes, jq, generic or mapped_mlx
 
+
+def _rollout(st, srv, cleanup, robot, fps, gripper, pol, sizes, jq, limit_chunk, mark_started):
+    cfg, args, rc = st.cfg, st.args, st.cfg["run"]
+    names, n_j, gi = robot.joints, len(robot.joints), robot.gripper_index
     st.cams = open_cameras(cfg["cameras"], fps, args.fake, robot)
     cams = st.cams
     for cam in cams.values():
@@ -521,7 +550,7 @@ def _control(st, srv, fps, gripper, cleanup):
     if args.mode == "step":
         ex = Step(pol, observe, rate, st.log_chunk)
     elif args.mode == "chunk":
-        ex = SyncChunk(pol, observe, rate, st.log_chunk, min(args.k, pol.H) if generic or mapped_mlx else args.k)
+        ex = SyncChunk(pol, observe, rate, st.log_chunk, min(args.k, pol.H) if limit_chunk else args.k)
     elif args.mode == "ensemble":
         ex = Ensemble(pol, observe, rate, st.log_chunk, args.te_m, args.te_hz, stop)
     else:
@@ -552,12 +581,12 @@ def _control(st, srv, fps, gripper, cleanup):
                 st.set_mode(mode)
 
     def restart_policy():
-        if (generic or mapped_mlx) and args.mode == "chunk":
+        if limit_chunk and args.mode == "chunk":
             pol.reset()
         ex.reset(True)
 
     try:
-        started = True
+        mark_started()
         chunk_id, gp_last, gp_ahead = -1, float("nan"), float("nan")
         next_rec = time.time()
         auto = [(0.0, "start"), (args.autostart, "save_fail"), (args.autostart + 0.5, "quit")] if args.autostart else []

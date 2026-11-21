@@ -23,6 +23,7 @@ cameras:
 record:
   fps: 30
 teleop:
+  type: scripted  # Set to keyboard for Cartesian control in the collection console.
   hz: 30
 run:
   hz: 30

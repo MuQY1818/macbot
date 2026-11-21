@@ -63,6 +63,10 @@ def load(path: str | Path | None = None) -> Config:
     """Load the default config, then overlay ``path`` if given."""
     cfg = yaml.safe_load(DEFAULT.read_text())
     overrides = (yaml.safe_load(expand(path).read_text()) or {}) if path else {}
+    if (overrides.get("robot") or {}).get("type") == "sim":
+        teleop = overrides.get("teleop") or {}
+        if teleop.get("type") == "so101_leader" and isinstance(teleop.get("port"), str):
+            teleop["leader_port"] = teleop.pop("port")
     explicit_ports = [section for section in CONSOLES if "port" in (overrides.get(section) or {})]
     return Config(_merge(cfg, overrides), explicit_ports)
 

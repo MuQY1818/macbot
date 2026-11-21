@@ -9,6 +9,14 @@ All notable changes to macbot will be documented here. This project follows
 
 ## [Unreleased]
 
+### Added
+
+- Opt-in Cartesian keyboard and calibrated SO-101 leader input in the simulation collection console.
+- Generate seeded tabletop demonstrations with `macbot sim demos`, with environment outcomes and standard episode files.
+- `macbot eval` runs seeded simulator trials and reports environment success with Wilson intervals.
+- `eval --trace-only` keeps replayable joint traces and renders only at policy queries for SO-101 tabletop batches.
+- The macOS tabletop simulator reports its hardware CGL renderer and warns before trying a software fallback.
+
 ## [0.3.3] - 2026-11-21
 
 ### Added

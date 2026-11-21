@@ -52,6 +52,11 @@
           <button class="ghost wide" id="bIns" data-i18n="set_ins">Set instruction</button>
         </div>
         <div class="msg" id="msg"></div>
+        <details id="sim-controls" hidden>
+          <summary id="sim-help"></summary>
+          <p id="sim-keys"></p>
+        </details>
+        <output id="sim-result"></output>
       </div>
 
       <div class="card">
@@ -84,6 +89,16 @@ function buildViews(names, cams) {
 
 function render(s) {
   S = s;
+  $("sim-controls").hidden = s.sim_input !== "keyboard";
+  $("sim-help").textContent = L({en: "Keyboard controls", zh: "键盘控制"});
+  $("sim-keys").textContent = L({
+    en: "I / K farther / closer; J / L left / right; U / O up / down; N / M roll; F / G open / close. Hold Shift for fine moves.",
+    zh: "I / K 远移 / 近移；J / L 左移 / 右移；U / O 上升 / 下降；N / M 转腕；F / G 张开 / 闭合。按住 Shift 微调。"
+  });
+  const outcome = s.sim_outcome;
+  $("sim-result").textContent = outcome?.success ? L({en: "Task succeeded", zh: "任务成功"})
+    : outcome?.truncated ? L({en: "Time limit reached", zh: "已达时间上限"})
+    : outcome ? L({en: `Scene reward: ${outcome.reward}`, zh: `场景奖励：${outcome.reward}`}) : "";
   if (!camsBuilt) buildViews(s.cam_names, s.cams);
   const rec = s.phase === "recording";
   const b = $("badge");
@@ -205,12 +220,45 @@ $("bIns").onclick = () => { insDirty = false; cmd("instruction", { text: $("ins"
 $("ins").addEventListener("input", () => { insDirty = true; });
 $("quit").onclick = () => { if (confirm(t(S?.motor_health?.tripped ? "confirm_quit_alarm" : "confirm_quit"))) cmd("quit"); };
 
+const keyMap = {KeyI:"i", KeyJ:"j", KeyK:"k", KeyL:"l", KeyU:"u", KeyO:"o",
+                KeyN:"n", KeyM:"m", KeyF:"f", KeyG:"g", ShiftLeft:"Shift", ShiftRight:"Shift"};
+const heldKeys = new Set();
+let keyRequest = false, keysDirty = false;
+async function sendKeys() {
+  if (S?.sim_input !== "keyboard" || keyRequest || (!heldKeys.size && !keysDirty)) return;
+  keyRequest = true;
+  keysDirty = false;
+  try {
+    await fetch("/api/teleop/keys", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({keys: Array.from(new Set(Array.from(heldKeys, code => keyMap[code])))})});
+  } catch (_) { /* The server expires the last snapshot. */ }
+  finally { keyRequest = false; }
+}
+function clearKeys() {
+  heldKeys.clear();
+  keysDirty = true;
+  sendKeys();
+}
 document.addEventListener("keydown", e => {
+  if (S?.sim_input === "keyboard" && S.phase === "recording" && !replay &&
+      !["INPUT", "SELECT", "TEXTAREA"].includes(e.target.tagName) && !e.metaKey && !e.ctrlKey && keyMap[e.code]) {
+    e.preventDefault();
+    heldKeys.add(e.code);
+    keysDirty = true;
+    sendKeys();
+    return;
+  }
   if (["INPUT", "SELECT", "TEXTAREA"].includes(e.target.tagName) || e.repeat) return;
   if (e.key === "s" || e.key === "S") { if (replay) closeReplay(); cmd("start"); }
   else if (e.key === "Enter" || e.key === "ArrowRight") { e.preventDefault(); document.activeElement?.blur?.(); cmd("save"); }
   else if (e.key === "ArrowLeft") { e.preventDefault(); cmd("discard"); }
 });
+document.addEventListener("keyup", e => {
+  if (heldKeys.delete(e.code)) { keysDirty = true; sendKeys(); }
+});
+window.addEventListener("blur", clearKeys);
+document.addEventListener("visibilitychange", () => { if (document.hidden) clearKeys(); });
+setInterval(sendKeys, 60);
 
 let lost = false;
 async function poll() {

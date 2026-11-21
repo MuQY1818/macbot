@@ -96,6 +96,45 @@ def test_sim_camera_and_reset(monkeypatch):
     assert dev.closed
 
 
+def test_so101_leader_for_sim_uses_calibration_and_joint_names(monkeypatch, tmp_path):
+    from macbot.config import load
+
+    path = tmp_path / "sim.yaml"
+    path.write_text("robot: {type: sim}\nteleop: {type: so101_leader, port: /dev/mock, id: practice}\n")
+    cfg = load(path)
+    assert cfg["teleop"]["port"] == 8766
+    features = {"shoulder_pan.pos": float, "gripper.pos": float}
+    follower = SimpleNamespace(
+        descriptor=SimpleNamespace(fps=30, control_mode="position", semantics="so101-joint-degrees-v1"),
+        action_features=features, observation_features=features, cameras={}, robot_type="so_follower",
+        connect=lambda **_: None, disconnect=lambda: None, get_observation=lambda: dict.fromkeys(features, 0.0),
+    )
+    calls = []
+    calibration = tmp_path / "practice.json"
+    leader = SimpleNamespace(
+        action_features=features, calibration_fpath=calibration, calibration={"shoulder_pan": object()},
+        is_calibrated=True, is_connected=False,
+        connect=lambda **kw: calls.append(kw), disconnect=lambda: calls.append("closed"),
+        get_action=lambda: {"gripper.pos": 25.0, "shoulder_pan.pos": -15.0},
+    )
+
+    def make_leader(spec):
+        assert spec == {"type": "so101_leader", "port": "/dev/mock", "id": "practice"}
+        return leader
+
+    monkeypatch.setattr(sim, "_make_sim", lambda *_: follower)
+    monkeypatch.setattr(lerobot_generic, "make_leader", make_leader)
+    robot = open_robot(cfg["robot"], leader=True, teleop=cfg["teleop"])
+    with pytest.raises(SystemExit, match="lerobot-calibrate"):
+        robot.connect(leader=True)
+    assert calls == []
+    calibration.write_text("{}")
+    robot.connect(leader=True)
+    assert robot.read_leader() == [-15.0, 25.0]
+    robot.shutdown()
+    assert calls == [{"calibrate": False}, "closed"]
+
+
 @pytest.fixture
 def six_joint_episode(tmp_path):
     fake = open_robot({"type": "lerobot", "follower": {"type": "so101_follower"}}, fake=True)

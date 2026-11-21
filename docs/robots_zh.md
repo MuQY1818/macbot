@@ -6,7 +6,7 @@
 |---|---|---|
 | `rebot_b601` | Seeed reBot B601-RS 从臂与 Arm 102 主臂 | 已在 Apple 芯片 Mac 上验证真机。 |
 | `lerobot` | SO-100/101、Koch、OMX、OpenArm、YAM，以及其他兼容的 LeRobot 机械臂 | 通过 LeRobot 配置。仅 fake 模式：SO-101 已验证采集和导出；其他型号有内置关节布局或可提供 `robot.joints`。未验证真机。 |
-| `sim` | MuJoCo 中的 SO-101 桌面场景 | 采集、导出、ACT 推理和回放已在仿真中跑通（随机权重的 ACT，未测任务成功率）。采集用脚本主臂，不是遥操作。 |
+| `sim` | MuJoCo 中的 SO-101 桌面场景 | 键盘遥操作（合成输入，真人试用待做）、脚本示教、导出、ACT 训练和按种子评估已跑通。尚未证明训练出的策略能完成任务。 |
 
 运行 `macbot robots` 可列出已注册的 LeRobot 类型。列表取决于已安装的包，不代表验证结果。
 通用从臂必须接受关节位置（`.pos`）动作，并能观测这些关节。用于采集的主臂必须有相同的关节名。
@@ -46,9 +46,9 @@ Koch 使用 `koch_follower` 和 `koch_leader`，OMX 使用 `omx_follower` 和 `o
 
 ## 本地仿真
 
-安装 `macbot[sim]`（源码目录可运行 `pip install -e ".[sim]"`），使用完整的
-[`configs/so101_sim.yaml`](../configs/so101_sim.yaml)。运行 `macbot --config configs/so101_sim.yaml collect`，
-不加 `--fake`。仿真使用脚本主臂，各频率须与场景匹配。固定版本的 EnvHub 场景会在首次使用时下载并执行 Python 代码。
+安装、键盘遥操作、脚本示教和策略评估见[仿真指南](simulation_zh.md)。
+完整的 [`configs/so101_sim.yaml`](../configs/so101_sim.yaml) 保留正弦输入，用于快速检查流程。
+采集不加 `--fake`，各频率须与场景匹配。首次运行会下载并执行固定版本的 EnvHub Python 代码。
 
 ```yaml
 robot:
@@ -66,7 +66,7 @@ cameras:
 
 `macbot init` 检查标定文件并提供对应命令。请单独运行 `lerobot-calibrate`，使用相同的设备类型、串口、ID
 及可选的 `calibration_dir`。从臂使用 `--robot.*`，主臂使用 `--teleop.*`，命令见
-[安装指南](setup_zh.md)。macbot 以 `calibrate=False` 连接。仿真和 fake 模式不需要标定。
+[安装指南](setup_zh.md)。macbot 以 `calibrate=False` 连接。无实体领臂的仿真和 fake 模式不需要标定。
 
 运行 `macbot --config my.yaml doctor` 检查所选配置。对于通用机械臂，
 它检查驱动导入、配置中的串口路径和标定文件是否存在，不打开设备。
