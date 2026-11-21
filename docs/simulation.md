@@ -9,6 +9,9 @@ runs the pinned EnvHub Python code and MuJoCo assets; review them before enablin
 On macOS the simulator prints the offscreen renderer it selected. Hardware CGL
 is the default; if it cannot create that context, it warns and tries software rendering.
 Software rendering can make teleoperation much slower than the 30 Hz scene clock.
+Once the pinned scene is cached, it loads without contacting the Hub. If the
+scene still needs a download through a SOCKS proxy, run `pip install 'httpx[socks]'`
+in the same environment. `macbot doctor` checks for this.
 
 ```bash
 pip install 'macbot[sim]'               # or: pip install -e '.[sim]'
@@ -19,28 +22,44 @@ macbot --config tabletop.yaml doctor
 The YAML sets up the simulator; the USB setup wizard is for physical arms.
 The example keeps the existing sine input for pipeline smoke tests. Choose
 `teleop.type: keyboard` in your copy and retain `teleop.hz: 30`. Run
-`macbot --config tabletop.yaml collect` and start with **S**. Focus the
-collection page and open **Keyboard controls** for the key map:
+`macbot --config tabletop.yaml collect`, click the video, and press **Enter**
+to start. The legend below the video highlights the held keys.
 
 | Keys | Motion |
 | --- | --- |
-| I / K | Farther / closer |
-| J / L | Left / right |
-| U / O | Up / down |
-| N / M | Roll the wrist |
-| F / G | Open / close |
-| Shift | Fine translation while held |
+| W / S | Forward / back along the table in the first view |
+| A / D | Left / right in the first view |
+| E / Q | Raise / lower the gripper |
+| Z / X | Roll clockwise / counterclockwise when viewed from above |
+| Space | Toggle the gripper; it stays closed while you move |
+| Shift | Fine translation and roll while held |
+| Enter | Start a new take or save the current take |
+| Backspace | Discard the take |
+| Esc | Stop the take; then save or discard it |
+
+The gripper points down by default. Translation runs at **6 cm/s** and roll at
+**45°/s** in simulation time, with a 0.10 s ramp. Shift slows both to one
+quarter speed. Releasing keys or leaving the video focus stops advancing the
+movement target. The preview shows the tip height and its projection onto the
+table, plus a limit indicator when motion is blocked. Keep a fixed camera first
+in `cameras` when using keyboard control.
 
 Lift before crossing the table. Align the jaws with a cube, lower around it,
-close, lift, then open above the box. Enter saves, Left Arrow discards, and the
-scene saves automatically on success or timeout. A synthetic keyboard episode
-finished the full task through the collection console. Human trials are pending.
+close, lift, then open above the box. Lower the gripper or move back toward the
+arm if the top-down workspace limits your reach. The console saves automatically
+on success or timeout. A synthetic key sequence completed the four-cube task
+through the collection HTTP endpoint. Human trials are pending.
+
+By default, simulation data goes to `~/macbot-data/sim`, with episodes under
+`raw/<task>` inside that root. The console prints the actual episode directory
+on startup. An explicit `data_root` or `collect --out` still takes precedence.
 
 An optional calibrated physical SO-101 leader can drive the simulated follower.
 Use `teleop: {type: so101_leader, port: /dev/tty.usbmodemYOUR_LEADER, id: leader, hz: 30}`.
 Use the same port and ID with `lerobot-calibrate --teleop.type=so101_leader
 --teleop.port=... --teleop.id=leader` if you need to calibrate. macbot reads
 absolute joint angles and uses the saved LeRobot calibration. This path is mock tested.
+The existing episode shortcuts still apply to scripted and SO-101 leader input.
 
 You can generate seeded demonstrations and export them as LeRobot v3.0:
 

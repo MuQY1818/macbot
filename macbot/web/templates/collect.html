@@ -3,6 +3,23 @@
 <head>
 {{head}}
 <title>macbot · collect</title>
+<style>
+  #views[tabindex] { cursor: crosshair; }
+  #views:focus { outline: 2px solid var(--ok); outline-offset: 5px; border-radius: 8px; }
+  .keyboard-head, .keyboard-keys { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: baseline; }
+  .keyboard-head { justify-content: space-between; margin-bottom: 8px; }
+  .keyboard-head h2 { margin: 0; font-size: 14px; }
+  .keyboard-keys { font-size: 13px; }
+  .keyboard-keys > span { white-space: nowrap; }
+  .keyboard-keys kbd { display: inline-block; margin-right: 3px; }
+  .keyboard-keys kbd.active { color: #111; background: #8ce8c9; border-color: #8ce8c9; }
+  #sim-focus[data-focused="true"] { color: var(--ok); }
+  #sim-motion { display: block; margin-top: 8px; font-variant-numeric: tabular-nums; }
+  #sim-limit { color: var(--warn); }
+  #sim-shadow { position: absolute; width: 14px; height: 10px; border: 2px solid #e9fff9; border-radius: 50%;
+    box-shadow: 0 0 0 1px #102726; transform: translate(-50%, -50%); pointer-events: none; }
+  #sim-shadow::after { content: ""; position: absolute; inset: 2px 4px; background: #e9fff9; box-shadow: 0 0 0 1px #102726; }
+</style>
 </head>
 <body>
 <header class="topbar">
@@ -20,6 +37,11 @@
   <div class="layout">
     <div class="stack">
       <div class="views" id="views"></div>
+      <aside class="card" id="sim-controls" hidden>
+        <div class="keyboard-head"><h2 id="sim-help"></h2><span id="sim-focus" role="status"></span></div>
+        <div class="keyboard-keys" id="sim-keys"></div>
+        <div id="sim-motion"><output id="sim-pose"></output> <output id="sim-limit"></output></div>
+      </aside>
       <div class="card" id="replay" style="display:none">
         <h2 id="rtitle">replay</h2>
         <div class="btn-row" style="align-items:center">
@@ -46,16 +68,12 @@
         <h2 data-i18n="instruction">instruction</h2>
         <textarea id="ins" spellcheck="false"></textarea>
         <div class="btn-grid" style="margin-top:12px">
-          <button class="primary wide" id="bStart"><span data-i18n="record">Record</span> <kbd>S</kbd></button>
+          <button class="primary wide" id="bStart"><span data-i18n="record">Record</span> <kbd id="start-key">S</kbd></button>
           <button class="go" id="bSave"><span data-i18n="save">Save</span> <kbd>↵</kbd></button>
-          <button class="danger" id="bDiscard"><span data-i18n="discard">Discard</span> <kbd>←</kbd></button>
+          <button class="danger" id="bDiscard"><span data-i18n="discard">Discard</span> <kbd id="discard-key">←</kbd></button>
           <button class="ghost wide" id="bIns" data-i18n="set_ins">Set instruction</button>
         </div>
         <div class="msg" id="msg"></div>
-        <details id="sim-controls" hidden>
-          <summary id="sim-help"></summary>
-          <p id="sim-keys"></p>
-        </details>
         <output id="sim-result"></output>
       </div>
 
@@ -84,35 +102,46 @@ function buildViews(names, cams) {
   layoutViews($("views"), names, c => cams[c].size);
   for (const c of names) $("cam-" + c).onerror = () => { if (!replay) setTimeout(() => { if (!replay) $("cam-" + c).src = liveSrc(c); }, 1000); };
   camsBuilt = true;
+  if (S.sim_input === "keyboard") {
+    const views = $("views");
+    views.tabIndex = 0;
+    views.setAttribute("aria-labelledby", "sim-help");
+    views.addEventListener("click", () => views.focus());
+    views.addEventListener("focus", renderFocus);
+    views.addEventListener("blur", clearKeys);
+    const shadow = document.createElement("span");
+    shadow.id = "sim-shadow";
+    shadow.hidden = true;
+    shadow.setAttribute("aria-hidden", "true");
+    views.firstElementChild?.append(shadow);
+  }
   startLive();
 }
 
 function render(s) {
   S = s;
-  $("sim-controls").hidden = s.sim_input !== "keyboard";
-  $("sim-help").textContent = L({en: "Keyboard controls", zh: "键盘控制"});
-  $("sim-keys").textContent = L({
-    en: "I / K farther / closer; J / L left / right; U / O up / down; N / M roll; F / G open / close. Hold Shift for fine moves.",
-    zh: "I / K 远移 / 近移；J / L 左移 / 右移；U / O 上升 / 下降；N / M 转腕；F / G 张开 / 闭合。按住 Shift 微调。"
-  });
   const outcome = s.sim_outcome;
   $("sim-result").textContent = outcome?.success ? L({en: "Task succeeded", zh: "任务成功"})
     : outcome?.truncated ? L({en: "Time limit reached", zh: "已达时间上限"})
     : outcome ? L({en: `Scene reward: ${outcome.reward}`, zh: `场景奖励：${outcome.reward}`}) : "";
   if (!camsBuilt) buildViews(s.cam_names, s.cams);
   const rec = s.phase === "recording";
+  const paused = s.phase === "paused";
+  if (s.sim_input === "keyboard") renderKeyboard(s);
   const b = $("badge");
   $("quit").dataset.i18n = s.sim || s.motor_health?.tripped ? "quit_sim" : "quit";
   $("quit").textContent = t($("quit").dataset.i18n);
   const simulated = s.fake || s.sim;
   const stopped = s.phase === "stopped";
   b.className = "badge " + (stopped ? "alarm" : rec ? "rec" : (!s.ready ? "idle" : (simulated ? "warn" : "live")));
-  b.textContent = t(stopped ? "motor_alarm" : rec ? "rec" : (s.ready ? (simulated ? "simulated" : "ready") : "not_ready"));
-  $("timer").textContent = rec ? `${fmtTime(s.elapsed)} · ${s.frames} ${t("frames")}` : (s.saving ? t("saving") : "");
+  b.textContent = paused ? L({en: "Stopped", zh: "已停止"})
+    : t(stopped ? "motor_alarm" : rec ? "rec" : (s.ready ? (simulated ? "simulated" : "ready") : "not_ready"));
+  $("timer").textContent = rec ? `${fmtTime(s.elapsed)} · ${s.frames} ${t("frames")}`
+    : paused ? `${s.frames} ${t("frames")}` : (s.saving ? t("saving") : "");
   $("views").classList.toggle("hot", rec && !replay);
-  $("bStart").disabled = rec || !s.ready || !!s.motor_health?.blocked;
-  $("bSave").disabled = !rec; $("bDiscard").disabled = !rec;
-  $("bIns").disabled = rec; $("ins").disabled = rec;
+  $("bStart").disabled = rec || paused || !s.ready || !!s.motor_health?.blocked;
+  $("bSave").disabled = !(rec || paused); $("bDiscard").disabled = !(rec || paused);
+  $("bIns").disabled = rec || paused; $("ins").disabled = rec || paused;
   if (!insDirty && document.activeElement !== $("ins")) $("ins").value = s.instruction;
   $("msg").textContent = L(s.msg);
   renderHP($("hp"), s.count / s.target);
@@ -124,8 +153,15 @@ function render(s) {
   }).join("") + `<dt>${t("data")}</dt><dd>${esc(s.out)}</dd>`;
   for (const c of s.cam_names) {
     const a = s.cam_age ? s.cam_age[c] : null;
-    if (!replay) camTag($("tag-" + c), c, a, s.stall_s);
-    $("age-" + c).textContent = a == null || replay ? "" : `${Math.round(a * 1000)} ms`;
+    const still = s.sim_input === "keyboard" && s.ready && !rec && a != null;
+    if (!replay) {
+      const tag = $("tag-" + c);
+      if (still) {
+        tag.textContent = `${camLabel(c)} · ${L({en: "Hold", zh: "画面保持"})}`;
+        tag.classList.remove("bad");
+      } else camTag(tag, c, a, s.stall_s);
+    }
+    $("age-" + c).textContent = a == null || replay || still ? "" : `${Math.round(a * 1000)} ms`;
   }
   renderJoints($("joints"), s.names, s.q, s.cmd, s.limits, s.motor_health);
   const key = JSON.stringify(s.episodes.map(e => [e.idx, e.frames, e.check]));
@@ -167,6 +203,7 @@ function startLive() { if (S) for (const c of S.cam_names) $("cam-" + c).src = l
 async function openReplay(idx) {
   const d = await (await fetch(`/api/episode/${idx}`)).json();
   replay = { idx, d, k: 0, playing: false };
+  if (S.sim_input === "keyboard") { clearKeys(); renderKeyboard(S); }
   $("replay").style.display = "";
   $("views").classList.remove("hot");
   $("rtitle").textContent = t("replay_title", String(idx).padStart(3, "0"), d.ts.at(-1).toFixed(1));
@@ -182,6 +219,7 @@ function closeReplay() {
   $("replay").style.display = "none";
   $("rplay").textContent = t("play");
   startLive();
+  if (S.sim_input === "keyboard") renderKeyboard(S);
   renderEps(S.episodes);
 }
 
@@ -213,39 +251,127 @@ setInterval(() => {
   seek(Math.min(last, replay.k + 2 * +$("rspeed").value));     // 30 fps data, 15 Hz timer
 }, 1000 / 15);
 
-$("bStart").onclick = () => cmd("start");
+$("bStart").onclick = () => {
+  if (S?.sim_input === "keyboard") {
+    if (replay) closeReplay();
+    $("views").focus();
+  }
+  cmd("start");
+};
 $("bSave").onclick = () => cmd("save");
 $("bDiscard").onclick = () => cmd("discard");
 $("bIns").onclick = () => { insDirty = false; cmd("instruction", { text: $("ins").value }); };
 $("ins").addEventListener("input", () => { insDirty = true; });
 $("quit").onclick = () => { if (confirm(t(S?.motor_health?.tripped ? "confirm_quit_alarm" : "confirm_quit"))) cmd("quit"); };
 
-const keyMap = {KeyI:"i", KeyJ:"j", KeyK:"k", KeyL:"l", KeyU:"u", KeyO:"o",
-                KeyN:"n", KeyM:"m", KeyF:"f", KeyG:"g", ShiftLeft:"Shift", ShiftRight:"Shift"};
+const keyMap = {KeyW:"w", KeyS:"s", KeyA:"a", KeyD:"d", KeyE:"e", KeyQ:"q",
+                KeyZ:"z", KeyX:"x", Space:"Space", ShiftLeft:"Shift", ShiftRight:"Shift"};
+const keyLegend = [
+  [["W", "S"], "Forward / back", "前 / 后"],
+  [["A", "D"], "Left / right", "左 / 右"],
+  [["E", "Q"], "Up / down", "上 / 下"],
+  [["Z", "X"], "Roll ↻ / ↺", "腕部顺 / 逆时针"],
+  [["Space"], "Toggle grip", "切换夹爪"],
+  [["Shift"], "Fine", "微调"],
+  [["Enter"], "Start / save", "开始 / 保存"],
+  [["Backspace"], "Discard", "丢弃"],
+  [["Esc"], "Stop", "停止"]
+];
 const heldKeys = new Set();
-let keyRequest = false, keysDirty = false;
+const episodeKeys = new Set();
+const keyQueue = [];
+let keyRequest = false, legendLang = null, episodeRequest = false;
+const keyboardFocused = () => !replay && !document.hidden && document.hasFocus() && document.activeElement === $("views");
+const heldSnapshot = () => Array.from(new Set(Array.from(heldKeys, code => keyMap[code])));
+
+function renderFocus() {
+  const focus = keyboardFocused();
+  $("sim-focus").dataset.focused = focus;
+  const label = replay ? L({en: "Replay · keyboard off", zh: "回放 · 键盘关闭"})
+    : focus ? L({en: "Keyboard focused", zh: "键盘已聚焦"}) : L({en: "Click video to focus", zh: "点击视频获取焦点"});
+  if ($("sim-focus").textContent !== label) $("sim-focus").textContent = label;
+  const active = new Set([...heldSnapshot().map(k => k.length === 1 ? k.toUpperCase() : k), ...episodeKeys]);
+  for (const k of $("sim-keys").querySelectorAll("kbd")) k.classList.toggle("active", active.has(k.textContent));
+}
+
+function renderKeyboard(s) {
+  $("sim-controls").hidden = false;
+  $("start-key").textContent = "↵";
+  $("discard-key").textContent = "⌫";
+  if (legendLang !== LANG) {
+    legendLang = LANG;
+    $("sim-help").textContent = L({en: "Keyboard controls", zh: "键盘控制"});
+    $("sim-keys").innerHTML = keyLegend.map(([keys, en, zh]) =>
+      `<span>${keys.map(k => `<kbd>${k}</kbd>`).join("")} ${L({en, zh})}</span>`).join("");
+  }
+  if (s.phase !== "recording" && heldKeys.size) clearKeys();
+  renderFocus();
+  const info = s.keyboard;
+  $("sim-pose").textContent = !info || replay ? "" : L({
+    en: `${info.height_cm.toFixed(1)} cm above table · Gripper ${info.closed ? "closed" : "open"}`,
+    zh: `距桌面 ${info.height_cm.toFixed(1)} cm · 夹爪${info.closed ? "闭合" : "张开"}`
+  });
+  const limits = {height: {en: "Height limit", zh: "达到高度限制"}, roll: {en: "Wrist limit", zh: "达到腕部限位"},
+    workspace: {en: "Workspace limit", zh: "达到可达范围边界"}};
+  $("sim-limit").textContent = !replay && s.phase === "recording" && info?.limit ? L(limits[info.limit]) : "";
+  const shadow = $("sim-shadow");
+  if (!shadow) return;
+  shadow.hidden = replay || !info?.shadow;
+  if (!shadow.hidden) [shadow.style.left, shadow.style.top] = info.shadow.map(x => `${x * 100}%`);
+}
+
 async function sendKeys() {
-  if (S?.sim_input !== "keyboard" || keyRequest || (!heldKeys.size && !keysDirty)) return;
+  if (S?.sim_input !== "keyboard" || keyRequest || (!heldKeys.size && !keyQueue.length)) return;
   keyRequest = true;
-  keysDirty = false;
   try {
-    await fetch("/api/teleop/keys", {method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({keys: Array.from(new Set(Array.from(heldKeys, code => keyMap[code])))})});
+    do {
+      const keys = keyQueue.shift() ?? heldSnapshot();
+      await fetch("/api/teleop/keys", {method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({keys}), signal: AbortSignal.timeout(250)});
+    } while (keyQueue.length);
   } catch (_) { /* The server expires the last snapshot. */ }
   finally { keyRequest = false; }
 }
-function clearKeys() {
-  heldKeys.clear();
-  keysDirty = true;
+function keysChanged() {
+  const keys = heldSnapshot();
+  // Keep quick Space taps, while coalescing ordinary motion to the latest state.
+  if (keyQueue.at(-1)?.includes("Space") === keys.includes("Space")) keyQueue[keyQueue.length - 1] = keys;
+  else keyQueue.push(keys);
+  renderFocus();
   sendKeys();
 }
+function clearKeys() {
+  if (S?.sim_input !== "keyboard") return;
+  heldKeys.clear();
+  episodeKeys.clear();
+  keyQueue.length = 0;
+  keysChanged();
+}
 document.addEventListener("keydown", e => {
-  if (S?.sim_input === "keyboard" && S.phase === "recording" && !replay &&
-      !["INPUT", "SELECT", "TEXTAREA"].includes(e.target.tagName) && !e.metaKey && !e.ctrlKey && keyMap[e.code]) {
+  if (S?.sim_input === "keyboard") {
+    if (!keyboardFocused() || e.metaKey || e.ctrlKey || e.altKey) return;
+    const episode = {"Enter":"Enter", "Backspace":"Backspace", "Escape":"Esc"}[e.key];
+    if (!episode && !keyMap[e.code]) return;
     e.preventDefault();
-    heldKeys.add(e.code);
-    keysDirty = true;
-    sendKeys();
+    if (e.repeat) return;
+    if (episode) {
+      episodeKeys.add(episode);
+      renderFocus();
+      const action = episode === "Enter" ? (S.phase === "idle" ? "start" : "save")
+        : episode === "Esc" ? "stop" : "discard";
+      if (!episodeRequest) {
+        if (action !== "start" && heldKeys.size) {
+          heldKeys.clear();
+          keyQueue.length = 0;
+          keysChanged();
+        }
+        episodeRequest = true;
+        cmd(action).finally(() => { episodeRequest = false; });
+      }
+    } else if (S.phase === "recording" && !episodeRequest) {
+      heldKeys.add(e.code);
+      keysChanged();
+    }
     return;
   }
   if (["INPUT", "SELECT", "TEXTAREA"].includes(e.target.tagName) || e.repeat) return;
@@ -254,9 +380,11 @@ document.addEventListener("keydown", e => {
   else if (e.key === "ArrowLeft") { e.preventDefault(); cmd("discard"); }
 });
 document.addEventListener("keyup", e => {
-  if (heldKeys.delete(e.code)) { keysDirty = true; sendKeys(); }
+  if (heldKeys.delete(e.code)) keysChanged();
+  if (episodeKeys.delete(e.key === "Escape" ? "Esc" : e.key)) renderFocus();
 });
 window.addEventListener("blur", clearKeys);
+window.addEventListener("focus", () => { if (S?.sim_input === "keyboard") renderFocus(); });
 document.addEventListener("visibilitychange", () => { if (document.hidden) clearKeys(); });
 setInterval(sendKeys, 60);
 

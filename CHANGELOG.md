@@ -9,6 +9,11 @@ All notable changes to macbot will be documented here. This project follows
 
 ## [Unreleased]
 
+### Changed
+
+- Use camera-relative WASD, vertical and wrist controls, and a visible key legend in keyboard simulation collection.
+- Show the keyboard focus, gripper height and table projection, and workspace limits in the simulator preview.
+
 ### Fixed
 
 - Load cached EnvHub scenes without contacting the Hub and diagnose missing SOCKS support for uncached scenes.

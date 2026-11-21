@@ -88,11 +88,18 @@ class SimArm(Robot):
         self.teleop = dict(teleop or {})
         self.teleop_type = self.teleop.get("type", "scripted")
         self.cartesian = None
+        self.keyboard_camera = None
+        self.keyboard_crop = None
         self._leader_connected = False
         self.tabletop_cgl = use_tabletop_cgl(cfg.get("env"))
         if self.teleop_type not in {"scripted", "keyboard", "so101_leader"}:
             raise SystemExit("sim teleop.type must be scripted, keyboard, or so101_leader")
-        self.follower = _make_sim(cfg.get("env"), cfg.get("task_id"))
+        env = cfg.get("env")
+        if self.teleop_type == "keyboard" and (env or {}).get("hub_path", "").split("@", 1)[0] == TABLETOP_REPO:
+            # Start inside the top-down workspace. Leave explicitly configured poses alone.
+            options = {"initial_joints": [0, -19, 25, 84, 0, 30], **(env.get("make_env_kwargs") or {})}
+            env = {**env, "make_env_kwargs": options}
+        self.follower = _make_sim(env, cfg.get("task_id"))
         try:
             desc = self.follower.descriptor
             self.joints = joint_names(self.follower)
@@ -150,10 +157,15 @@ class SimArm(Robot):
         with tabletop_renderer(self.tabletop_cgl):
             self.follower.connect(calibrate=False)
         if leader and self.teleop_type == "keyboard":
-            from .sim_cartesian import Cartesian, tabletop_world
+            from .sim_cartesian import KeyboardCartesian, tabletop_env
 
-            self.cartesian = Cartesian(tabletop_world(self))
+            env = tabletop_env(self)
+            self.keyboard_camera = self.keyboard_camera or next(iter(self.camera_shapes))
+            self.cartesian = KeyboardCartesian(env._world, env.cameras[self.keyboard_camera], self.fps)
         self._set_start()
+
+    def keyboard_status(self):
+        return self.cartesian.status(self.camera_shapes[self.keyboard_camera], self.keyboard_crop)
 
     def reset_scene(self, seed=None):
         if seed is None:

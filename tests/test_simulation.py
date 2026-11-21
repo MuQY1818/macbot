@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 from macbot.cli import main
+from macbot.collect import server
 from macbot.config import load
 from macbot.policy import evaluate
 from macbot.robot import sim, sim_render
@@ -42,6 +43,50 @@ def test_cached_tabletop_bypasses_socks_client(tmp_path, monkeypatch):
     (tmp_path / "robotstudio_so101").mkdir()
     (tmp_path / "robotstudio_so101/so101.xml").touch()
     assert sim._make_sim({}, None) == f"{tmp_path}:env.py"
+
+
+def test_keyboard_input_expires_and_preserves_quick_gripper_taps(tmp_path, monkeypatch):
+    cfg = load("configs/so101_sim.yaml")
+    cfg["teleop"]["type"] = "keyboard"
+    st = server.State(cfg, tmp_path, fake=False)
+    clock = [1.0]
+    monkeypatch.setattr(server.time, "monotonic", lambda: clock[0])
+
+    st.set_keys(["d"])
+    assert not st.keys()  # no motion before recording
+    st.ready = True
+    st.command({"action": "start"}, scene_ready=True)
+    st.set_keys(["Space", "d", "i", {}, 123])
+    st.set_keys(["d"])  # Space was released before the next physics tick
+    assert st.keys() == {"Space", "d"}
+    assert st.keys() == {"d"}
+    clock[0] += 0.31
+    assert not st.keys()
+
+    st.set_keys(["Space", "s"])
+    assert st.keys() == {"Space", "s"}
+    st.set_keys(["Space", "s"])
+    assert st.keys() == {"s"}  # browser heartbeat isn't a second press
+    st.command({"action": "stop"})
+    assert st.status()["phase"] == "paused"
+    assert st.buf is not None
+    st.set_keys(["e"])
+    assert not st.keys()
+    st.command({"action": "discard"})
+    assert st.phase == "idle"
+    assert st.buf is None
+
+
+@pytest.mark.parametrize("mode", ["scripted", "so101_leader"])
+def test_keyboard_stop_does_not_affect_other_sim_inputs(tmp_path, mode):
+    cfg = load("configs/so101_sim.yaml")
+    cfg["teleop"]["type"] = mode
+    st = server.State(cfg, tmp_path, fake=False)
+    st.ready = True
+    st.command({"action": "start"}, scene_ready=True)
+    st.command({"action": "stop"})
+    assert st.phase == "recording"
+    assert st.start_key == "S"
 
 
 def test_wilson_endpoints():

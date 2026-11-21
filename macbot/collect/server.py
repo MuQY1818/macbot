@@ -45,11 +45,13 @@ class State:
         self.sim_step_recording = self.sim_input in {"keyboard", "so101_leader"}
         self.sim_outcome = None
         self.key_sample = (0.0, frozenset())
+        self.grip_toggle = False
+        self.keyboard_status = None
         self.start_requested = False
         self.cam_names = list(cfg["cameras"])
         self.fps = int(cfg["record"]["fps"])
         self.lock = threading.Lock()
-        self.phase = "idle"                 # idle | recording | stopped
+        self.phase = "idle"                 # idle | recording | paused (keyboard) | stopped (watchdog)
         self.t0 = 0.0
         self.instruction = cfg["task"]["instruction"]
         self.msg = tr("Loading simulation...", "正在加载仿真…") if self.sim else tr(
@@ -114,9 +116,11 @@ class State:
             eps = [v[1] for _, v in sorted(self.summaries.items())][::-1]
             rec = self.phase == "recording"
             sim = {"sim_input": self.sim_input, "sim_outcome": self.sim_outcome} if self.sim else {}
+            if self.sim_input == "keyboard":
+                sim["keyboard"] = self.keyboard_status
             return {"phase": self.phase, "ready": self.ready, "fake": self.fake, "sim": self.sim,
                     "elapsed": time.time() - self.t0 if rec else 0.0,
-                    "frames": len(self.buf["qpos"]) if (rec and self.buf) else 0,
+                    "frames": len(self.buf["qpos"]) if self.buf else 0,
                     "msg": self.msg, "instruction": self.instruction, "task": self.cfg.task,
                     "target": self.cfg["task"]["target_episodes"], "count": len(eps), "saving": self.saving,
                     "q": self.q, "cmd": self.cmd, "names": self.joints, "limits": self.limits, "episodes": eps,
@@ -128,12 +132,31 @@ class State:
 
         if self.sim_input == "keyboard" and isinstance(keys, list):
             with self.lock:
-                self.key_sample = (time.monotonic(), frozenset(k for k in keys if isinstance(k, str) and k in KEYS))
+                if self.phase != "recording":
+                    return
+                pressed = frozenset(k for k in keys if isinstance(k, str) and k in KEYS)
+                if "Space" in pressed and "Space" not in self.key_sample[1]:
+                    self.grip_toggle = not self.grip_toggle
+                self.key_sample = (time.monotonic(), pressed)
 
     def keys(self):
         with self.lock:
             stamp, keys = self.key_sample
-        return keys if time.monotonic() - stamp < 0.3 else ()
+            toggle, self.grip_toggle = self.grip_toggle, False
+        active = keys - {"Space"} if time.monotonic() - stamp < 0.3 else frozenset()
+        return active | {"Space"} if toggle else active
+
+    @property
+    def start_key(self):
+        return "Enter" if self.sim_input == "keyboard" else "S"
+
+    @property
+    def start_key_zh(self):
+        return "回车" if self.sim_input == "keyboard" else " S "
+
+    def _clear_keys(self):
+        self.key_sample = (0.0, frozenset())
+        self.grip_toggle = False
 
     def command(self, c, *, scene_ready=False):
         a = c.get("action")
@@ -160,12 +183,21 @@ class State:
                     return
                 self.buf = self.new_buffer()
                 self.phase, self.t0 = "recording", time.time()
-                self.msg = tr("Recording. Enter saves, left arrow discards.", "录制中。回车保存，← 丢弃。")
-            elif a == "discard" and self.phase == "recording":
+                self.msg = (tr("Recording. Enter saves · Backspace discards · Esc stops.",
+                               "录制中。回车保存 · 退格丢弃 · Esc 停止。") if self.sim_input == "keyboard" else
+                            tr("Recording. Enter saves, left arrow discards.", "录制中。回车保存，← 丢弃。"))
+            elif a == "stop" and self.sim_input == "keyboard" and self.phase == "recording":
+                self.phase = "paused"
+                self._clear_keys()
+                self.msg = tr("Stopped. Enter saves this take; Backspace discards it.", "已停止。回车保存本条；退格丢弃。")
+            elif a == "discard" and self.phase in {"recording", "paused"}:
                 self.phase, self.buf = "idle", None
-                self.msg = tr("Discarded. Reset the scene and press S.", "已丢弃。复位场景后按 S 重录。")
-            elif a == "save" and self.phase == "recording":
+                self._clear_keys()
+                self.msg = tr(f"Discarded. Reset the scene and press {self.start_key}.",
+                              f"已丢弃。复位场景后按{self.start_key_zh}重录。")
+            elif a == "save" and self.phase in {"recording", "paused"}:
                 buf, self.buf, self.phase = self.buf, None, "idle"
+                self._clear_keys()
                 n = len(buf["qpos"])
                 if n / self.fps < self.cfg["record"]["min_episode_s"]:
                     self.msg = tr(f"Not saved: only {n / self.fps:.1f} s.", f"没保存：只有 {n / self.fps:.1f} 秒。")
@@ -236,9 +268,9 @@ class State:
                 k = len(self.summaries)
                 if self.watch.trip is None:
                     self.msg = tr(f"Saved episode {idx:03d} ({n / self.fps:.1f} s)" + (f", check: {en}" if en else ", checks passed")
-                                  + f". {k} in total. Reset the scene and press S.",
+                                  + f". {k} in total. Reset the scene and press {self.start_key}.",
                                   f"已保存第 {idx:03d} 条（{n / self.fps:.1f} 秒）" + (f"，注意：{zh}" if zh else "，检查通过")
-                                  + f"。共 {k} 条。复位场景后按 S 录下一条。")
+                                  + f"。共 {k} 条。复位场景后按{self.start_key_zh}录下一条。")
         except Exception as e:
             if batch:
                 raise
@@ -401,6 +433,7 @@ def _control(st, srv, T, open_browser=False):
     robot = (open_robot(st.cfg["robot"], leader=True, teleop=T) if st.sim
              else open_robot(st.cfg["robot"], fake=st.fake, leader=True))
     names = robot.joints
+    keyboard = st.sim_input == "keyboard"
     with st.lock:
         st.joints, st.gripper = names, robot.gripper
         st.watch.set_joints(names, robot.gripper)
@@ -413,6 +446,9 @@ def _control(st, srv, T, open_browser=False):
         if st.sim_step_recording:
             robot.check_rate(st.fps, "record.fps")
         st.cams = open_cameras(st.cfg["cameras"], st.fps, st.fake, robot)
+        if keyboard:
+            main = st.cams[st.cam_names[0]]
+            robot.keyboard_camera, robot.keyboard_crop = main.key, main.crop
         threading.Thread(target=srv.serve_forever, daemon=True).start()
         serving = True
         label = "sim episodes" if st.sim else "data"
@@ -439,8 +475,10 @@ def _control(st, srv, T, open_browser=False):
             st.q = st.cmd = q0
             st.watch.samples = st.motors = motors
             st.limits = {n: list(robot.limits[n]) for n in names if n in robot.limits}
-            st.msg = tr(f"Teleoperation running. Set up the scene and press S. {len(st.summaries)} episodes so far.",
-                        f"遥操作已启动。摆好场景后按 S 开始录制。已有 {len(st.summaries)} 条。")
+            if keyboard:
+                st.keyboard_status = robot.keyboard_status()
+            st.msg = tr(f"Teleoperation running. Set up the scene and press {st.start_key}. {len(st.summaries)} episodes so far.",
+                        f"遥操作已启动。摆好场景后按{st.start_key_zh}开始录制。已有 {len(st.summaries)} 条。")
         started = True
         print(f"teleoperation running ({robot.kind}: {', '.join(names)})", flush=True)
         hz, soft = T["hz"], max(0.0, T["soft_start_s"])
@@ -461,7 +499,9 @@ def _control(st, srv, T, open_browser=False):
                         st.motors = robot.motor_telemetry()
                         st.watch.reset_motion()
                         st.sim_outcome = None
-                        st.key_sample = (0.0, frozenset())
+                        st._clear_keys()
+                        if keyboard:
+                            st.keyboard_status = robot.keyboard_status()
                     st.command({"action": "start"}, scene_ready=True)
                     tick = deadline = t_start
                 if robot.ended:
@@ -471,7 +511,7 @@ def _control(st, srv, T, open_browser=False):
                     continue
                 if st.sim_step_recording:
                     with st.lock:
-                        buf = st.buf
+                        buf = st.buf if st.phase == "recording" else None
                         st.ready = True
                     if buf is not None:
                         q = robot.read()
@@ -484,7 +524,9 @@ def _control(st, srv, T, open_browser=False):
                         cmd = robot.send(act, q)
                         with st.lock:
                             st.q, st.cmd = robot.read(), cmd
-                            if buf is st.buf:
+                            if keyboard:
+                                st.keyboard_status = robot.keyboard_status()
+                            if buf is st.buf and st.phase == "recording":
                                 recorder.append_step(buf, row, cmd, elapsed, realtime=True)
                                 st.sim_outcome = robot.outcome()
                                 buf["simulation"] = {"source": st.sim_input, "seed": seed, **st.sim_outcome}

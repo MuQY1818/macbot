@@ -8,6 +8,8 @@ EnvHub Python 代码并加载 MuJoCo 资源；启用 `trust_remote_code` 前请�
 场景包含一条 SO-101 仿真机械臂、四个方块和一个盒子。
 macOS 会打印选用的离屏渲染器。默认使用硬件 CGL；如果创建失败，会告警并尝试软件渲染。
 软件渲染时，遥操作可能显著慢于场景的 30 Hz 时钟。
+固定版本的场景缓存完成后可离线加载。如果首次下载必须经过 SOCKS 代理，
+请在同一环境运行 `pip install 'httpx[socks]'`。`macbot doctor` 会检查这一项。
 
 ```bash
 pip install 'macbot[sim]'               # 或在源码目录运行 pip install -e '.[sim]'
@@ -17,27 +19,39 @@ macbot --config tabletop.yaml doctor
 
 仿真直接由 YAML 配置；USB 设置向导用于实体机械臂。
 示例保留原有的正弦输入，用于快速检查流程。在配置副本中设置 `teleop.type: keyboard`，
-保留 `teleop.hz: 30`。运行 `macbot --config tabletop.yaml collect`，按 **S** 开始。
-让采集页面获得焦点，展开**键盘控制**可查看按键：
+保留 `teleop.hz: 30`。运行 `macbot --config tabletop.yaml collect`，点击视频，
+按 **Enter** 开始录制。视频下方常驻的图例会高亮当前按键。
 
 | 按键 | 动作 |
 | --- | --- |
-| I / K | 远移 / 近移 |
-| J / L | 左移 / 右移 |
-| U / O | 上升 / 下降 |
-| N / M | 转动手腕 |
-| F / G | 张开 / 闭合 |
-| Shift | 按住时微调平移 |
+| W / S | 按首个画面的方向沿桌面前移 / 后移 |
+| A / D | 在首个画面向左 / 向右 |
+| E / Q | 抬高 / 降低夹爪 |
+| Z / X | 从上方看，顺时针 / 逆时针转腕 |
+| 空格 | 切换夹爪开合，移动时无需一直按住 |
+| Shift | 按住时微调平移和转腕 |
+| Enter | 开始新回合，或保存当前回合 |
+| Backspace | 丢弃当前回合 |
+| Esc | 停止当前回合，之后可保存或丢弃 |
+
+夹爪默认朝下。按仿真时间计，平移速度为 **6 cm/s**，转腕为 **45°/s**，
+启动加速约 0.10 秒。按住 Shift 后，两者降为四分之一。松键或视频失去焦点后，
+移动目标不再推进。预览显示夹爪离桌高度、在桌面上的投影，遇到限位时也会提示。
+使用键盘控制时，请把固定相机放在 `cameras` 的第一项。
 
 横移前先抬起夹爪。将夹爪对准方块，下降、夹紧、抬升，再到盒子上方松开。
-回车保存，左方向键丢弃。任务成功或到达时间上限时自动保存。
-已通过采集控制台输入合成按键完成一次完整任务；仍待真人试用。
+若达到俯抓可达范围边界，可以降低夹爪或向臂座方向退回。任务成功或到达时间上限时
+自动保存。合成按键已通过采集 HTTP 接口完成一次四方块任务，仍待真人试用。
+
+仿真数据默认写入 `~/macbot-data/sim`，回合在其 `raw/<任务名>` 下。
+采集启动时会打印实际回合目录。显式设置的 `data_root` 或 `collect --out` 仍优先。
 
 也可以用已标定的实体 SO-101 领臂操作仿真从臂。设置
 `teleop: {type: so101_leader, port: /dev/tty.usbmodemYOUR_LEADER, id: leader, hz: 30}`。
 需要标定时，以相同串口和 ID 运行 `lerobot-calibrate --teleop.type=so101_leader
 --teleop.port=... --teleop.id=leader`。macbot 读绝对关节角并复用 LeRobot 标定。
 领臂路径目前仅做了 mock 测试。
+脚本与 SO-101 领臂输入继续使用原有的回合快捷键。
 
 可按种子生成脚本示教，并导出为 LeRobot v3.0：
 
