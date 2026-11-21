@@ -15,13 +15,13 @@ macbot 的主要变更记录在这里。本项目遵循
 - `run` 和 `bench` 接受可指定版本的 Hub checkpoint ID；试验会记录实际使用的 Hub 提交。
 - `health` 和 `replay` 可读取本地及 Hub 的 LeRobot v3.0 数据集，检查帧缺口、查看关节曲线和回放相机画面。
 - 新增从 Linux 迁移现有 LeRobot 环境到 Mac 的指南。
-- `run` 和 `bench` 可显式使用 `--backend auto`，按 checkpoint 的证据选择后端，回退到 PyTorch 时说明原因。
+- `run` 和 `bench` 可显式使用 `--backend auto`，按 checkpoint 的兼容性选择后端，回退到 PyTorch 时说明原因。
   试验记录后端选择，`macbot policies` 列出已实现的后端。
 - `bench --mode rtc` 可为支持 RTC 的后端测量有引导推理耗时，无需连接机器人。
 - 实验性 π0 MLX 后端，面向 224 像素 PaliGemma 2B checkpoint，提供分块和 RTC 引导路径。
   尚未核验训练权重的保真度和速度，`auto` 不会选用。
-- SmolVLA MLX 分块后端，支持标准 SmolVLM2-500M 结构。公开基座 checkpoint 在文档注明
-  的运行环境和同步分块模式下通过 `auto` 验证。
+- SmolVLA MLX 分块后端，支持标准 SmolVLM2-500M 结构。`auto` 依据公开基座的实测结果，
+  为兼容 checkpoint 的同步分块选择 MLX。
 - 增加 ACT 和 Diffusion 的 PyTorch MPS 实验选项：混合精度（可能有损）、卷积权重布局、
   ACT 单次回读和 Diffusion 编译。原有默认行为不变。
 

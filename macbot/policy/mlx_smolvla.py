@@ -5,6 +5,7 @@ import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
 
+from .backends import stock_smolvla
 from .mlx_chunk import MLXChunkIO, stage_call
 
 _MODEL = "vlm_with_expert.vlm.model."
@@ -148,12 +149,7 @@ class SmolVLAMLX(MLXChunkIO):
 
         super().__init__(path, task, **io)
         conf = self.config
-        if (conf.vlm_model_name != "HuggingFaceTB/SmolVLM2-500M-Video-Instruct"
-                or tuple(conf.resize_imgs_with_padding or ()) != (512, 512)
-                or conf.num_vlm_layers != 16 or conf.num_expert_layers not in (-1, 0, 16)
-                or conf.self_attn_every_n_layers != 2 or conf.attention_mode != "cross_attn"
-                or conf.expert_width_multiplier != 0.75 or not conf.use_cache or conf.empty_cameras
-                or conf.add_image_special_tokens or conf.prefix_length > 0 or conf.adapt_to_pi_aloha):
+        if not stock_smolvla({**vars(conf), "resize_imgs_with_padding": tuple(conf.resize_imgs_with_padding or ())}):
             raise ValueError("MLX SmolVLA requires the stock SmolVLM2-500M configuration")
         self.steps = conf.num_steps
         if self.steps < 1:

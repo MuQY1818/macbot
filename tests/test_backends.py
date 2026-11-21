@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -5,28 +6,32 @@ import pytest
 from macbot.policy import backends
 
 
-def test_auto_requires_exact_checkpoint_runtime_and_mode(monkeypatch, tmp_path):
-    args = SimpleNamespace(device="mps", mode="rtc")
-    metadata = {"type": "pi05"}
-    (tmp_path / "config.json").write_text('{"type": "pi05"}')
+def test_auto_uses_checkpoint_layout_without_a_machine_whitelist(monkeypatch, tmp_path):
+    args = SimpleNamespace(device="mps", mode="chunk")
+    metadata = {"type": "smolvla"}
     (tmp_path / "model.safetensors").write_bytes(b"weights")
+    pre = ("rename_observations_processor", "to_batch_processor", "smolvla_new_line_processor",
+           "tokenizer_processor", "device_processor", "normalizer_processor")
+    post = ("unnormalizer_processor", "device_processor")
+    for side, layout in (("pre", pre), ("post", post)):
+        (tmp_path / f"policy_{side}processor.json").write_text(
+            json.dumps({"steps": [{"registry_name": key} for key in layout]}),
+        )
     monkeypatch.setattr(backends.platform, "system", lambda: "Darwin")
     monkeypatch.setattr(backends.platform, "machine", lambda: "arm64")
     monkeypatch.setattr(backends, "find_spec", lambda _: object())
-    monkeypatch.setattr(backends, "machine_model", lambda: "test-mac")
+    monkeypatch.setattr(backends, "supported_mlx_dependencies", lambda: True)
     monkeypatch.setattr(backends, "mlx_runtime_available", lambda: True)
-    row = backends.Qualification(
-        "mlx", backends.checkpoint_digest(tmp_path), "test-mac", frozenset({"rtc"}), True, (),
-    )
-    monkeypatch.setitem(backends.QUALIFIED, "pi05", (row,))
-    assert backends.select_backend("auto", tmp_path, metadata, args).backend == "mlx"
+    decision = backends.select_backend("auto", tmp_path, metadata, args)
+    assert decision.backend == "mlx" and "lerobot/smolvla_base" in decision.reason
+    args.mode = "async"
+    assert "no qualified async" in backends.select_backend("auto", tmp_path, metadata, args).reason
     args.mode = "chunk"
-    assert "no qualified chunk" in backends.select_backend("auto", tmp_path, metadata, args).reason
-    args.mode = "rtc"
     monkeypatch.setattr(backends, "mlx_runtime_available", lambda: False)
     assert "could not access" in backends.select_backend("auto", tmp_path, metadata, args).reason
-    (tmp_path / "model.safetensors").write_bytes(b"changed")
-    assert "do not match" in backends.select_backend("auto", tmp_path, metadata, args).reason
+    (tmp_path / "policy_preprocessor.json").write_text('{"steps": []}')
+    fallback = backends.select_backend("auto", tmp_path, metadata, args)
+    assert fallback.backend == "torch" and "checkpoint layout" in fallback.reason
 
 
 @pytest.mark.parametrize("options", [{"mlx_bits": 8}, {"mlx_time_grid": "quadratic"}, {"steps": 3}])

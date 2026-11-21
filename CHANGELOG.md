@@ -15,13 +15,13 @@ All notable changes to macbot will be documented here. This project follows
 - `run` and `bench` accept Hub checkpoint IDs with optional revisions. Hub trials record the resolved commit.
 - `health` and `replay` read local and Hub LeRobot v3.0 datasets, including frame gaps, recorded traces and camera playback.
 - The migration guide covers moving an existing LeRobot setup from Linux to a Mac.
-- Opt-in `--backend auto` for `run` and `bench`, with checkpoint-specific evidence and a reason when it
+- Opt-in `--backend auto` for `run` and `bench`, with checkpoint compatibility checks and a reason when it
   falls back to PyTorch. Trials save the backend decision and `macbot policies` lists implemented backends.
 - `bench --mode rtc` times guided inference for RTC-capable backends without connecting a robot.
 - Experimental π0 MLX backend for 224px PaliGemma 2B checkpoints, with chunk and guided RTC paths.
   Trained checkpoint fidelity and speed are not verified; `auto` does not select it.
-- SmolVLA MLX chunks for the stock SmolVLM2-500M architecture. The public base checkpoint
-  qualifies for `auto` in the documented runtime and synchronous chunk mode.
+- SmolVLA MLX chunks for the stock SmolVLM2-500M architecture. `auto` uses the public base
+  benchmark to select MLX for compatible checkpoints in synchronous chunk mode.
 - Explicit PyTorch MPS experiments for ACT and Diffusion: autocast (potentially lossy), convolution
   layout, single readback on ACT, and compilation on Diffusion. Existing defaults are unchanged.
 

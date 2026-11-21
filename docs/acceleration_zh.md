@@ -12,9 +12,10 @@ macbot 默认使用 PyTorch。可选的 MLX 后端直接读入标准 LeRobot 0.7
 改用绝对容差：关节误差均值和 p99 ≤ 0.01°，夹爪误差均值和 p99 ≤ 已注明量程的 0.1%。
 权重量化、减少去噪步数、丢弃视觉 token 属于有损选项。
 
-`--backend auto` 需要显式开启。只有 checkpoint、机器、运行库、编译设置和执行方式均符合
-公开证据时，才会采用加速后端；否则打印一句原因并使用 PyTorch。
-下列公开 SmolVLA checkpoint 的同步分块已通过验证。
+`--backend auto` 需要显式开启。选择器检查模型结构、保存的处理器布局、执行方式、编译设置
+和受支持的 MLX 运行时。启动时显示资格证据来自哪个公开 checkpoint，或说明回退到 PyTorch
+的原因。兼容的 SmolVLA checkpoint 在同步分块时使用 MLX。下文记录的机型和版本是实验条件，
+不限制其他兼容的 Apple 芯片 Mac。
 仍可用 `--backend mlx` 显式选择。既有默认后端与显式后端的默认执行行为不变。
 `bench --mode rtc` 使用固定的剩余动作块测量有引导的推理，不连接机器人。
 

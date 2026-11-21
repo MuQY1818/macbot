@@ -1,11 +1,13 @@
 """Select a policy backend from published evidence, without timing inference."""
 from __future__ import annotations
 
-import hashlib
+import json
 import platform
-import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass
+from importlib.metadata import PackageNotFoundError, version
 from importlib.util import find_spec
+from pathlib import Path
 from typing import NamedTuple
 
 
@@ -24,15 +26,48 @@ MLX_BACKENDS = {
 
 @dataclass(frozen=True)
 class Qualification:
-    """A measured winner for this checkpoint, hardware, runtime and mode."""
+    """A measured implementation for a compatible checkpoint layout and mode."""
 
     backend: str
-    checkpoint: str
-    machine: str
+    evidence: str
     modes: frozenset[str]
     compiled: bool
-    packages: tuple[tuple[str, str], ...]
-    macos: str | None = None
+    compatible: Callable[[Path, dict], bool]
+
+
+def stock_smolvla(metadata):
+    options = {
+        "vlm_model_name": "HuggingFaceTB/SmolVLM2-500M-Video-Instruct",
+        "resize_imgs_with_padding": (512, 512),
+        "num_vlm_layers": 16,
+        "self_attn_every_n_layers": 2,
+        "attention_mode": "cross_attn",
+        "expert_width_multiplier": 0.75,
+        "use_cache": True,
+        "empty_cameras": 0,
+        "add_image_special_tokens": False,
+        "adapt_to_pi_aloha": False,
+        "use_delta_joint_actions_aloha": False,
+    }
+    return (all(metadata.get(k, value) == value for k, value in options.items())
+            and metadata.get("num_expert_layers", -1) in (-1, 0, 16)
+            and metadata.get("prefix_length", -1) <= 0)
+
+
+def compatible_smolvla(path, metadata):
+    fields = {**metadata, "resize_imgs_with_padding": tuple(metadata.get("resize_imgs_with_padding", (512, 512)) or ())}
+    if not stock_smolvla(fields) or metadata.get("n_obs_steps", 1) != 1 or metadata.get("num_steps", 10) != 10:
+        return False
+    expected = {
+        "pre": ("rename_observations_processor", "to_batch_processor", "smolvla_new_line_processor",
+                "tokenizer_processor", "device_processor", "normalizer_processor"),
+        "post": ("unnormalizer_processor", "device_processor"),
+    }
+    for side, layout in expected.items():
+        steps = json.loads((path / f"policy_{side}processor.json").read_text())["steps"]
+        if tuple(step.get("registry_name") for step in steps) != layout:
+            return False
+    return (path / "model.safetensors").is_file() and not (path / "adapter_config.json").is_file()
 
 
 # Entries must link to a trained public checkpoint and matched fidelity and latency
@@ -40,9 +75,7 @@ class Qualification:
 QUALIFIED: dict[str, tuple[Qualification, ...]] = {
     "smolvla": (
         Qualification(
-            "mlx", "2eb08d204c50cd22492c3cb0494bb49e54e4b2811837a8b44ee539417525adf9",
-            "Mac17,9", frozenset({"chunk"}), True,
-            (("lerobot", "0.7.0"), ("torch", "2.11.0"), ("mlx", "0.32.4")), "27.0.1",
+            "mlx", "lerobot/smolvla_base", frozenset({"chunk"}), True, compatible_smolvla,
         ),
     ),
 }
@@ -63,20 +96,14 @@ def available(kind):
     return ("torch", MLX_BACKENDS[kind].name) if kind in MLX_BACKENDS else ("torch",)
 
 
-def checkpoint_digest(path):
-    """Hash the names and content of a flat, local LeRobot checkpoint."""
-    identity = hashlib.sha256()
-    for entry in sorted(path.iterdir()):
-        if not entry.is_file() or entry.suffix not in {".json", ".safetensors"}:
-            continue
-        with entry.open("rb") as data:
-            digest = hashlib.file_digest(data, "sha256").digest()
-        identity.update(entry.name.encode("utf-8") + b"\0" + digest)
-    return identity.hexdigest()
+def supported_mlx_dependencies():
+    from packaging.version import InvalidVersion, Version
 
-
-def machine_model():
-    return subprocess.check_output(["sysctl", "-n", "hw.model"], text=True).strip()
+    try:
+        lerobot = Version(version("lerobot"))
+        return Version("0.7") <= lerobot < Version("0.8") and Version(version("mlx")) >= Version("0.32.4")
+    except (PackageNotFoundError, InvalidVersion):
+        return False
 
 
 def mlx_runtime_available():
@@ -122,25 +149,19 @@ def select_backend(requested, path, metadata, args, *, bench=False):
     if platform.system() != "Darwin" or platform.machine() != "arm64" or find_spec("mlx") is None:
         return fallback("optional Apple silicon MLX runtime unavailable")
 
-    from importlib.metadata import PackageNotFoundError, version
-
     compiled = not getattr(args, "no_compile", False)
-    try:
-        machine = machine_model()
-    except (OSError, subprocess.SubprocessError):
-        return fallback("Mac model could not be confirmed")
     applicable = [row for row in rows if row.backend == capability.name and mode in row.modes
-                  and row.machine == machine and row.compiled == compiled
-                  and (row.macos is None or row.macos == platform.mac_ver()[0])]
+                  and row.compiled == compiled]
     if not applicable:
-        return fallback(f"no qualified {mode} result on this Mac with these compiler settings")
+        return fallback(f"no qualified {mode} result with these compiler settings")
+    if not supported_mlx_dependencies():
+        return fallback("requires LeRobot 0.7.x and MLX 0.32.4 or newer")
     try:
-        digest = checkpoint_digest(path)
         for row in applicable:
-            if row.checkpoint == digest and all(version(name) == expected for name, expected in row.packages):
+            if row.compatible(path, metadata):
                 if not mlx_runtime_available():
                     return fallback("MLX could not access the Apple GPU")
-                return Selection("auto", row.backend, f"qualified {kind} checkpoint for {mode}")
-    except (OSError, PackageNotFoundError):
-        return fallback("checkpoint or runtime identity could not be confirmed")
-    return fallback("checkpoint or runtime versions do not match published results")
+                return Selection("auto", row.backend, f"compatible {kind} {mode}; measured on {row.evidence}")
+    except (OSError, ValueError, KeyError, TypeError):
+        return fallback("checkpoint processor layout could not be confirmed")
+    return fallback("checkpoint layout does not match the qualified implementation")

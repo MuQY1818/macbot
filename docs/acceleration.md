@@ -15,10 +15,12 @@ zero, use an absolute tolerance instead: mean and p99 joint error ≤ 0.01° and
 p99 gripper error ≤ 0.1% of the documented gripper range. Weight
 quantization, fewer denoising steps and visual token dropping are lossy options.
 
-`--backend auto` is opt-in. It selects an alternative only for a matching checkpoint,
-machine, runtime, compile setting and execution mode with published evidence. It prints
-the choice or a one-line reason for falling back to PyTorch. The qualified public
-checkpoint below uses MLX for synchronous chunks. Use `--backend mlx` to request it explicitly.
+`--backend auto` is opt-in. It checks the policy architecture, saved processor layout,
+execution mode, compile setting and availability of a supported MLX runtime. It prints
+the public checkpoint used to qualify the implementation or a one-line reason for falling
+back to PyTorch. Compatible SmolVLA checkpoints use MLX for synchronous chunks.
+The measurements below describe the tested Apple silicon machine and dependency versions;
+they do not restrict selection to that machine. Use `--backend mlx` to request it explicitly.
 The default backend and the default execution modes for explicit backends are unchanged.
 `bench --mode rtc` measures guided calls with a fixed leftover chunk and no robot.
 
