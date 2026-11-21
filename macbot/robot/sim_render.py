@@ -10,6 +10,32 @@ from contextlib import contextmanager
 TABLETOP_REPO = "lerobot/so101-tabletop-mujoco"
 
 
+@contextmanager
+def render_for_queries(robot):
+    """Let non-query steps advance the scene without refreshing unobserved pixels."""
+    from .sim_cartesian import tabletop_world
+
+    world = tabletop_world(robot, "--trace-only")
+    original = world.render
+    cache = {}
+    refresh = True
+
+    def capture(enabled):
+        nonlocal refresh
+        refresh = enabled
+
+    def render(camera):
+        if refresh or camera not in cache:
+            cache[camera] = original(camera)
+        return cache[camera]
+
+    world.render = render
+    try:
+        yield capture
+    finally:
+        del world.render
+
+
 def use_tabletop_cgl(env):
     return (sys.platform == "darwin"
             and (env or {}).get("hub_path", "").split("@", 1)[0] == TABLETOP_REPO

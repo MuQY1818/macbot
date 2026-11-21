@@ -10,6 +10,7 @@ import numpy as np
 
 from ..cameras import open_cameras
 from ..robot import open_robot
+from ..robot.sim_render import TABLETOP_REPO, render_for_queries
 from ..simulation import result_path, seeds, write_summary
 from ..system import ensure_dir, expand
 from .executors import _interp, switch_record
@@ -41,9 +42,12 @@ class StepClock:
         self.raw = None
         self.id = -1
 
+    def queries(self, step):
+        return step % self.interval == 0
+
     def target(self, step, obs, q, log):
         args = self.args
-        if step % self.interval == 0:
+        if self.queries(step):
             tick = time.perf_counter()
             previous = self.chunks[-1] if self.chunks else None
             age = step - previous[0] if previous else 0
@@ -99,9 +103,11 @@ def seed_policy(seed, backend, device):
             torch.cuda.manual_seed_all(seed)
 
 
-def episode(st, robot, policy, sizes, quality, limit_chunk, seed, gripper):
+def episode(st, robot, policy, sizes, quality, limit_chunk, seed, gripper, capture=None):
     args = st.args
     fps = st.cfg["record"]["fps"]
+    if capture is not None:
+        capture(True)
     robot.reset_scene(seed)
     if reset := getattr(policy, "reset", None):
         reset()
@@ -113,9 +119,11 @@ def episode(st, robot, policy, sizes, quality, limit_chunk, seed, gripper):
     gi = robot.gripper_index
     if gripper is not None:
         gripper.sync(robot.read()[gi])
-    for step in range(robot.episode_limit()):
+    limit = robot.episode_limit()
+    for step in range(limit):
         q = robot.read()
-        encoded = {c: prep_image(st.cams[c].latest()[0], sizes[c], quality) for c in st.cam_names}
+        encoded = ({c: prep_image(st.cams[c].latest()[0], sizes[c], quality) for c in st.cam_names}
+                   if capture is None or clock.queries(step) else {})
         cmd, chunk = clock.target(step, {c: v[0] for c, v in encoded.items()}, q, st.log_chunk)
         cmd = cmd.tolist()
         grip, ahead = cmd[gi] if gi is not None else float("nan"), float("nan")
@@ -125,13 +133,16 @@ def episode(st, robot, policy, sizes, quality, limit_chunk, seed, gripper):
             cmd[gi] = gripper(grip, step / fps, ahead if preview is not None else None)
         rec["motor"].append(robot.motor_telemetry())
         rec["q"].append(q)
+        if capture is not None:
+            capture(step + 1 < limit and clock.queries(step + 1))
         rec["cmd"].append(robot.send(cmd, q))
         rec["gp"].append(grip)
         rec["gp_ahead"].append(ahead)
         rec["t"].append(step / fps)
         rec["chunk"].append(chunk)
-        for c, (_, jpg) in encoded.items():
-            rec[f"{c}_jpg"].append(jpg)
+        if capture is None:
+            for c, (_, jpg) in encoded.items():
+                rec[f"{c}_jpg"].append(jpg)
         if robot.ended:
             break
     st.rec = None
@@ -141,6 +152,8 @@ def episode(st, robot, policy, sizes, quality, limit_chunk, seed, gripper):
 
 def run(cfg, args):
     trial_seeds = seeds(args)
+    if args.trace_only and cfg["robot"].get("env", {}).get("hub_path", "").split("@", 1)[0] != TABLETOP_REPO:
+        raise SystemExit("--trace-only requires the local SO-101 tabletop MuJoCo scene")
     check_policy_framing(cfg, args)
     if args.delay_steps < 0 or args.query_every < 0:
         raise SystemExit("--delay-steps and --query-every must be nonnegative")
@@ -169,11 +182,13 @@ def run(cfg, args):
         for camera in st.cams.values():
             cleanup.callback(camera.close)
         robot.connect()
+        capture = cleanup.enter_context(render_for_queries(robot)) if args.trace_only else None
         st.executor = f"{args.mode} (simulated step clock)"
         for seed in trial_seeds:
-            rec, row = episode(st, robot, pol, sizes, quality, limit_chunk, seed, gripper)
+            rec, row = episode(st, robot, pol, sizes, quality, limit_chunk, seed, gripper, capture)
             result = "success" if row["success"] else "failure"
-            name, _ = save_rollout(st, rec, result, simulation={**row, "delay_steps": args.delay_steps})
+            name, _ = save_rollout(st, rec, result, record_images=not args.trace_only,
+                                   simulation={**row, "delay_steps": args.delay_steps, "trace_only": args.trace_only})
             rows.append({**row, "rollout": name})
             print(f"seed {seed}: {result}, {row['steps']} steps, "
                   f"{row['steps'] / row['wall_seconds']:.1f} steps/s, reward {row['reward']:g}", flush=True)
@@ -184,4 +199,4 @@ def run(cfg, args):
     write_summary(result_path(out, "eval"), rows, fps, scene=cfg["robot"]["env"],
                   policy=str(args.policy), policy_hub=args.policy_hub, backend=st.backend_selection.backend,
                   mode=args.mode, delay_steps=args.delay_steps, k=args.k, query_every=args.query_every,
-                  device=args.device)
+                  device=args.device, trace_only=args.trace_only)

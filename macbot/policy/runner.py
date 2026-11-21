@@ -241,11 +241,12 @@ def stack_chunks(rows) -> np.ndarray:
     return out
 
 
-def save_rollout(st: State, rec: dict, result: str, *, simulation=None):
+def save_rollout(st: State, rec: dict, result: str, *, simulation=None, record_images=True):
     p = (diagnostic_path(st.out, "rollout") if result == "watchdog"
          else st.out / f"rollout_{st.next_idx():03d}.npz")
     arrs = motor_arrays(rec["motor"], len(st.joints))
-    for c in st.cam_names:
+    cameras = st.cam_names if record_images else []
+    for c in cameras:
         js = rec[f"{c}_jpg"]
         arrs[f"{c}_offsets"] = np.cumsum([0] + [len(j) for j in js]).astype(np.int64)
         arrs[f"{c}_jpeg"] = np.concatenate(js) if js else np.zeros(0, np.uint8)
@@ -256,7 +257,7 @@ def save_rollout(st: State, rec: dict, result: str, *, simulation=None):
             "rtc_horizon": getattr(a, "rtc_horizon", None), "rtc_schedule": getattr(a, "rtc_schedule", "linear"),
             "query_every": getattr(a, "query_every", 0),
             "grip_debounce": a.grip_debounce, "grip_lead": getattr(a, "grip_lead", 0.0), "speed": a.speed, "max_vel": st.cfg["run"]["max_vel"], "result": result,
-            "fps": fps, "frames": len(rec["t"]), "joint_names": st.joints, "gripper": st.gripper, "robot": st.robot_info, "cameras": st.cam_names,
+            "fps": fps, "frames": len(rec["t"]), "joint_names": st.joints, "gripper": st.gripper, "robot": st.robot_info, "cameras": cameras,
             "camera_framing": framing(st.cfg["cameras"], fps),
             "saved_at": time.strftime("%Y-%m-%d %H:%M:%S"), "fake": a.fake, "writer": "macbot"}
     meta.update(hand_marks=rec["hand_marks"], takeover_count=rec["takeover_count"],

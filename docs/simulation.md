@@ -72,7 +72,9 @@ macbot --config tabletop.yaml replay --dir ./trials
 ```
 
 `eval` takes a local checkpoint or `owner/model@revision`; add `--videos` for
-side-by-side MP4s. It runs on the simulated step clock at full scene rate. Policy
+side-by-side MP4s. For large SO-101 tabletop batches, `--trace-only` renders at
+policy queries and saves the joint traces without camera playback; `health` and
+the trace view in `replay` still work. Each option runs every simulated step. Policy
 targets go directly to the simulator without the physical arm's velocity ramp.
 For async/RTC, use `--delay-steps` to model inference delay; the default is zero.
 Save the scene configuration, seed range, policy revision and execution options

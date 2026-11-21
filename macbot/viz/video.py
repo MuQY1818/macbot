@@ -46,6 +46,8 @@ def run(args):
     meta = json.loads(str(d["meta"]))
     cams = meta.get("cameras") if isinstance(meta.get("cameras"), list) else list(meta.get("cameras") or [])
     cams = [c for c in cams if f"{c}_jpeg" in d.files] or [k[:-5] for k in d.files if k.endswith("_jpeg")]
+    if not cams:
+        raise SystemExit("This trial has no recorded camera frames to export.")
     fps = float(meta.get("fps", 30))
     h = args.height - args.height % 2
     out = expand(args.out) if args.out else src.with_suffix(".mp4")

@@ -1,6 +1,7 @@
 """Simulation batch contracts without MuJoCo, a checkpoint download, or a GPU."""
 import json
 import sys
+from contextlib import nullcontext
 from types import SimpleNamespace
 
 import numpy as np
@@ -74,7 +75,8 @@ def test_rtc_switches_on_the_simulated_delivery_step():
     assert inputs[1]["delay"] == 2
 
 
-def test_eval_saves_seeded_normal_rollouts(tmp_path, monkeypatch, capsys):
+@pytest.mark.parametrize("trace_only", [False, True])
+def test_eval_saves_seeded_normal_rollouts(tmp_path, monkeypatch, capsys, trace_only):
     class Env:
         descriptor = SimpleNamespace(fps=30, control_mode="position", semantics="test")
         action_features = {"joint.pos": float, "gripper.pos": float}
@@ -116,8 +118,11 @@ def test_eval_saves_seeded_normal_rollouts(tmp_path, monkeypatch, capsys):
             return np.array([[1, 2], [3, 4]], np.float32)
 
     env = Env()
+    captured = []
     monkeypatch.setattr(sim, "_make_sim", lambda *_: env)
+    monkeypatch.setattr(sim, "use_tabletop_cgl", lambda _: False)
     monkeypatch.setattr(evaluate, "seed_policy", lambda *_: None)
+    monkeypatch.setattr(evaluate, "render_for_queries", lambda _: nullcontext(captured.append))
 
     def prepare(st, *args, **kwargs):
         st.backend_selection = SimpleNamespace(backend="torch", requested="torch", reason="test")
@@ -126,7 +131,7 @@ def test_eval_saves_seeded_normal_rollouts(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(evaluate, "prepare_policy", prepare)
     config = tmp_path / "config.yaml"
     config.write_text("""\
-robot: {type: sim, env: {type: fake}}
+robot: {type: sim, env: {type: envhub, hub_path: lerobot/so101-tabletop-mujoco}}
 cameras: {front: {type: robot, save_size: [6, 4]}}
 run: {hz: 30}
 """)
@@ -135,7 +140,7 @@ run: {hz: 30}
     (model / "config.json").write_text("{}")
     out = tmp_path / "eval"
     main(["--config", str(config), "eval", "--policy", str(model), "--device", "cpu", "--mode", "chunk",
-          "--episodes", "2", "--seed", "5", "--out", str(out)])
+          "--episodes", "2", "--seed", "5", "--out", str(out), *(["--trace-only"] if trace_only else [])])
     stats = json.loads((out / "eval_000.json").read_text())
     assert (stats["successes"], stats["mean_steps"], env.seeds, env.closed) == (1, 1.5, [None, 5, 6], True)
     assert [row["truncated"] for row in stats["results"]] == [True, False]
@@ -145,8 +150,15 @@ run: {hz: 30}
         np.testing.assert_allclose(data["t"], [0, 1 / 30])
         np.testing.assert_allclose(data["qpos"][:, 0], [0, 1])
         np.testing.assert_allclose(data["cmd"][:, 0], [1, 3])
-        assert data["front_offsets"].size == 3
-        assert json.loads(str(data["meta"]))["simulation"]["seed"] == 5
-    assert Store(out).index()[0]["result"] in {"success", "failure"}
+        meta = json.loads(str(data["meta"]))
+        assert meta["simulation"]["seed"] == 5
+        if trace_only:
+            assert "front_offsets" not in data.files and not meta["cameras"]
+            assert captured == [True, False, False, True, False]
+        else:
+            assert data["front_offsets"].size == 3
+    store = Store(out)
+    assert store.index()[0]["result"] in {"success", "failure"}
+    assert store.summary(files[0].stem)["cams"] == ([] if trace_only else ["front"])
     main(["health", "--data", str(out)])
     assert "1/2 successful trials" in capsys.readouterr().out

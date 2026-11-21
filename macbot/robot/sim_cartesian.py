@@ -7,14 +7,14 @@ KEYS = frozenset("ijkluonmfg") | {"Shift"}
 XYZ_KEYS = (("i", "k"), ("j", "l"), ("u", "o"))
 
 
-def tabletop_world(robot):
+def tabletop_world(robot, feature="Cartesian control"):
     """Isolate the private LeRobot 0.7 / EnvHub adapter in one place."""
     envs = getattr(robot.follower._env, "_envs", ())
     if len(envs) != 1 or not hasattr(envs[0].unwrapped, "_world"):
-        raise SystemExit("Cartesian control requires the local SO-101 tabletop MuJoCo scene")
+        raise SystemExit(f"{feature} requires the local SO-101 tabletop MuJoCo scene")
     world = envs[0].unwrapped._world
     if world is None or robot.follower.descriptor.semantics != "so101-joint-degrees-v1":
-        raise SystemExit("Cartesian control requires the SO-101 tabletop model and joint units")
+        raise SystemExit(f"{feature} requires the SO-101 tabletop model and joint units")
     return world
 
 

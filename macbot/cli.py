@@ -358,7 +358,10 @@ def main(argv=None):
     p = sub.add_parser("eval", help="evaluate a policy on seeded simulator episodes")
     _execution_args(p)
     _sim_batch_args(p)
-    p.add_argument("--videos", action="store_true", help="also export side-by-side MP4s")
+    capture = p.add_mutually_exclusive_group()
+    capture.add_argument("--videos", action="store_true", help="also export side-by-side MP4s")
+    capture.add_argument("--trace-only", action="store_true",
+                         help="SO-101 tabletop: render only for policy queries and save joint traces without images")
     p.add_argument("--delay-steps", type=int, default=0, help="simulated inference delay for async/rtc (steps)")
     p.set_defaults(fn=cmd_eval, fake=False, speed=1.0, takeover=False)
 

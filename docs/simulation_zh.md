@@ -67,6 +67,8 @@ macbot --config tabletop.yaml replay --dir ./trials
 ```
 
 `eval` 支持本地 checkpoint 或 `owner/model@revision`。加 `--videos` 可另存双路并排 MP4。
+批量评估 SO-101 桌面场景时，可用 `--trace-only` 只在策略查询时渲染，只保存关节轨迹；
+`health` 和 `replay` 的轨迹视图仍可使用。两种方式都会执行完整的仿真步。
 策略按仿真步推进并直接下发关节目标，不经过实体机械臂的速度斜坡。异步和 RTC 模式可用
 `--delay-steps` 模拟推理延迟，默认零延迟。对比结果时应记录场景配置、种子范围、
 策略版本及执行选项。
