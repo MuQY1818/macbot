@@ -9,6 +9,8 @@ macbot 的主要变更记录在这里。本项目遵循
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-11-21
+
 ### 新增
 
 - 仿真采集控制台可选笛卡尔键盘控制或已校准的 SO-101 领臂输入。
@@ -157,6 +159,7 @@ macbot 的主要变更记录在这里。本项目遵循
 - 设备诊断、安装和使用指南，以及英文与简体中文控制台。
 
 [Unreleased]: https://github.com/MuQY1818/macbot/compare/v0.3.3...HEAD
+[0.3.4]: https://github.com/MuQY1818/macbot/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/MuQY1818/macbot/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/MuQY1818/macbot/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/MuQY1818/macbot/compare/v0.3.0...v0.3.1

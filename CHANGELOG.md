@@ -9,6 +9,8 @@ All notable changes to macbot will be documented here. This project follows
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-11-21
+
 ### Added
 
 - Opt-in Cartesian keyboard and calibrated SO-101 leader input in the simulation collection console.
@@ -174,6 +176,7 @@ All notable changes to macbot will be documented here. This project follows
 - Equipment diagnostics, setup and usage guides, and English and Simplified Chinese consoles.
 
 [Unreleased]: https://github.com/MuQY1818/macbot/compare/v0.3.3...HEAD
+[0.3.4]: https://github.com/MuQY1818/macbot/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/MuQY1818/macbot/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/MuQY1818/macbot/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/MuQY1818/macbot/compare/v0.3.0...v0.3.1
