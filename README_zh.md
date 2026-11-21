@@ -51,16 +51,10 @@ reBot B601-RS 已做真机验证。其他 LeRobot 机械臂目前只有 fake 或
 
 | 策略 | 后端 | 执行 | 延迟 |
 |---|---|---|---:|
-| π0.5 | PyTorch MPS | 分块 50 | 270 ms |
-| π0.5 | MLX | 分块 50 | **165 ms** |
-| π0.5 | PyTorch MPS | RTC 50 | 350 ms |
-| π0.5 | MLX | RTC 50 | **170 ms** |
 | SmolVLA | PyTorch MPS | 分块 50 | 296 ms |
 | SmolVLA | MLX | 分块 50 | **53 ms** |
-| X-VLA | PyTorch MPS | 分块 30 | 235 ms |
-| ACT | PyTorch MPS | 分块 100 | 25 ms |
 
-π0.5 去噪 10 步，PyTorch 用 bf16 加 `torch.compile`，MLX 用 fp16（`--backend mlx`）。MLX 输出的动作与 PyTorch 平均相差不到 0.1°。RTC 指 Real-Time Chunking 引导。SmolVLA 用官方基座，去噪 10 步（MPS BF16 底座或编译后的 MLX FP16）；X-VLA 用 SO-101 BF16 微调权重。测法和完整结果见[推理基准](https://github.com/MuQY1818/macbot/blob/main/docs/acceleration_zh.md)，其他策略见[策略支持](https://github.com/MuQY1818/macbot/blob/main/docs/policies_zh.md)。
+SmolVLA 使用公开的 `lerobot/smolvla_base` checkpoint，去噪 10 步（MPS BF16 底座或编译后的 MLX FP16）。延迟为预热 5 次后 50 次端到端调用的中位数。更多结果见[推理基准](https://github.com/MuQY1818/macbot/blob/main/docs/acceleration_zh.md)和[策略支持](https://github.com/MuQY1818/macbot/blob/main/docs/policies_zh.md)。
 
 | 数据采集 | 实测 |
 |---|---:|
