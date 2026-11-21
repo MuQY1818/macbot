@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from importlib import import_module
 
+from .backends import available
+
 BUILTINS = (
     "act", "cosmos3_edge", "cosmos3_nano", "diffusion", "dm05", "eo1", "evo1", "fastwam",
     "fineart_vla", "flux3", "g05", "gaussian_actor", "groot", "lawam", "lingbot_va", "lingbot_vla_v2",
@@ -38,8 +40,8 @@ def run():
         print("LeRobot registry unavailable; showing the built-in 0.7.0 list.")
     else:
         kinds = PreTrainedConfig.get_known_choices()
-    print(f"{'Policy':20} {'MPS status':26} Evidence / limitation")
+    print(f"{'Policy':20} {'Backends':12} {'MPS status':26} Evidence / limitation")
     for kind in sorted(kinds):
         status, note = STATUS.get(kind, ("not verified", "generic candidate; no validated Mac checkpoint"))
-        print(f"{kind:20} {status:26} {note}")
+        print(f"{kind:20} {', '.join(available(kind)):12} {status:26} {note}")
     print("\nCoverage is checkpoint-specific. See docs/policies.md for tests, options and limits.")

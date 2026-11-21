@@ -153,8 +153,8 @@ class PI05:
 
 def policy_backend(cfg, args):
     backend = getattr(args, "backend", None) or cfg.get("policy", {}).get("backend", "torch")
-    if backend not in ("torch", "mlx"):
-        sys.exit("policy.backend must be torch or mlx")
+    if backend not in ("torch", "mlx", "auto"):
+        sys.exit("policy.backend must be torch, mlx or auto")
     return backend
 
 

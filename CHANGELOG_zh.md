@@ -15,6 +15,9 @@ macbot 的主要变更记录在这里。本项目遵循
 - `run` 和 `bench` 接受可指定版本的 Hub checkpoint ID；试验会记录实际使用的 Hub 提交。
 - `health` 和 `replay` 可读取本地及 Hub 的 LeRobot v3.0 数据集，检查帧缺口、查看关节曲线和回放相机画面。
 - 新增从 Linux 迁移现有 LeRobot 环境到 Mac 的指南。
+- `run` 和 `bench` 可显式使用 `--backend auto`，按 checkpoint 的证据选择后端，回退到 PyTorch 时说明原因。
+  试验记录后端选择，`macbot policies` 列出已实现的后端。
+- `bench --mode rtc` 可为支持 RTC 的后端测量有引导推理耗时，无需连接机器人。
 
 ### 变更
 

@@ -6,6 +6,10 @@
 ACT and π0.5 use their original wrappers and defaults. Other policy types use the generic
 PyTorch adapter; pass `--policy-impl generic` to opt into that adapter for ACT or π0.5.
 
+`run` and `bench` accept `--backend auto` or `policy: {backend: auto}` in YAML.
+`policies` lists implemented backends independently of installed extras and
+[lossless qualification](acceleration.md#automatic-backend-selection).
+
 ## Bring a checkpoint
 
 Use a local LeRobot `pretrained_model` directory with `config.json`, weights,

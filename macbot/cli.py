@@ -207,7 +207,8 @@ def cmd_bench(args):
 
 
 def _backend_args(parser):
-    parser.add_argument("--backend", choices=["torch", "mlx"], help="policy backend (default: torch or YAML setting)")
+    parser.add_argument("--backend", choices=["torch", "mlx", "auto"],
+                        help="policy backend (default: torch or YAML setting); auto uses qualified lossless results")
     parser.add_argument("--policy-impl", choices=["auto", "generic"], default="auto",
                         help="use the generic LeRobot adapter even for ACT or pi0.5 (torch only)")
     parser.add_argument("--mlx-bits", type=int, choices=[4, 8], help="experimental lossy MLX weight quantization")
@@ -295,7 +296,7 @@ def main(argv=None):
     p.add_argument("--grip-debounce", type=float, default=0.6, help="binary gripper: seconds of 'open' before opening")
     p.add_argument("--grip-lead", type=float, default=0.0,
                    help="binary gripper: also close when the policy plans to close this many seconds ahead (try 0.35)")
-    p.add_argument("--steps", type=int, help="pi0.5 denoising steps (default from checkpoint)")
+    p.add_argument("--steps", type=int, help="pi0.5 denoising steps (fewer than the checkpoint default is lossy)")
     p.add_argument("--no-compile", action="store_true", help="pi0.5: skip backend compilation")
     p.add_argument("--allow-framing-mismatch", action="store_true", help="run despite a known camera framing mismatch")
     _backend_args(p)
@@ -326,7 +327,9 @@ def main(argv=None):
     p.add_argument("--policy", required=True, help="LeRobot pretrained_model folder or Hub model ID (owner/name[@revision])")
     p.add_argument("--device", default="mps")
     p.add_argument("-n", type=int, default=30)
-    p.add_argument("--steps", type=int, help="pi0.5 denoising steps (default from checkpoint)")
+    p.add_argument("--steps", type=int, help="pi0.5 denoising steps (fewer than the checkpoint default is lossy)")
+    p.add_argument("--mode", choices=["auto", "chunk", "step", "rtc"], default="auto",
+                   help="time native inference or an explicit execution mode; rtc times guided inference")
     p.add_argument("--no-compile", action="store_true")
     p.add_argument("--profile", action="store_true", help="also report synchronized generic or pi0.5 stage timings")
     _backend_args(p)

@@ -35,6 +35,7 @@ from ..i18n import tr
 from ..safety import MotorWatch, timed_events
 from ..system import ensure_dir, expand, give_back, start_log
 from ..viz.rollouts import Store, serve_rollouts
+from .backends import select_backend
 from .executors import AsyncChunk, Ensemble, Step, SyncChunk
 from .gripper import BinaryGripper, find_gripper_config, takeover_gripper_alignment
 from .models import check_joint_dimensions, load_generic, load_policy, policy_backend, prep_image, use_generic
@@ -114,6 +115,7 @@ class State:
         self.replay_readers = 0
         self.replay_transition = False
         self.executor = ""
+        self.backend_selection = None
         self.gripper, self.robot_info, self.limits = None, {}, {}
         self.binary_gripper = False
         self.watch = MotorWatch(cfg["safety"])
@@ -252,6 +254,8 @@ def save_rollout(st: State, rec: dict, result: str):
                 safety=st.cfg["safety"])
     if policy_hub := getattr(a, "policy_hub", None):
         meta["policy_hub"] = policy_hub
+    if (selection := st.backend_selection) is not None:
+        meta.update(backend=selection.backend, backend_requested=selection.requested, backend_reason=selection.reason)
     record_motor_meta(rec, meta)
     if "grasp_miss" in st.cfg["robot"]:
         meta["grasp_miss_profile"] = st.cfg["robot"]["grasp_miss"]
@@ -388,8 +392,11 @@ def _control(st, srv, fps, gripper, cleanup):
         st.watch.set_joints(names, robot.gripper)
         st.q = st.cmd = [0.0] * n_j
     gi = robot.gripper_index
-    backend = policy_backend(cfg, args)
     metadata = json.loads((args.policy / "config.json").read_text())
+    selection = select_backend(policy_backend(cfg, args), args.policy, metadata, args)
+    st.backend_selection = selection
+    backend = selection.backend
+    selection.announce()
     generic = use_generic(metadata.get("type", "act"), getattr(args, "policy_impl", "auto"), backend)
     if generic:
         if not (args.fake or st.sim) and cfg.get("policy", {}).get("action_space") != "joint_position":
@@ -420,7 +427,7 @@ def _control(st, srv, fps, gripper, cleanup):
         compiler = "mx.compile" if backend == "mlx" else "torch.compile"
         print(f"pi0.5: {compiler} on; the first inference compiles.", flush=True)
     if args.mode == "auto":
-        args.mode = "async" if backend == "mlx" else "rtc" if pol.kind == "pi05" else "ensemble"
+        args.mode = ("async" if selection.requested == "mlx" else "rtc") if pol.kind == "pi05" else "ensemble"
     if getattr(args, "query_every", 0) and args.mode not in ("async", "rtc"):
         sys.exit("--query-every applies to --mode async or rtc only")
     if args.mode == "step" and not generic:

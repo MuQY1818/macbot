@@ -11,6 +11,7 @@ import numpy as np
 
 from ..config import Config
 from ..system import expand
+from .backends import select_backend
 from .models import load_generic, load_policy, policy_backend, raw_state_shape, use_generic
 from .profile import MLXStages, TorchStages
 
@@ -20,7 +21,9 @@ def run(cfg: Config, args):
     metadata = json.loads((path / "config.json").read_text())
     state = raw_state_shape(path, metadata) or [7]
     q = [0.0] * state[0]
-    backend = policy_backend(cfg, args)
+    selection = select_backend(policy_backend(cfg, args), path, metadata, args, bench=True)
+    selection.announce()
+    backend = selection.backend
     generic = use_generic(metadata.get("type", "act"), getattr(args, "policy_impl", "auto"), backend)
     steps = getattr(args, "steps", None)
     if generic:
@@ -37,8 +40,21 @@ def run(cfg: Config, args):
         pol.enable_compile()
         print(f"{'mx.compile' if backend == 'mlx' else 'torch.compile'} on; the first calls compile", flush=True)
     imgs = {c: np.zeros((v["save_size"][1], v["save_size"][0], 3), np.uint8) for c, v in cfg["cameras"].items()}
+    mode = getattr(args, "mode", "auto")
+    native = "step" if generic and pol.stepwise else "chunk"
+    call_kwargs = {}
+    if mode == "rtc":
+        if not pol.supports_rtc:
+            sys.exit(f"{pol.kind} on {backend} does not support --mode rtc")
+        pol.enable_rtc(10)
+        leftover = pol(imgs, q, return_raw=True)[1]
+        if len(leftover) < 2:
+            sys.exit("--mode rtc needs at least two actions in the chunk")
+        call_kwargs = dict(leftover=leftover, delay=min(4, len(leftover) - 1), horizon=20)
+    elif mode not in {"auto", native}:
+        sys.exit(f"{pol.kind} on {backend} requires --mode {native} (or auto)")
     for _ in range(5):
-        pol(imgs, q)
+        pol(imgs, q, **call_kwargs)
     if generic:
         pol.reset()
     if backend == "mlx":
@@ -48,11 +64,11 @@ def run(cfg: Config, args):
     ts = []
     for _ in range(args.n):
         t = time.perf_counter()
-        pol(imgs, q)
+        pol(imgs, q, **call_kwargs)
         ts.append((time.perf_counter() - t) * 1e3)
     ts = np.array(ts)
     engine = "MLX" if backend == "mlx" else args.device
-    execution = "step" if generic and pol.stepwise else f"chunk {pol.H}"
+    execution = "step" if native == "step" else f"{'RTC chunk' if mode == 'rtc' else 'chunk'} {pol.H}"
     precision = 2 if generic else 0
     print(f"{pol.kind} on {engine}, {execution}: median {np.median(ts):.{precision}f} ms, "
           f"p90 {np.percentile(ts, 90):.{precision}f} ms, min {ts.min():.{precision}f} ms over {args.n} calls")
@@ -63,7 +79,7 @@ def run(cfg: Config, args):
         print(f"Peak process RSS: {rss / 2**30:.2f} GiB; MLX allocation peak: {mx.get_peak_memory() / 2**30:.2f} GiB")
         stages = MLXStages(mx)
         for _ in range(args.n):
-            pol(imgs, q, stage=stages)
+            pol(imgs, q, stage=stages, **call_kwargs)
     elif generic:
         rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
         if sys.platform != "darwin":
@@ -82,7 +98,7 @@ def run(cfg: Config, args):
             stages.instrument(pol, stack)
             for _ in range(args.n):
                 stages.counts.clear()
-                stages.wrap(pol, "profile_total")(imgs, q)
+                stages.wrap(pol, "profile_total")(imgs, q, **call_kwargs)
     else:
         return
     if stages.samples:

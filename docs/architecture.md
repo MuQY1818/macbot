@@ -47,3 +47,7 @@ The generic adapter loads a LeRobot policy and its saved processor pair. It uses
 chunk contract when available and runs those chunks synchronously. Otherwise it calls
 `select_action` on each policy tick, so LeRobot manages observation history and queued actions.
 ACT and π0.5 keep their original wrappers and execution defaults.
+
+`policy/backends.py` distinguishes implemented modes from configurations qualified for
+`--backend auto`. It checks checkpoint metadata and a static table without timing inference.
+The runner records the decision in trial metadata.

@@ -5,6 +5,9 @@
 `macbot policies` 列出 LeRobot 0.7.0 注册的策略及实测状态。ACT 和 π0.5 保留原有封装和运行默认值。
 其他类型走 PyTorch 通用适配器；也可以用 `--policy-impl generic` 显式让 ACT 或 π0.5 使用通用适配器。
 
+`run` 和 `bench` 可使用 `--backend auto`，也可在 YAML 中设置 `policy: {backend: auto}`。
+`policies` 列出已实现的后端，附加依赖的安装状态和[保真验证](acceleration_zh.md#自动选择后端)另计。
+
 ## 使用自己的 checkpoint
 
 使用本地 LeRobot `pretrained_model` 目录，包含 `config.json`、模型权重、

@@ -4,6 +4,23 @@
 
 The standard macbot backend is PyTorch. The optional MLX backend reads stock LeRobot 0.7.0 `pi05` safetensors in place and uses the checkpoint's original LeRobot tokenizer, state normalizer and action postprocessor. It supports single observations with one or more configured RGB views. Memory variants, checkpoint-configured RTC and adapters are outside this backend's scope.
 
+## Automatic backend selection
+
+An optimization is **lossless** for a tested configuration when, using the same weights and
+starting noise or seed, its actions stay within documented tolerances against an FP32 CPU
+reference or the stated existing BF16/FP16 reference. Mean and p99 joint error in degrees
+and gripper error must each be no larger than the same statistic between two reference
+runs with different seeds. For a deterministic policy the seed spread is zero. Weight
+quantization, fewer denoising steps and visual token dropping are lossy options.
+
+`--backend auto` is opt-in. It selects an alternative only for a matching checkpoint,
+machine, runtime, compile setting and execution mode with published evidence. It prints
+the choice or a one-line reason for falling back to PyTorch. No published checkpoint
+currently meets this batch's selection criteria; the historical π0.5 results below
+describe their tested checkpoint. Use `--backend mlx` to request MLX explicitly.
+The default backend and the default execution modes for explicit backends are unchanged.
+`bench --mode rtc` measures guided calls with a fixed leftover chunk and no robot.
+
 ## Try it offline
 
 Install the optional dependencies on Apple silicon, then benchmark with your own checkpoint and configured camera sizes:
