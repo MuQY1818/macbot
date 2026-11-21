@@ -64,6 +64,7 @@ def load(path: str | Path | None = None) -> Config:
     cfg = yaml.safe_load(DEFAULT.read_text())
     overrides = (yaml.safe_load(expand(path).read_text()) or {}) if path else {}
     if (overrides.get("robot") or {}).get("type") == "sim":
+        cfg["data_root"] += "/sim"
         teleop = overrides.get("teleop") or {}
         if teleop.get("type") == "so101_leader" and isinstance(teleop.get("port"), str):
             teleop["leader_port"] = teleop.pop("port")

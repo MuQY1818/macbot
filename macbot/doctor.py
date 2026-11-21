@@ -110,7 +110,9 @@ def _check_lerobot_device(role, spec):
 
 
 def _check_sim(rcfg):
-    from .robot.sim import sim_config
+    from pathlib import Path
+
+    from .robot.sim import cached_envhub_path, envhub_proxy_hint, sim_config
 
     try:
         config = sim_config(rcfg.get("env"), rcfg.get("task_id"))
@@ -118,11 +120,18 @@ def _check_sim(rcfg):
         _line(BAD, "LeRobot simulator", f"{exc}; see configs/so101_sim.yaml")
         return 1
     _line(OK, "LeRobot simulator", f"{config.env.type} (local configuration)")
-    hub_path = getattr(config.env, "hub_path", "")
+    hub_path = getattr(config.env, "hub_path", None)
+    proxy_bad = 0
+    if hub_path and (hint := envhub_proxy_hint()) and not Path(hub_path.partition(":")[0]).is_dir():
+        if cached_envhub_path(hub_path):
+            _line(OK, "EnvHub cache", "using local files; no SOCKS client required")
+        else:
+            _line(BAD, "EnvHub download", hint)
+            proxy_bad = 1
     if str(hub_path).split("@", 1)[0] == "lerobot/so101-tabletop-mujoco":
-        return int(_import("mujoco", "install macbot[sim]") is None)
+        return proxy_bad + int(_import("mujoco", "install macbot[sim]") is None)
     _line(WARN, "simulator backend", "scene-specific dependencies were not checked; see your scene's setup")
-    return 0
+    return proxy_bad
 
 
 def _check_uvc(cameras):

@@ -9,6 +9,16 @@ All notable changes to macbot will be documented here. This project follows
 
 ## [Unreleased]
 
+### Changed
+
+- Use camera-relative WASD, vertical and wrist controls, and a visible key legend in keyboard simulation collection.
+- Show the keyboard focus, gripper height and table projection, and workspace limits in the simulator preview.
+
+### Fixed
+
+- Load cached EnvHub scenes without contacting the Hub and diagnose missing SOCKS support for uncached scenes.
+- Store simulation data in `~/macbot-data/sim` when no `data_root` is set.
+
 ## [0.3.4] - 2026-11-21
 
 ### Added
@@ -175,7 +185,7 @@ All notable changes to macbot will be documented here. This project follows
   chunks and Real-Time Chunking, plus rollout replay, MP4 export and inference benchmarks.
 - Equipment diagnostics, setup and usage guides, and English and Simplified Chinese consoles.
 
-[Unreleased]: https://github.com/MuQY1818/macbot/compare/v0.3.3...HEAD
+[Unreleased]: https://github.com/MuQY1818/macbot/compare/v0.3.4...HEAD
 [0.3.4]: https://github.com/MuQY1818/macbot/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/MuQY1818/macbot/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/MuQY1818/macbot/compare/v0.3.1...v0.3.2
