@@ -72,6 +72,28 @@ in both modes. Both modes exceeded the absolute caps set for this test: joint
 mean / p99 of 0.10° / 0.50° and gripper mean / p99 of 0.10 / 0.50.
 π0.5 remains on PyTorch with `--backend auto`.
 
+### Public π0 checkpoint
+
+`zz4321/so101_pi0_cube` revision `ec54d7a73d8959a7640edd7dad2690f460e64af2` was
+trained for 5,000 steps on `zz4321/so101_stick`. It used two 640 × 480 views and
+the same timing, noise, RTC and angle conversion protocol described above. Torch
+used its saved BF16 configuration with Dynamo disabled; the RTC reference called
+LeRobot's guided sampler directly because macbot's generic wrapper runs in
+inference mode. MLX used the compiled FP16 path.
+
+| Mode | Backend | Median / p90 ms | Joint mean / p99 ° | Gripper mean / p99 |
+|---|---|---:|---:|---:|
+| Chunk | Torch MPS BF16, eager | 362.64 / 365.83 | Reference | Reference |
+| Chunk | Torch MPS BF16, other seed | 362.03 / 366.54 | 29.285 / 152.684 | 8.909 / 37.207 |
+| Chunk | MLX FP16, compiled | 156.08 / 158.34 | 0.378 / 2.795 | 0.082 / 0.554 |
+| RTC | Torch MPS BF16, eager | 371.93 / 377.15 | Reference | Reference |
+| RTC | Torch MPS BF16, other seed | 372.08 / 380.31 | 23.126 / 146.821 | 7.516 / 35.967 |
+| RTC | MLX FP16, compiled | 156.74 / 161.46 | 0.270 / 2.283 | 0.068 / 0.466 |
+
+Both MLX modes beat the eager reference on latency and stayed below the seed
+spread. Joint mean and p99 exceeded the absolute caps in both modes; chunk
+gripper p99 also exceeded the cap. π0 on MLX stays experimental and explicit.
+
 ## PyTorch MPS experiments
 
 For ACT or Diffusion on MPS, `--torch-channels-last` changes the layout of Conv2d

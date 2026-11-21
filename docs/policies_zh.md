@@ -12,7 +12,8 @@
 
 实验性的 π0 `--backend mlx` 路径接受使用绝对动作的标准 224 像素 PaliGemma 2B checkpoint，使用
 `policy.camera_map` 和随权重保存的处理器。提供 `--mode chunk` 和 RTC 引导，默认分块。
-尚未验证训练权重的保真度和速度，请用离线检查及 `--fake` 评估。
+公开 SO-101 微调权重在 MLX 上更快，但两个模式均超过[绝对保真上限](acceleration_zh.md#公开-π0-checkpoint)。
+π0 的 `--backend auto` 继续选择 PyTorch。
 
 SmolVLA MLX 后端支持标准 SmolVLM2-500M 结构和分块推理。
 `lerobot/smolvla_base` 需要第三路 256 × 256 相机；通过验证的配置可自动选择 MLX。
