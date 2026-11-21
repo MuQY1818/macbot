@@ -37,7 +37,16 @@
 
 <script src="/static/replay.js"></script>
 <script>
-const list = new RolloutList($("list"), openRollout, { rate: $("success-rate") });
+const dataset = "{{source}}" === "dataset";
+if (dataset) {
+  const heading = $("list").closest(".card").querySelector("h2");
+  heading.dataset.i18n = "dataset_episodes";
+  heading.textContent = t("dataset_episodes");
+  $("list").closest("table").querySelectorAll("th")[1].dataset.i18n = "dataset_source";
+  $("list").closest("table").querySelectorAll("th")[1].textContent = t("dataset_source");
+  $("list").closest("table").querySelectorAll("th")[2].hidden = true;
+}
+const list = new RolloutList($("list"), openRollout, { rate: $("success-rate"), dataset });
 let statusKey;
 function showStatus(key) {
   statusKey = key;
@@ -45,11 +54,16 @@ function showStatus(key) {
   $("replay-status").textContent = key ? t(key) : "";
 }
 function badge(meta) {
+  if (dataset) {
+    $("badge").textContent = t("dataset_readonly");
+    return;
+  }
   const ok = meta.result === "success";
   $("badge").className = "badge " + (meta.exclude ? "idle" : ok ? "live" : "rec");
   $("badge").textContent = t(meta.exclude ? "excluded" : ok ? "success" : "failure");
 }
 const viewer = new RolloutViewer({
+  dataset,
   status: showStatus,
   change: open => {
     $("replay-details").hidden = !open;

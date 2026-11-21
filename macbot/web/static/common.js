@@ -30,6 +30,9 @@ const I18N = {
     show_all: n => `Show all (${n})`, show_less: "Show recent",
     pause_first: "Pause first to replay a saved trial.", replay_busy: "Replay is busy. Try again.",
     replay_failed: "Could not load replay.", replay_missing: "This trial or frame is no longer available.",
+    dataset_episodes: "Episodes", dataset_source: "Format", dataset_readonly: "Read only", dataset_empty: "No episodes",
+    dataset_frames: "frames", dataset_missing: "missing indices", dataset_late: "late gaps", dataset_gap: "max gap",
+    dataset_legend: "solid = observation.state · dashed = action",
     replay_loading: "Loading trial…", trial_note: "Note", review_saved: "Review saved.",
     review_failed: "Could not save this review.", playback_speed: "Playback speed",
     playback_position: "Playback position", chunk_at: n => `Chunk ${n}`, median_infer: "median inference",
@@ -70,6 +73,9 @@ const I18N = {
     show_all: n => `显示全部（${n}）`, show_less: "只显示最近试验",
     pause_first: "请先暂停，再回放已保存的试验。", replay_busy: "回放繁忙，请重试。",
     replay_failed: "无法加载回放。", replay_missing: "这条试验或这一帧已不可用。",
+    dataset_episodes: "数据片段", dataset_source: "格式", dataset_readonly: "只读", dataset_empty: "没有数据片段",
+    dataset_frames: "帧数", dataset_missing: "缺失帧序号", dataset_late: "超时帧间隔", dataset_gap: "最大帧间隔",
+    dataset_legend: "实线 = 观测状态 · 虚线 = 记录动作",
     replay_loading: "正在加载试验…", trial_note: "备注", review_saved: "已保存试验评审。",
     review_failed: "无法保存试验评审。", playback_speed: "回放速度",
     playback_position: "回放位置", chunk_at: n => `第 ${n} 块`, median_infer: "推理耗时中位数",
@@ -177,22 +183,26 @@ function renderHP(el, frac) {
 }
 
 // Joint traces for one episode: solid = measured, dashed = command, each joint scaled on its own.
-function drawTraces(svg, legend, qpos, action, names, extra = "", fractions = null, background = "") {
+function drawTraces(svg, legend, qpos, action, names, extra = "", fractions = null, background = "", dataset = false) {
   const n = qpos.length, W = 1000, H = 190, x = i => (W * (fractions?.[i] ?? i / Math.max(n - 1, 1))).toFixed(1);
   let s = background;
   for (let j = 0; j < names.length; j++) {
     const v = qpos.map(r => r[j]), a = action.map(r => r[j]);
     let lo = Infinity, hi = -Infinity;
-    for (let i = 0; i < n; i++) { lo = Math.min(lo, v[i], a[i]); hi = Math.max(hi, v[i], a[i]); }
+    for (let i = 0; i < n; i++) {
+      if (!dataset || Number.isFinite(v[i])) { lo = Math.min(lo, v[i]); hi = Math.max(hi, v[i]); }
+      if (!dataset || Number.isFinite(a[i])) { lo = Math.min(lo, a[i]); hi = Math.max(hi, a[i]); }
+    }
     const span = Math.max(hi - lo, 1), color = jointColor(j);
     const y = val => (H - 10 - (H - 20) * (val - lo) / span).toFixed(1);
-    s += `<polyline points="${a.map((val, i) => `${x(i)},${y(val)}`).join(" ")}" fill="none" stroke="${color}" stroke-width="1.2" stroke-dasharray="5 4" opacity=".55" vector-effect="non-scaling-stroke"/>`;
-    s += `<polyline points="${v.map((val, i) => `${x(i)},${y(val)}`).join(" ")}" fill="none" stroke="${color}" stroke-width="2" vector-effect="non-scaling-stroke"/>`;
+    const points = values => values.map((val, i) => dataset && !Number.isFinite(val) ? "" : `${x(i)},${y(val)}`).join(" ");
+    s += `<polyline points="${points(a)}" fill="none" stroke="${color}" stroke-width="1.2" stroke-dasharray="5 4" opacity=".55" vector-effect="non-scaling-stroke"/>`;
+    s += `<polyline points="${points(v)}" fill="none" stroke="${color}" stroke-width="2" vector-effect="non-scaling-stroke"/>`;
   }
   s += extra + `<line data-cursor x1="0" x2="0" y1="0" y2="${H}" stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke"/>`;
   svg.innerHTML = s;
   legend.innerHTML = names.map((nm, j) => `<span style="--c:${jointColor(j)}">${esc(jointLabel(nm))}</span>`).join("") +
-    `<span style="--c:transparent">${t("legend")}</span>`;
+    `<span style="--c:transparent">${t(dataset ? "dataset_legend" : "legend")}</span>`;
 }
 
 function moveCursor(svg, k, n, fraction = k / Math.max(n - 1, 1)) {

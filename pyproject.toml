@@ -39,7 +39,7 @@ dev = ["pytest", "pyflakes", "ruff==0.14.14", "build", "pre-commit"]
 
 [dependency-groups]
 # The hardware and model stacks are unnecessary for the default CI suite.
-test = ["numpy", "opencv-python-headless", "pyyaml", "pytest"]
+test = ["numpy", "opencv-python-headless", "pyarrow>=21,<30", "pyyaml", "pytest"]
 lint = ["pyflakes", "ruff==0.14.14"]
 
 [project.urls]

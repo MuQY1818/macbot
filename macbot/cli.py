@@ -155,6 +155,13 @@ def cmd_export(args):
 
 
 def cmd_health(args):
+    from .data import lerobot_v3
+
+    if args.dataset is not None or lerobot_v3.recognize(args.data):
+        try:
+            return lerobot_v3.health(lerobot_v3.Dataset(args.dataset or args.data), args.split)
+        except (ImportError, OSError, KeyError, TypeError, ValueError, RuntimeError) as exc:
+            raise SystemExit(str(exc)) from exc
     from .data.health import run
     run(_cfg(args), args)
 
@@ -265,7 +272,9 @@ def main(argv=None):
     p.set_defaults(fn=cmd_export)
 
     p = sub.add_parser("health", help="tracking, timing and motor health of episodes or policy trials")
-    p.add_argument("--data", help="episode or rollout folder (default <data_root>/raw/<task>)")
+    health_source = p.add_mutually_exclusive_group()
+    health_source.add_argument("--data", help="episode, rollout or local LeRobot dataset folder (default <data_root>/raw/<task>)")
+    health_source.add_argument("--dataset", help="LeRobot v3 dataset folder or Hub dataset ID (owner/name[@revision])")
     p.add_argument("--split", type=int, help="compare episodes before / from this index (e.g. after a repair)")
     p.set_defaults(fn=cmd_health)
 
@@ -300,7 +309,9 @@ def main(argv=None):
     p.set_defaults(fn=cmd_run)
 
     p = sub.add_parser("replay", help="browse recorded rollouts")
-    p.add_argument("--dir", help="rollout folder (default <data_root>/rollouts/<task>)")
+    replay_source = p.add_mutually_exclusive_group()
+    replay_source.add_argument("--dir", help="rollout or local LeRobot dataset folder (default <data_root>/rollouts/<task>)")
+    replay_source.add_argument("--dataset", help="LeRobot v3 dataset folder or Hub dataset ID (owner/name[@revision])")
     p.add_argument("--port", type=int, help="replay console port (default: 8768 or replay.port)")
     p.add_argument("--no-browser", action="store_true", help="print the console URL without opening it")
     p.set_defaults(fn=cmd_replay)

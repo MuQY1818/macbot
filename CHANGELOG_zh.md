@@ -13,6 +13,7 @@ macbot 的主要变更记录在这里。本项目遵循
 
 - `init --from-lerobot` 导入串口机械臂设置、相机角色、录制帧率和任务指令，可在 Mac 上确认设备对应关系并复用原校准 ID。
 - `run` 和 `bench` 接受可指定版本的 Hub checkpoint ID；试验会记录实际使用的 Hub 提交。
+- `health` 和 `replay` 可读取本地及 Hub 的 LeRobot v3.0 数据集，检查帧缺口、查看关节曲线和回放相机画面。
 
 ## [0.3.2] - 2026-11-20
 

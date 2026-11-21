@@ -13,6 +13,7 @@ All notable changes to macbot will be documented here. This project follows
 
 - `init --from-lerobot` imports serial arm settings, camera roles, recording rate and task instructions. Confirm Mac device assignments and reuse the existing calibration IDs.
 - `run` and `bench` accept Hub checkpoint IDs with optional revisions. Hub trials record the resolved commit.
+- `health` and `replay` read local and Hub LeRobot v3.0 datasets, including frame gaps, recorded traces and camera playback.
 
 ## [0.3.2] - 2026-11-20
 
