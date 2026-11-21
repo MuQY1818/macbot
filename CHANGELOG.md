@@ -28,6 +28,8 @@ All notable changes to macbot will be documented here. This project follows
 ### Changed
 
 - The README starts with the workflow for bringing an existing LeRobot setup to the Mac.
+- π0 and π0.5 on MLX can read checkpoints that save SigLIP under `vision_model`.
+  The public π0.5 comparison exceeded the absolute fidelity limits, so `auto` still uses PyTorch.
 
 ## [0.3.2] - 2026-11-20
 

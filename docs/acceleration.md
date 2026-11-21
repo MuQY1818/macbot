@@ -40,6 +40,38 @@ each statistic, in addition to the measured seed spread.
 | Torch MPS, BF16 backbone | 295.70 / 307.56 | 0.00387 / 0.01744 | 0.00478 / 0.03623 |
 | MLX FP16, compiled | 52.76 / 53.24 | 0.00062 / 0.00258 | 0.00059 / 0.00315 |
 
+### Public π0.5 checkpoint
+
+`zz4321/so101_pi05` revision `dbd6d5754bbf78318808aea1706ff23beeb8b663` was
+trained for 5,000 steps on `zz4321/so101_cube`. It used the same machine and software
+versions as the SmolVLA test, with three 640 × 480 views, 50-action chunks, 10
+denoising steps, five warm-ups and 50 timed calls per row. The harness used the
+saved processors and matched synthetic observations. RTC shared a model-space
+leftover chunk, a four-step delay, a 20-step horizon and linear guidance capped at 10.
+
+The saved Torch sampler requests `max-autotune`, which fails on this MPS build
+with `NoValidChoicesError` during `bias_addmm` selection. The BF16 reference uses the
+existing wrapper with compilation disabled for the measurement (`TORCHDYNAMO_DISABLE=1`).
+Seed 941 is the same-noise reference; seed 942 measures the Torch seed spread.
+Joint errors are continuous SO-101 target angles, calculated from the normalized
+outputs with per-joint scales of `span × 360 / (4095 × 200)` degrees per unit. The
+spans recovered from recorded follower states are 2337, 2431, 2273, 2182 and 3887
+encoder ticks. Gripper error is in native 0–100 units.
+
+| Mode | Backend | Median / p90 ms | Joint mean / p99 ° | Gripper mean / p99 |
+|---|---|---:|---:|---:|
+| Chunk | Torch MPS BF16, eager | 460.22 / 466.64 | Reference | Reference |
+| Chunk | Torch MPS BF16, other seed | 460.32 / 467.00 | 20.926 / 102.412 | 3.268 / 10.543 |
+| Chunk | MLX FP16, compiled | 207.25 / 210.26 | 0.878 / 4.550 | 0.150 / 0.520 |
+| RTC | Torch MPS BF16, eager | 475.17 / 487.15 | Reference | Reference |
+| RTC | Torch MPS BF16, other seed | 483.18 / 492.75 | 15.690 / 100.621 | 3.275 / 13.470 |
+| RTC | MLX FP16, compiled | 225.43 / 231.51 | 0.604 / 4.315 | 0.109 / 0.511 |
+
+MLX was faster and all four errors were below the corresponding seed spread
+in both modes. Both modes exceeded the absolute caps set for this test: joint
+mean / p99 of 0.10° / 0.50° and gripper mean / p99 of 0.10 / 0.50.
+π0.5 remains on PyTorch with `--backend auto`.
+
 ## PyTorch MPS experiments
 
 For ACT or Diffusion on MPS, `--torch-channels-last` changes the layout of Conv2d
