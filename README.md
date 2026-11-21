@@ -52,11 +52,19 @@ Measured on a MacBook Pro (M5 Pro, 48 GB). Approximate time per action chunk:
 
 | Policy | Backend | Execution | Latency |
 |---|---|---|---:|
+| π0.5 | PyTorch MPS | Chunk 50 | 270 ms |
+| π0.5 | MLX | Chunk 50 | **165 ms** |
+| π0.5 | PyTorch MPS | RTC 50 | 350 ms |
+| π0.5 | MLX | RTC 50 | **170 ms** |
 | SmolVLA | PyTorch MPS | Chunk 50 | 296 ms |
 | SmolVLA | MLX | Chunk 50 | **53 ms** |
+| X-VLA | PyTorch MPS | Chunk 30 | 235 ms |
+| ACT | PyTorch MPS | Chunk 100 | 25 ms |
 
-SmolVLA uses the public `lerobot/smolvla_base` checkpoint at 10 denoising steps (MPS BF16 backbone or
-compiled MLX FP16). Latencies are end-to-end medians over 50 calls after five warm-ups. For more results, see
+π0.5 uses our SO-101-class fine-tune on recorded observations, with 10 denoising steps (compiled PyTorch
+BF16 or MLX FP16). RTC is Real-Time Chunking guidance. SmolVLA uses the public `lerobot/smolvla_base`
+checkpoint at 10 steps (MPS BF16 backbone or compiled MLX FP16). X-VLA uses a public BF16 SO-101 fine-tune;
+ACT uses our trained checkpoint on MPS FP32. For methods and more results, see
 [docs/acceleration.md](https://github.com/MuQY1818/macbot/blob/main/docs/acceleration.md), other policies in
 [docs/policies.md](https://github.com/MuQY1818/macbot/blob/main/docs/policies.md).
 
@@ -82,7 +90,7 @@ compiled MLX FP16). Latencies are end-to-end medians over 50 calls after five wa
 
 - **CAN under sudo:** macbot preloads PCBUSB and gives recorded files back to the invoking user.
 - **Camera selection:** AVFoundation unique IDs keep UVC roles separate from iPhone Continuity Camera.
-- **π0.5 inference:** macbot compiles the PyTorch MPS path and offers an optional MLX backend; see the [acceleration guide](docs/acceleration.md).
+- **π0.5 inference:** macbot compiles the PyTorch MPS path and offers an optional MLX backend; see the benchmarks above.
 
 ## Contributing
 
