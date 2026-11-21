@@ -94,3 +94,14 @@ def test_pi0_qualification_requires_its_trained_processor_layout(tmp_path):
     post[0] = ("unnormalizer_processor", {"norm_map": {"ACTION": "QUANTILES"}})
     write("post", post)
     assert not backends.compatible_pi(tmp_path, {"type": "pi0"})
+
+
+def test_pi05_camera_map_allows_masked_views():
+    pytest.importorskip("torch")
+    pytest.importorskip("lerobot")
+    views = ("base_0_rgb", "left_wrist_0_rgb", "right_wrist_0_rgb")
+    metadata = {"input_features": {f"observation.images.{v}": {"type": "VISUAL"} for v in views}}
+    two = {"cameras": {"top": {}, "wrist": {}}}
+    assert backends.pi05_camera_map(two, metadata) == {"top": "base_0_rgb", "wrist": "left_wrist_0_rgb"}
+    with pytest.raises(ValueError):
+        backends.pi05_camera_map({"cameras": {"top": {}, "side": {}}}, metadata)

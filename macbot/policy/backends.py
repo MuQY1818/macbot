@@ -132,7 +132,10 @@ def pi05_camera_map(config, metadata):
             if target in result.values():
                 raise ValueError(f"multiple cameras map to {target!r}")
             result[name] = target
-    if not expected or set(result.values()) != expected or result.keys() != cameras.keys():
+    # The three-slot base layout leaves right_wrist_0_rgb empty on two-camera arms; the pi0.5 wrappers mask it,
+    # as in explicit --backend mlx runs. Every other checkpoint view needs a camera.
+    required = expected - {"right_wrist_0_rgb"} if {"base_0_rgb", "left_wrist_0_rgb"} <= expected else expected
+    if not required or not required <= set(result.values()) or result.keys() != cameras.keys():
         raise ValueError("configured cameras do not cover the checkpoint views")
     return result
 
