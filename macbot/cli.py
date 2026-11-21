@@ -10,6 +10,7 @@
     macbot export                 convert recorded episodes to a LeRobot dataset
     macbot health                 per-episode tracking and timing report of recorded data
     macbot run --policy DIR       run a trained LeRobot policy on the robot (web page)
+    macbot eval --policy DIR      evaluate a policy on seeded simulator episodes
     macbot replay                 browse recorded rollouts in the browser
     macbot video ROLLOUT          export a rollout as a side-by-side MP4
     macbot bench --policy DIR     time policy inference on this Mac
@@ -214,6 +215,13 @@ def cmd_replay(args):
     run(_cfg(args), args)
 
 
+def cmd_eval(args):
+    cfg = _sim_cfg(args)
+    _resolve_policy(args)
+    from .policy.evaluate import run
+    run(cfg, args)
+
+
 def cmd_video(args):
     from .viz.video import run
     run(args)
@@ -243,6 +251,30 @@ def _backend_args(parser):
                         help="experimental Diffusion MPS torch.compile (ACT is unsupported)")
     parser.add_argument("--torch-single-readback", action="store_true",
                         help="experimental ACT MPS: synchronize through CPU readback only")
+
+
+def _execution_args(p):
+    p.add_argument("--policy", required=True, help="LeRobot pretrained_model folder or Hub model ID (owner/name[@revision])")
+    p.add_argument("--mode", choices=["auto", "chunk", "ensemble", "async", "rtc", "step"], default="auto",
+                   help="auto: ACT -> ensemble, torch pi0.5 -> rtc, MLX pi0.5 -> async, generic -> chunk or step")
+    p.add_argument("--k", type=int, default=30, help="chunk mode: steps executed per chunk")
+    p.add_argument("--te-m", type=float, default=0.01, help="ensemble: weight exp(m * age), as in ACT")
+    p.add_argument("--te-hz", type=float, default=30.0, help="ensemble: max inference rate")
+    p.add_argument("--rtc-beta", type=float, default=10.0, help="rtc: max guidance weight")
+    p.add_argument("--rtc-horizon", type=int, default=20, help="rtc: guided prefix length in policy steps")
+    p.add_argument("--rtc-schedule", choices=("linear", "exp"), default="linear",
+                   help="rtc: guidance weight after the delay decays linearly or exponentially (as in the RTC paper)")
+    p.add_argument("--query-every", type=int, default=0,
+                   help="async/rtc: query every this many policy steps (default 0: as soon as inference ends)")
+    p.add_argument("--gripper", default="auto", help="auto (find gripper.json), raw, or a path to gripper.json")
+    p.add_argument("--grip-debounce", type=float, default=0.6, help="binary gripper: seconds of 'open' before opening")
+    p.add_argument("--grip-lead", type=float, default=0.0,
+                   help="binary gripper: also close when the policy plans to close this many seconds ahead (try 0.35)")
+    p.add_argument("--steps", type=int, help="pi0.5 or MLX pi0 denoising steps (fewer than default is lossy)")
+    p.add_argument("--no-compile", action="store_true", help="skip backend compilation for pi0.5 and MLX policies")
+    p.add_argument("--allow-framing-mismatch", action="store_true", help="run despite a known camera framing mismatch")
+    _backend_args(p)
+    p.add_argument("--device", default="mps")
 
 
 def main(argv=None):
@@ -314,34 +346,21 @@ def main(argv=None):
     p.set_defaults(fn=cmd_health)
 
     p = sub.add_parser("run", help="run a policy on the robot (web page)")
-    p.add_argument("--policy", required=True, help="LeRobot pretrained_model folder or Hub model ID (owner/name[@revision])")
-    p.add_argument("--mode", choices=["auto", "chunk", "ensemble", "async", "rtc", "step"], default="auto",
-                   help="auto: ACT -> ensemble, torch pi0.5 -> rtc, MLX pi0.5 -> async, generic -> chunk or step")
-    p.add_argument("--k", type=int, default=30, help="chunk mode: steps executed per chunk")
-    p.add_argument("--te-m", type=float, default=0.01, help="ensemble: weight exp(m * age), as in ACT")
-    p.add_argument("--te-hz", type=float, default=30.0, help="ensemble: max inference rate")
-    p.add_argument("--rtc-beta", type=float, default=10.0, help="rtc: max guidance weight")
-    p.add_argument("--rtc-horizon", type=int, default=20, help="rtc: guided prefix length in policy steps")
-    p.add_argument("--rtc-schedule", choices=("linear", "exp"), default="linear",
-                   help="rtc: guidance weight after the delay decays linearly or exponentially (as in the RTC paper)")
-    p.add_argument("--query-every", type=int, default=0,
-                   help="async/rtc: query every this many policy steps (default 0: as soon as inference ends)")
-    p.add_argument("--gripper", default="auto", help="auto (find gripper.json), raw, or a path to gripper.json")
-    p.add_argument("--grip-debounce", type=float, default=0.6, help="binary gripper: seconds of 'open' before opening")
-    p.add_argument("--grip-lead", type=float, default=0.0,
-                   help="binary gripper: also close when the policy plans to close this many seconds ahead (try 0.35)")
-    p.add_argument("--steps", type=int, help="pi0.5 or MLX pi0 denoising steps (fewer than default is lossy)")
-    p.add_argument("--no-compile", action="store_true", help="skip backend compilation for pi0.5 and MLX policies")
-    p.add_argument("--allow-framing-mismatch", action="store_true", help="run despite a known camera framing mismatch")
-    _backend_args(p)
+    _execution_args(p)
     p.add_argument("--speed", type=float, help="0.1-1.0, default from config")
     p.add_argument("--takeover", action="store_true", help="connect a leader for manual takeover (T)")
-    p.add_argument("--device", default="mps")
     p.add_argument("--port", type=int, help="policy console port (default: 8767 or run.port)")
     p.add_argument("--fake", action="store_true", help="simulate robot and cameras (policy runs for real)")
     p.add_argument("--autostart", type=float, default=0, help="in fake or sim mode: run this many seconds, save, quit")
     p.add_argument("--no-browser", action="store_true", help="print the console URL without opening it")
     p.set_defaults(fn=cmd_run)
+
+    p = sub.add_parser("eval", help="evaluate a policy on seeded simulator episodes")
+    _execution_args(p)
+    _sim_batch_args(p)
+    p.add_argument("--videos", action="store_true", help="also export side-by-side MP4s")
+    p.add_argument("--delay-steps", type=int, default=0, help="simulated inference delay for async/rtc (steps)")
+    p.set_defaults(fn=cmd_eval, fake=False, speed=1.0, takeover=False)
 
     p = sub.add_parser("replay", help="browse recorded rollouts")
     replay_source = p.add_mutually_exclusive_group()
