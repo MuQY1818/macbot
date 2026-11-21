@@ -9,6 +9,8 @@ macbot 的主要变更记录在这里。本项目遵循
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-11-20
+
 ### 新增
 
 - `--query-every K` 让 `async` 和 `rtc` 每 K 个策略步推理一次；`--rtc-schedule exp` 使用 RTC 论文的指数衰减引导权重。
@@ -121,7 +123,8 @@ macbot 的主要变更记录在这里。本项目遵循
   以及试验回放、MP4 导出和推理测速。
 - 设备诊断、安装和使用指南，以及英文与简体中文控制台。
 
-[Unreleased]: https://github.com/MuQY1818/macbot/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/MuQY1818/macbot/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/MuQY1818/macbot/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/MuQY1818/macbot/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/MuQY1818/macbot/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/MuQY1818/macbot/compare/v0.1.0...v0.2.0
