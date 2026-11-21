@@ -415,7 +415,8 @@ def _control(st, srv, T, open_browser=False):
         st.cams = open_cameras(st.cfg["cameras"], st.fps, st.fake, robot)
         threading.Thread(target=srv.serve_forever, daemon=True).start()
         serving = True
-        print(f"web page: {srv.url}   data: {st.out}", flush=True)
+        label = "sim episodes" if st.sim else "data"
+        print(f"web page: {srv.url}   {label}: {st.out}", flush=True)
         if open_browser:
             web.show(srv)
         recorder = Recorder(st, threaded=not st.sim_step_recording)

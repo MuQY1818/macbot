@@ -3,12 +3,15 @@ from __future__ import annotations
 
 import math
 import time
+from importlib.util import find_spec
+from pathlib import Path
+from urllib.request import getproxies
 
 import cv2
 
 from .base import Robot
 from .lerobot_generic import _config, joint_names
-from .sim_render import tabletop_renderer, use_tabletop_cgl
+from .sim_render import TABLETOP_REPO, tabletop_renderer, use_tabletop_cgl
 from .telemetry import synthetic
 
 
@@ -23,12 +26,55 @@ def sim_config(spec, task_id):
     return SimRobotConfig(env=_config(SimulatedEnvConfig, spec), task_id=task_id)
 
 
-def _make_sim(spec, task_id):
-    from lerobot.robots.sim_robot import SimRobot
+SOCKS_HINT = "The EnvHub scene is not fully cached and the SOCKS proxy needs socksio. Install `pip install 'httpx[socks]'`."
 
+
+def cached_envhub_path(hub_path):
+    """Use LeRobot's local-directory syntax to avoid constructing a Hub HTTP client."""
+    from huggingface_hub import try_to_load_from_cache
+
+    repo_rev, _, filename = hub_path.partition(":")
+    if Path(repo_rev).is_dir() or repo_rev.count("/") != 1:
+        return None
+    repo, _, revision = repo_rev.partition("@")
+    filename = filename or "env.py"
+    cached = try_to_load_from_cache(repo, filename, revision=revision or None)
+    if not isinstance(cached, str):
+        return None
+    root = Path(cached)
+    for _ in Path(filename).parts:
+        root = root.parent
+    if repo == TABLETOP_REPO:
+        # The scene's env.py fetches a snapshot itself if its XML is absent.
+        if not (root / "so101_tabletop.xml").is_file() or not (root / "robotstudio_so101/so101.xml").is_file():
+            return None
+    return f"{root}:{filename}"
+
+
+def envhub_proxy_hint():
+    proxies = getproxies()
+    if any(proxies.get(k, "").lower().startswith(("socks5:", "socks5h:")) for k in ("all", "http", "https")):
+        if find_spec("socksio") is None:
+            return SOCKS_HINT
+    return None
+
+
+def _make_sim(spec, task_id):
     try:
-        return SimRobot(sim_config(spec, task_id))
+        from lerobot.robots.sim_robot import SimRobot
+
+        config = sim_config(spec, task_id)
+        env = config.env
+        hub_path = getattr(env, "hub_path", None)
+        if hub_path and env.trust_remote_code and not Path(hub_path.partition(":")[0]).is_dir():
+            if local := cached_envhub_path(hub_path):
+                env.hub_path = local
+            elif hint := envhub_proxy_hint():
+                raise SystemExit(hint)
+        return SimRobot(config)
     except ImportError as exc:
+        if "socksio" in str(exc):
+            raise SystemExit(SOCKS_HINT) from exc
         raise SystemExit(f"cannot load simulator: {exc}. For SO-101 install macbot[sim].") from exc
 
 

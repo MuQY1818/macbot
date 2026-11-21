@@ -9,6 +9,11 @@ All notable changes to macbot will be documented here. This project follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Load cached EnvHub scenes without contacting the Hub and diagnose missing SOCKS support for uncached scenes.
+- Store simulation data in `~/macbot-data/sim` when no `data_root` is set.
+
 ## [0.3.4] - 2026-11-21
 
 ### Added

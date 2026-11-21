@@ -107,6 +107,7 @@ def test_sim_doctor_checks_mujoco_without_hardware(imports, monkeypatch, capsys,
         return SimpleNamespace(env=SimpleNamespace(type="envhub", hub_path="lerobot/so101-tabletop-mujoco@rev"))
 
     monkeypatch.setattr(sim, "sim_config", sim_config)
+    monkeypatch.setattr(sim, "getproxies", dict)
     monkeypatch.setattr(doctor.shutil, "which", lambda _: pytest.fail("should not probe Swift for robot cameras"))
     assert doctor.run(cfg) == int(missing)
     out = capsys.readouterr().out
@@ -125,6 +126,18 @@ def test_doctor_marks_broken_required_import_as_failure(imports, monkeypatch, ca
     monkeypatch.setattr(sim, "sim_config", lambda *_: pytest.fail("LeRobot is not installed"))
     assert doctor.run(cfg) == 1
     assert "import failed: cannot import lerobot" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("cached", [False, True])
+def test_sim_doctor_checks_socks_only_when_download_is_needed(imports, monkeypatch, capsys, cached):
+    hub = "lerobot/so101-tabletop-mujoco@rev"
+    monkeypatch.setattr(sim, "sim_config", lambda *_: SimpleNamespace(env=SimpleNamespace(type="envhub", hub_path=hub)))
+    monkeypatch.setenv("ALL_PROXY", "socks5://localhost:1")
+    monkeypatch.setattr(sim, "find_spec", lambda _: None)
+    monkeypatch.setattr(sim, "cached_envhub_path", lambda path: "/cached:env.py" if path == hub and cached else None)
+    assert doctor._check_sim({"env": {"type": "envhub"}}) == int(not cached)
+    output = capsys.readouterr().out
+    assert ("no SOCKS client required" if cached else "httpx[socks]") in output
 
 
 def test_so101_driver_resolution():

@@ -8,10 +8,40 @@ import numpy as np
 import pytest
 
 from macbot.cli import main
+from macbot.config import load
 from macbot.policy import evaluate
 from macbot.robot import sim, sim_render
 from macbot.simulation import summary
 from macbot.viz.rollouts import Store
+
+
+def test_sim_data_root_default_does_not_change_explicit_or_real_paths(tmp_path):
+    profile = tmp_path / "sim.yaml"
+    profile.write_text("robot: {type: sim}\n")
+    real = load()
+    cfg = load(profile)
+    assert cfg.root == real.root / "sim"
+    assert cfg.raw_dir() == cfg.root / "raw" / cfg.task
+    profile.write_text(f"robot: {{type: sim}}\ndata_root: {tmp_path}\n")
+    assert load(profile).root == tmp_path
+
+
+def test_cached_tabletop_bypasses_socks_client(tmp_path, monkeypatch):
+    hub = "lerobot/so101-tabletop-mujoco@revision"
+    env = SimpleNamespace(hub_path=hub, trust_remote_code=True)
+    (tmp_path / "env.py").touch()
+    hub_api = SimpleNamespace(try_to_load_from_cache=lambda *a, **kw: str(tmp_path / "env.py"))
+    monkeypatch.setitem(sys.modules, "huggingface_hub", hub_api)
+    monkeypatch.setitem(sys.modules, "lerobot.robots.sim_robot", SimpleNamespace(SimRobot=lambda cfg: cfg.env.hub_path))
+    monkeypatch.setattr(sim, "sim_config", lambda *_: SimpleNamespace(env=env))
+    monkeypatch.setenv("ALL_PROXY", "socks5://localhost:1")
+    monkeypatch.setattr(sim, "find_spec", lambda _: None)
+    with pytest.raises(SystemExit, match=r"httpx\[socks\]"):
+        sim._make_sim({}, None)
+    (tmp_path / "so101_tabletop.xml").touch()
+    (tmp_path / "robotstudio_so101").mkdir()
+    (tmp_path / "robotstudio_so101/so101.xml").touch()
+    assert sim._make_sim({}, None) == f"{tmp_path}:env.py"
 
 
 def test_wilson_endpoints():
