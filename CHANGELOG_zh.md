@@ -16,6 +16,10 @@ macbot 的主要变更记录在这里。本项目遵循
 - `health` 和 `replay` 可读取本地及 Hub 的 LeRobot v3.0 数据集，检查帧缺口、查看关节曲线和回放相机画面。
 - 新增从 Linux 迁移现有 LeRobot 环境到 Mac 的指南。
 
+### 变更
+
+- README 以迁移现有 LeRobot 环境到 Mac 的工作流程开篇。
+
 ## [0.3.2] - 2026-11-20
 
 ### 新增

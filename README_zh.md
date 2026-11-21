@@ -6,7 +6,7 @@
 </p>
 
 <p align="center"><b>在 MacBook 上跑 LeRobot。</b><br>
-一套标准流程完成遥操作采集、导出数据集，以及在真机上运行 ACT、π0.5、SmolVLA、X-VLA 等 LeRobot 策略，推理针对 Apple 芯片加速。</p>
+把已有的 LeRobot 机械臂、校准、数据集和 checkpoint 搬到 MacBook。</p>
 
 <p align="center">
   <img alt="macOS" src="https://img.shields.io/badge/macOS-Apple%20silicon-18171F">
@@ -25,9 +25,25 @@
   </picture>
 </p>
 
-## 为什么做这个
+## 从这里开始
 
-做真机实验时，大家通常默认机械臂旁边要放一台装 Ubuntu、插 NVIDIA 显卡的工作站。我们发现，机械臂旁边的工作一台 MacBook 就够了：遥操作采数据、检查数据、导出 LeRobot 数据集，以及闭环跑策略，包括 π0.5。训练仍然放在 GPU 服务器上。macbot 就是我们日常用的这套工具，整理之后开源出来，方便大家复用。
+已经在 Linux 上用 LeRobot？按[迁移指南](docs/migrate_zh.md)复用校准并导入原命令。
+从空白环境开始，见[快速开始](docs/quickstart_zh.md)。
+macbot 处理 Mac 设备配置，数据集和 checkpoint 保持 LeRobot 格式，可在两台机器间直接使用。
+
+```bash
+macbot doctor
+macbot init --from-lerobot "$LEROBOT_COMMAND"   # 原 lerobot-record 或 lerobot-teleoperate 命令
+macbot collect
+macbot health
+macbot export --out ./dataset
+# 在 GPU 机器上用 lerobot-train 训练，再把 checkpoint 拿回来。
+macbot run --policy ./pretrained_model       # 也可用 owner/model@revision
+macbot replay
+```
+
+真机和仿真验证范围见[机械臂支持](docs/robots_zh.md)，已测 checkpoint 见[策略支持](docs/policies_zh.md)。
+没有机械臂也可以运行 `collect --fake`。
 
 以下数据在 MacBook Pro（M5 Pro，48 GB）上实测，为每个动作块的大致耗时：
 
@@ -47,63 +63,10 @@
 | 录制采样频率 | 30 fps |
 | 采样时刻的画面延迟 p95 | ≤ 40 ms |
 
-## 功能
-
-- **采集控制台**（网页）：实时画面；一键录制、保存、丢弃；每条数据单独记录语言指令；保存时自动检查画面延迟、重复帧、关节跳变和采样时序；任何一条都能立即回放，带关节曲线。
-- **导出**为 LeRobot v3 数据集，夹爪动作可以选择二值化（张开或闭合）。
-- **跑策略控制台**：可加载兼容的 LeRobot checkpoint。ACT 和 π0.5 提供同步分块、时间集成、异步分块和 Real-Time Chunking。带速度和关节限位；可以暂停、回起始姿态、结束时分两段慢速回零；每次试验连同画面和时序一起保存。
-- **试验回放**：多路画面同步播放，显示指令与实测曲线和换块位置，也能导出左右并排的 **MP4**。
-- **`macbot doctor`**：开工前检查依赖、MPS 和配置中的机械臂与相机。
-- `collect` 和 `run` 支持 **`--fake`**，使用 fake 机械臂和相机；`run` 仍会运行真实策略。
-- 每个网页都有中英文（顶栏切换），支持浅色和深色模式。
-
 <p align="center"><img src="https://raw.githubusercontent.com/MuQY1818/macbot/main/docs/img/collect_zh.jpg" alt="macbot 采集控制台" width="100%"></p>
 
-| 跑策略 | 回放试验 |
-|---|---|
-| <img src="https://raw.githubusercontent.com/MuQY1818/macbot/main/docs/img/run_zh.jpg" alt="跑策略"> | <img src="https://raw.githubusercontent.com/MuQY1818/macbot/main/docs/img/replay_zh.jpg" alt="回放"> |
-
-## 硬件
-
-reBot B601-RS 是已验证真机的参考机械臂。SO-100/101、其他兼容的 LeRobot 机械臂、本地模拟器
-及其验证状态见[机械臂支持](docs/robots_zh.md)；checkpoint 实测范围和 Apple GPU 兼容性见[策略支持](docs/policies_zh.md)。
-驱动和相机配置见[安装指南](docs/setup_zh.md)。
-运行 π0.5 建议使用至少 32 GB 内存的 Apple 芯片 Mac。
-
-## 快速开始
-
-```bash
-pip install macbot
-macbot init
-macbot collect
-```
-
-Apple 芯片 Mac 上使用 Python 3.12 或更高版本。使用 UVC 相机前请安装 Xcode 命令行工具。
-在向导里确认机械臂型号和相机角色，再按提示完成校准。
-打开终端显示的采集地址，按 **S** 录制、**回车** 保存、**←** 丢弃。
-从空白 Mac 配置环境、无硬件试用，以及 reBot 和 Orbbec 的额外步骤，见[快速开始](docs/quickstart_zh.md)。
-
-## 工作流程
-
-```bash
-sudo -E $(which python) -m macbot.cli collect          # 1. 遥操作录数据（Orbbec SDK 需要 sudo）
-macbot health                                          # 2. 逐条看跟踪误差和采样时序
-macbot export --gripper binary                         # 3. 导出到 ~/macbot-data/datasets/
-DATASET=... ./train/train_pi05.sh my_run               # 4. 在 GPU 服务器上训练（ACT 用 train_act.sh）
-sudo -E $(which python) -m macbot.cli run --policy runs/my_run/checkpoints/last/pretrained_model
-macbot replay                                          # 5. 回放试验；macbot video <rollout.npz> 导出 MP4
-```
-
-完整说明（含数据格式和各执行方式）见 [docs/guide_zh.md](https://github.com/MuQY1818/macbot/blob/main/docs/guide_zh.md)。
-自己的设置写在一个 YAML 里，用 `macbot --config my.yaml <命令>` 传入，没写的项沿用 [macbot/default.yaml](https://github.com/MuQY1818/macbot/blob/main/macbot/default.yaml)。可以从 [configs/example.yaml](https://github.com/MuQY1818/macbot/blob/main/configs/example.yaml) 开始改。
-
-## 在 macOS 上跑起来要解决的问题
-
-- **sudo 下的 CAN。** Orbbec SDK 要 root 权限，而 root 进程的 dyld 不搜索 `/usr/local/lib`，所以要在 CAN 后端加载之前手动预载 `libPCBUSB.dylib`。
-- **打开正确的相机。** 按名字或编号打开 UVC 相机，可能会抓到通过“连续互通相机”连上的 iPhone。macbot 用一个 Swift 小程序按 AVFoundation uniqueID 打开相机，相机换了 USB 口也能找到。
-- **π0.5 跑在 MPS 上。** 权重用 bf16 并开 autocast；跳过被遮掉的第三个相机槽（输出完全一致，省约 70 ms）；对去噪步和语言模型做 `torch.compile`，减少逐个 kernel 派发的开销（约 410 → 280 ms）；跳过反正会被权重覆盖的随机初始化，每次加载省约 80 秒。
-- **可选的 π0.5 MLX 后端。** 录制观测上的延迟、动作误差和 checkpoint 要求见[推理基准](https://github.com/MuQY1818/macbot/blob/main/docs/acceleration_zh.md)。
-- **root 写出的文件**会交还给运行 `sudo` 的用户。
+通过 `health --dataset` 和 `replay --dataset` 只读查看本地或 Hub 上的 LeRobot v3.0 数据集。
+采集、执行策略和试验回放见[工作流程](docs/guide_zh.md)；相机权限和 reBot CAN 驱动见[安装指南](docs/setup_zh.md)。
 
 ## 参与贡献
 

@@ -6,8 +6,7 @@
 </p>
 
 <p align="center"><b>LeRobot on a MacBook.</b><br>
-One standard workflow to teleoperate, record, export and run LeRobot policies such as ACT, π0.5, SmolVLA and X-VLA
-on the robot, with fast inference on Apple silicon.</p>
+Bring your LeRobot arms, calibration, datasets and checkpoints to a MacBook.</p>
 
 <p align="center">
   <img alt="macOS" src="https://img.shields.io/badge/macOS-Apple%20silicon-18171F">
@@ -26,12 +25,25 @@ on the robot, with fast inference on Apple silicon.</p>
   </picture>
 </p>
 
-## Why
+## Start here
 
-Real-robot setups usually assume an Ubuntu workstation with an NVIDIA GPU next to the arm. We found a
-MacBook is enough for everything that happens at the robot: teleoperated data collection, data checks,
-export to LeRobot, and closed-loop policy inference, π0.5 included. Training still goes to a GPU machine.
-macbot is the toolkit we use for that, cleaned up so others can reuse it.
+Already using LeRobot on Linux? Follow the [migration guide](docs/migrate.md) to reuse your
+calibration and import your command. Setting up from scratch? See the [quickstart](docs/quickstart.md).
+macbot handles Mac device setup; LeRobot datasets and checkpoints move between machines as-is.
+
+```bash
+macbot doctor
+macbot init --from-lerobot "$LEROBOT_COMMAND"   # your lerobot-record or lerobot-teleoperate command
+macbot collect
+macbot health
+macbot export --out ./dataset
+# Train with lerobot-train on a GPU machine, then bring the checkpoint back.
+macbot run --policy ./pretrained_model       # or owner/model@revision
+macbot replay
+```
+
+See [robot support](docs/robots.md) for hardware and simulator evidence, and
+[policy support](docs/policies.md) for tested checkpoints. Try `collect --fake` without an arm.
 
 Measured on a MacBook Pro (M5 Pro, 48 GB). Approximate time per action chunk:
 
@@ -55,77 +67,11 @@ base checkpoint and X-VLA the SO-101 fine-tune. Method and full results are in
 | Recording | 30 fps |
 | Camera frame age at sampling, p95 | ≤ 40 ms |
 
-## What is inside
-
-- **Collection console** in the browser: live cameras, one-key record / save / discard, per-episode language
-  instruction, automatic quality checks (frame age, repeated frames, joint jumps, timing), instant replay of
-  any episode with joint traces.
-- **Export** to a LeRobot v3 dataset, optionally with a binary (open / closed) gripper action.
-- **Policy runner** console for LeRobot checkpoints. ACT and π0.5 have four execution schemes (synchronous chunks, temporal
-  ensembling, asynchronous chunks, Real-Time Chunking), velocity and joint limits, pause / home / quit with a
-  slow two-stage return to zero, and every trial saved with video and timing.
-- **Replay** of saved trials (all cameras in sync, command vs. measured traces, chunk boundaries) and
-  side-by-side **MP4** export.
-- **`macbot doctor`** checks packages, MPS and the configured robot and cameras before you start.
-- **`--fake`** on `collect` and `run` substitutes a fake arm and cameras; `run` still runs the policy.
-- English and Chinese in every web page (toggle in the top bar), light and dark mode.
-
 <p align="center"><img src="https://raw.githubusercontent.com/MuQY1818/macbot/main/docs/img/collect_en.jpg" alt="The macbot collection console" width="100%"></p>
 
-| Run a policy | Replay a trial |
-|---|---|
-| <img src="https://raw.githubusercontent.com/MuQY1818/macbot/main/docs/img/run_en.jpg" alt="Policy runner"> | <img src="https://raw.githubusercontent.com/MuQY1818/macbot/main/docs/img/replay_en.jpg" alt="Trial replay"> |
-
-## Hardware
-
-The reBot B601-RS is the reference arm tested on hardware. See [robot support](docs/robots.md)
-for the SO-100/101 and other compatible LeRobot arms, the local simulator, and what has been
-verified. See [policy support](docs/policies.md) for tested checkpoints and Apple GPU compatibility.
-The [setup guide](docs/setup.md) covers drivers and cameras. For π0.5, we recommend
-an Apple silicon Mac with at least 32 GB of memory.
-
-## Quick start
-
-```bash
-pip install macbot
-macbot init
-macbot collect
-```
-
-Use Python 3.12+ on Apple silicon and install the Xcode Command Line Tools for UVC cameras.
-Confirm the arms and camera roles in the setup page, then follow its calibration prompts.
-Open the collection URL printed in Terminal. Press **S** to record, **Enter** to save, **←** to discard.
-See the [quickstart](docs/quickstart.md) for a fresh Mac, a hardware-free trial, and reBot and Orbbec setup.
-
-## Workflow
-
-```bash
-sudo -E $(which python) -m macbot.cli collect          # 1. teleoperate and record (sudo: Orbbec SDK)
-macbot health                                          # 2. per-episode tracking and timing report
-macbot export --gripper binary                         # 3. LeRobot dataset in ~/macbot-data/datasets/
-DATASET=... ./train/train_pi05.sh my_run               # 4. train on a GPU machine (train_act.sh for ACT)
-sudo -E $(which python) -m macbot.cli run --policy runs/my_run/checkpoints/last/pretrained_model
-macbot replay                                          # 5. browse trials;  macbot video <rollout.npz> for an MP4
-```
-
-The full walkthrough, including the data format and the execution schemes, is in [docs/guide.md](https://github.com/MuQY1818/macbot/blob/main/docs/guide.md).
-Put your settings in a YAML file and pass `macbot --config my.yaml <command>`; anything you leave out falls
-back to [macbot/default.yaml](https://github.com/MuQY1818/macbot/blob/main/macbot/default.yaml). [configs/example.yaml](https://github.com/MuQY1818/macbot/blob/main/configs/example.yaml) is a starting point.
-
-## What it took to run this on macOS
-
-- **CAN under sudo.** The Orbbec SDK needs root, and dyld ignores `/usr/local/lib` for root processes, so
-  `libPCBUSB.dylib` is preloaded explicitly before the CAN backend looks for it.
-- **The right camera.** Opening a UVC camera by name or index can grab an iPhone through Continuity
-  Camera. macbot opens cameras by AVFoundation uniqueID through a small Swift helper, and still finds the
-  camera when it moves to another USB port.
-- **π0.5 on MPS.** bf16 weights under autocast; the masked third camera slot is skipped (identical output,
-  ~70 ms saved); `torch.compile` on the denoising step and the language model cuts per-kernel dispatch
-  overhead (~410 → ~280 ms); the random weight initialization that the checkpoint overwrites anyway is
-  skipped, which saves about 80 s per load.
-- **Optional π0.5 on MLX.** See the [inference benchmarks](https://github.com/MuQY1818/macbot/blob/main/docs/acceleration.md) for recorded-observation
-  latency, action fidelity, and the checkpoint requirements.
-- **Files written as root** are handed back to the user who ran `sudo`.
+Use `health --dataset` and `replay --dataset` to inspect existing LeRobot v3.0 data in place,
+including Hub datasets. The [workflow guide](docs/guide.md) covers collection, policy execution,
+and trial review. See [setup](docs/setup.md) for camera permissions and the reference reBot CAN driver.
 
 ## Contributing
 
