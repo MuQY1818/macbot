@@ -9,6 +9,8 @@ All notable changes to macbot will be documented here. This project follows
 
 ## [Unreleased]
 
+## [0.3.5] - 2026-11-21
+
 ### Changed
 
 - Use camera-relative WASD, vertical and wrist controls, and a visible key legend in keyboard simulation collection.
@@ -185,7 +187,8 @@ All notable changes to macbot will be documented here. This project follows
   chunks and Real-Time Chunking, plus rollout replay, MP4 export and inference benchmarks.
 - Equipment diagnostics, setup and usage guides, and English and Simplified Chinese consoles.
 
-[Unreleased]: https://github.com/MuQY1818/macbot/compare/v0.3.4...HEAD
+[Unreleased]: https://github.com/MuQY1818/macbot/compare/v0.3.5...HEAD
+[0.3.5]: https://github.com/MuQY1818/macbot/compare/v0.3.4...v0.3.5
 [0.3.4]: https://github.com/MuQY1818/macbot/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/MuQY1818/macbot/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/MuQY1818/macbot/compare/v0.3.1...v0.3.2

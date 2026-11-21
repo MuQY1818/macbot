@@ -9,6 +9,8 @@ macbot 的主要变更记录在这里。本项目遵循
 
 ## [Unreleased]
 
+## [0.3.5] - 2026-11-21
+
 ### 变更
 
 - 仿真采集键盘模式改用相对画面的 WASD 平移、独立升降和转腕键，并显示常驻按键图例。
@@ -168,7 +170,8 @@ macbot 的主要变更记录在这里。本项目遵循
   以及试验回放、MP4 导出和推理测速。
 - 设备诊断、安装和使用指南，以及英文与简体中文控制台。
 
-[Unreleased]: https://github.com/MuQY1818/macbot/compare/v0.3.4...HEAD
+[Unreleased]: https://github.com/MuQY1818/macbot/compare/v0.3.5...HEAD
+[0.3.5]: https://github.com/MuQY1818/macbot/compare/v0.3.4...v0.3.5
 [0.3.4]: https://github.com/MuQY1818/macbot/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/MuQY1818/macbot/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/MuQY1818/macbot/compare/v0.3.1...v0.3.2
