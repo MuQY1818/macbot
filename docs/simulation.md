@@ -48,7 +48,7 @@ Lift before crossing the table. Align the jaws with a cube, lower around it,
 close, lift, then open above the box. Lower the gripper or move back toward the
 arm if the top-down workspace limits your reach. The console saves automatically
 on success or timeout. A synthetic key sequence completed the four-cube task
-through the collection HTTP endpoint. Human trials are pending.
+through the collection HTTP endpoint. In a short hand-driven trial, a person placed one cube in the box.
 
 By default, simulation data goes to `~/macbot-data/sim`, with episodes under
 `raw/<task>` inside that root. The console prints the actual episode directory
