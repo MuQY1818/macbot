@@ -10,6 +10,10 @@ All notable changes to macbot will be documented here. This project follows
 ## [Unreleased]
 
 ### Added
+
+- Add opt-in MLX chunk inference for X-VLA and ACT. Automatic backend selection uses MLX
+  for compatible configurations verified on trained checkpoints.
+
 - Project website at https://muqy1818.github.io/macbot/ with the docs, built from `website/` and `docs/`
   by `scripts/build_site.sh` and deployed by the `pages` workflow.
 

@@ -10,6 +10,9 @@ macbot 的主要变更记录在这里。本项目遵循
 ## [Unreleased]
 
 ### 新增
+
+- 增加 X-VLA 和 ACT 的可选 MLX 分块推理。自动选择只对已经用训练权重验证的兼容配置启用 MLX。
+
 - 项目网站 https://muqy1818.github.io/macbot/ ，含文档；由 `scripts/build_site.sh` 从 `website/` 和 `docs/`
   构建，`pages` 工作流部署。
 

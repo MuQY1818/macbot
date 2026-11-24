@@ -78,12 +78,13 @@ on this installation. Loading a class does not load or execute weights.
 
 | Policy types | Status and scope |
 |---|---|
-| `act`, `pi05` | Verified stock wrappers. Generic ACT also tested. |
+| `act` | Verified stock Torch wrapper and MLX chunks. The public 14D ALOHA layout qualifies for `auto` in chunk mode. |
+| `pi05` | Verified stock Torch and MLX wrappers. |
 | `diffusion`, `vqbet`, `tdmpc`, `gaussian_actor` | Runs with the tiny offline checkpoints below. Gaussian actor was tested with continuous actions. |
 | `pi0` | Runs with a six-joint random checkpoint using the 2B PaliGemma prefix. The 300M prefix fails on both devices because vision and text embedding widths differ. |
 | `pi0_fast` | Loaded and generated tokens on CPU and MPS with a local tokenizer bundle. Both produced random tokens that failed FAST action decoding; no compatible trained checkpoint was tested. |
 | `smolvla` | Verified with `lerobot/smolvla_base`: three RGB inputs, six state/action values, 50-step chunks. |
-| `xvla` | Verified with `whosricky/xvla-so101-pick-red-cube-2cam`. The adapter passes six state values to the model's own padding and leaves the masked third slot absent. The `ee6d` base is unsupported. |
+| `xvla` | Verified Torch and MLX chunks with `whosricky/xvla-so101-pick-red-cube-2cam`. The `ee6d` base and RTC are unsupported. |
 | `groot` | Not verified. GR00T N1.7 needs native base assets plus a compatible embodiment and saved processors. |
 | `wall_x`, `wall_oss_05` | Not verified. Separate model families; require a compatible checkpoint and its matching backbone and processors. |
 | `cosmos3_edge`, `cosmos3_nano`, `dm05`, `eo1`, `evo1`, `fineart_vla`, `g05`, `lawam`, `lingbot_vla_v2`, `molmoact2`, `vla_jepa` | Factory import only. No robot-specific checkpoint and backbone were exercised. |

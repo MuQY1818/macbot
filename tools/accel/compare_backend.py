@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import platform
 import subprocess
 from contextlib import ExitStack
@@ -36,10 +37,11 @@ def machine():
 def error(candidate, reference, gripper, joint_units, degrees_per_unit=None):
     if candidate.shape != reference.shape:
         raise ValueError("Candidate and reference actions have different shapes")
-    if not 0 <= gripper < candidate.shape[-1]:
+    grippers = (gripper,) if isinstance(gripper, int) else tuple(gripper)
+    if not grippers or len(set(grippers)) != len(grippers) or any(not 0 <= i < candidate.shape[-1] for i in grippers):
         raise ValueError("Gripper index is outside the checkpoint's action vector")
     differences = np.abs(candidate - reference)
-    joints = np.delete(differences, gripper, axis=-1)
+    joints = np.delete(differences, grippers, axis=-1)
     if degrees_per_unit is not None:
         scale = np.asarray(degrees_per_unit)
         if scale.shape != (joints.shape[-1],) or not np.all(np.isfinite(scale) & (scale > 0)):
@@ -49,7 +51,7 @@ def error(candidate, reference, gripper, joint_units, degrees_per_unit=None):
         joints = np.rad2deg(joints)
     return {
         name: {"mean": float(values.mean()), "p99": float(np.percentile(values, 99))}
-        for name, values in (("joints_degrees", joints), ("gripper_native", differences[..., gripper]))
+        for name, values in (("joints_degrees", joints), ("gripper_native", differences[..., list(grippers)]))
     }
 
 
@@ -118,8 +120,13 @@ def run(args):
     path = args.policy
     meta = json.loads((path / "config.json").read_text())
     kind = meta["type"]
-    if args.observations and kind not in {"pi0", "pi05"}:
-        raise ValueError("Recorded comparisons are supported for pi0 and pi05")
+    act_reduced = args.act_mlx_fp16 or args.act_mlx_tf32
+    if act_reduced:
+        if kind != "act" or args.backend != "mlx":
+            raise ValueError("ACT reduced precision requires MLX ACT")
+        os.environ["MLX_ENABLE_TF32"] = "1" if args.act_mlx_tf32 else "0"
+    if args.observations and kind not in {"act", "pi0", "pi05", "xvla"}:
+        raise ValueError("Recorded comparisons are supported for act, pi0, pi05 and xvla")
     if args.pi_fp32 and (kind not in {"pi0", "pi05"} or args.backend != "torch" or args.compile_pi05_torch):
         raise ValueError("--pi-fp32 requires eager Torch pi0 or pi05")
     options = TorchOptions.from_args(args)
@@ -132,6 +139,8 @@ def run(args):
         use_mlx_cpu = True
     else:
         use_mlx_cpu = False
+    if args.xvla_fp32 and (kind != "xvla" or args.backend != "torch"):
+        raise ValueError("--xvla-fp32 requires Torch X-VLA")
     if kind == "pi05":
         pol = (load_pi_torch(path, cfg, args, kind) if args.backend == "torch" else
                load_policy(path, args.device, cfg["task"]["instruction"], backend=args.backend))
@@ -141,13 +150,36 @@ def run(args):
         if args.compile_mlx or args.compile_pi05_torch:
             pol.enable_compile()
     elif args.backend == "mlx":
-        pol = load_mapped_mlx(path, cfg, args)
+        if act_reduced:
+            import mlx.core as mx
+
+            from macbot.policy.mlx_act import ACTMLX
+
+            pol = ACTMLX(path, cfg["task"]["instruction"], dtype=mx.float16 if args.act_mlx_fp16 else mx.float32,
+                         cameras={k: v["save_size"] for k, v in cfg["cameras"].items()},
+                         camera_map=cfg.get("policy", {}).get("camera_map", {}))
+        else:
+            pol = load_mapped_mlx(path, cfg, args)
         if args.compile_mlx:
             pol.enable_compile()
     elif kind == "act":
         pol = load_policy(path, args.device, cfg["task"]["instruction"])
     elif kind == "pi0":
         pol = load_pi_torch(path, cfg, args, kind)
+    elif kind == "xvla" and args.xvla_fp32:
+        from lerobot.configs import PreTrainedConfig
+
+        load_config = PreTrainedConfig.from_pretrained
+
+        def fp32_config(*a, **kw):
+            c = load_config(*a, **kw)
+            c.dtype = torch.float32
+            return c
+
+        with patch.object(PreTrainedConfig, "from_pretrained", fp32_config):
+            pol = load_generic(path, cfg, args)
+        if any(p.dtype != torch.float32 for p in pol.pol.parameters() if p.is_floating_point()):
+            raise RuntimeError("The FP32 reference contains reduced-precision model parameters")
     else:
         if kind == "smolvla":
             # The saved checkpoint includes the full backbone. On the FP32
@@ -305,10 +337,11 @@ def run(args):
     model, chip = machine()
     result = {
         "machine": model, "chip": chip, "torch": package("torch"), "mlx": package("mlx"), "lerobot": package("lerobot"),
-        "checkpoint": args.checkpoint_name, "kind": kind, "device": device, "backend": args.backend,
+        "checkpoint": args.checkpoint_name, "revision": args.checkpoint_revision,
+        "kind": kind, "device": device, "backend": args.backend,
         "precision": args.precision, "chunk_length": actions.shape[1], "execution": args.mode,
         "denoising_steps": getattr(pol, "steps", None) or meta.get("num_inference_steps") or meta.get("num_steps")
-        or (meta.get("num_train_timesteps") if kind == "diffusion" else None),
+        or meta.get("num_denoising_steps") or (meta.get("num_train_timesteps") if kind == "diffusion" else None),
         "warmup": args.warmup, "calls": args.calls, "seed": args.seed,
         "median_ms": float(np.median(ts)), "p90_ms": float(np.percentile(ts, 90)),
         "torch_options": vars(options), "compile_mlx": args.compile_mlx, "compile_pi05_torch": args.compile_pi05_torch,
@@ -331,6 +364,7 @@ def main():
     parser.add_argument("--policy", type=Path, required=True)
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--checkpoint-name", required=True)
+    parser.add_argument("--checkpoint-revision", help="Hub commit or SHA-256 for local weights")
     parser.add_argument("--precision", required=True, help="precision label for the tested configuration")
     parser.add_argument("--backend", choices=("torch", "mlx"), default="torch")
     parser.add_argument("--device", choices=("cpu", "mps"), default="mps")
@@ -338,6 +372,10 @@ def main():
     parser.add_argument("--compile-mlx", action="store_true")
     parser.add_argument("--compile-pi05-torch", action="store_true")
     parser.add_argument("--pi-fp32", action="store_true", help="load the full-precision pi0/pi05 Torch reference")
+    parser.add_argument("--xvla-fp32", action="store_true", help="load X-VLA weights in Torch FP32")
+    act_precision = parser.add_mutually_exclusive_group()
+    act_precision.add_argument("--act-mlx-fp16", action="store_true", help="lossy ACT MLX FP16 experiment")
+    act_precision.add_argument("--act-mlx-tf32", action="store_true", help="lossy ACT MLX TF32 experiment")
     parser.add_argument("--skip-pi-checkpoint-compile", action="store_true", help="disable the saved Torch compiler")
     parser.add_argument("--observations", type=Path, help="NPZ from tools.accel.recorded_observations")
     parser.add_argument("--rtc-leftovers", type=Path, help="use shared model-space history for recorded RTC")
@@ -352,7 +390,8 @@ def main():
     units.add_argument("--joint-units", choices=("deg", "rad"), help="units of the checkpoint's joint outputs")
     units.add_argument("--joint-degrees-per-unit", type=float, nargs="+", metavar="SCALE",
                        help="degrees per normalized unit, in non-gripper joint order")
-    parser.add_argument("--gripper-index", type=int, required=True)
+    parser.add_argument("--gripper-index", type=int, action="append", required=True,
+                        help="gripper action index; repeat for multiple grippers")
     parser.add_argument("--seed", type=int, default=941)
     parser.add_argument("--calls", type=int, default=50)
     parser.add_argument("--warmup", type=int, default=5)

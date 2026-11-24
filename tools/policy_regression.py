@@ -22,9 +22,18 @@ def main():
     rng = np.random.default_rng(124)
     path = args.checkpoint
     cfg = json.loads((path / "config.json").read_text())
-    p = load_policy(path, args.device, "put the cube in the box", backend=args.backend)
+    if cfg["type"] in {"pi0", "smolvla"}:
+        if args.backend != "mlx":
+            parser.error("Pi0 and SmolVLA fingerprints require --backend mlx")
+        cameras = {key: (feature["shape"][2], feature["shape"][1]) for key, feature in cfg["input_features"].items()
+                   if feature["type"] == "VISUAL"}
+        p = load_policy(path, args.device, "put the cube in the box", backend="mlx",
+                        cameras=cameras, camera_map={key: key for key in cameras})
+        sizes = {key: (3, h, w) for key, (w, h) in cameras.items()}
+    else:
+        p = load_policy(path, args.device, "put the cube in the box", backend=args.backend)
+        sizes = p.shapes if p.kind == "act" else {"top": (3, 470, 492), "wrist": (3, 360, 640)}
     q = np.linspace(0, 1, raw_state_shape(path, cfg)[0], dtype=np.float32)
-    sizes = p.shapes if p.kind == "act" else {"top": (3, 470, 492), "wrist": (3, 360, 640)}
     obs = {cam: rng.integers(0, 256, (h, w, 3), dtype=np.uint8) for cam, (_, h, w) in sizes.items()}
 
     def digest(value):
@@ -40,6 +49,9 @@ def main():
         p.enable_compile()
     config = p.config if args.backend == "mlx" else p.pol.config
     noise = rng.standard_normal((1, config.chunk_size, config.max_action_dim), dtype=np.float32)
+    if p.kind == "smolvla":
+        print(json.dumps({"plain": digest(p(obs, q, noise=noise))}))
+        return
 
     def call(**kwargs):
         if args.backend == "mlx":

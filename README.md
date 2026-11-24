@@ -60,13 +60,16 @@ Measured on a MacBook Pro (M5 Pro, 48 GB). Approximate time per action chunk:
 | π0.5 | MLX | RTC 50 | **170 ms** |
 | SmolVLA | PyTorch MPS | Chunk 50 | 296 ms |
 | SmolVLA | MLX | Chunk 50 | **53 ms** |
-| X-VLA | PyTorch MPS | Chunk 30 | 235 ms |
-| ACT | PyTorch MPS | Chunk 100 | 25 ms |
+| X-VLA | PyTorch MPS | Chunk 30 | 178 ms |
+| X-VLA | MLX | Chunk 30 | **138 ms** |
+| ACT | PyTorch MPS | Chunk 100 | 16 ms |
+| ACT | MLX | Chunk 100 | **8 ms** |
 
 π0.5 uses our SO-101-class fine-tune on recorded observations, with 10 denoising steps (compiled PyTorch
 BF16 or MLX FP16). RTC is Real-Time Chunking guidance. SmolVLA uses the public `lerobot/smolvla_base`
-checkpoint at 10 steps (MPS BF16 backbone or compiled MLX FP16). X-VLA uses a public BF16 SO-101 fine-tune;
-ACT uses our trained checkpoint on MPS FP32. For methods and more results, see
+checkpoint at 10 steps (MPS BF16 backbone or compiled MLX FP16). X-VLA uses a public SO-101 fine-tune
+at 10 steps (MPS BF16 or compiled MLX FP16). ACT uses the public ALOHA transfer cube checkpoint
+(MPS FP32 or compiled MLX FP32 with TF32 disabled). Both comparisons use recorded observations. For methods and more results, see
 [docs/acceleration.md](https://github.com/MuQY1818/macbot/blob/main/docs/acceleration.md), other policies in
 [docs/policies.md](https://github.com/MuQY1818/macbot/blob/main/docs/policies.md).
 

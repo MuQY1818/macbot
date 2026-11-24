@@ -13,6 +13,7 @@ class MLXChunkIO:
     shapes = None
     stepwise = False
     supports_rtc = False
+    requires_task = True
 
     def __init__(self, path, task, *, cameras, camera_map=None, joint_count=None):
         import torch
@@ -23,9 +24,11 @@ class MLXChunkIO:
         metadata = json.loads((path / "config.json").read_text())
         self.width, self.has_state, self.cameras = _features(path, metadata, cameras, camera_map or {}, joint_count)
         config = PreTrainedConfig.from_pretrained(path, cli_overrides=["--device", "cpu"])
-        if config.type != self.kind or not self.has_state or not self.cameras or not task.strip():
-            raise ValueError(f"MLX {self.kind} requires joint state, RGB cameras and task text")
-        if config.n_obs_steps != 1 or getattr(config.rtc_config, "enabled", False):
+        if config.type != self.kind or not self.has_state or not self.cameras:
+            raise ValueError(f"MLX {self.kind} requires joint state and RGB cameras")
+        if self.requires_task and not task.strip():
+            raise ValueError(f"MLX {self.kind} requires task text")
+        if config.n_obs_steps != 1 or getattr(getattr(config, "rtc_config", None), "enabled", False):
             raise ValueError(f"MLX {self.kind} requires one observation and no checkpoint-configured RTC")
         if not 0 < config.n_action_steps <= config.chunk_size:
             raise ValueError("Invalid checkpoint action horizon")
@@ -72,3 +75,36 @@ class MLXChunkIO:
 
 def stage_call(stage, name, fn, *args):
     return fn(*args) if stage is None else stage(name, fn, *args)
+
+
+class DenseWeights:
+    """Torch checkpoint layout with NHWC convolutions and fused attention."""
+
+    def __init__(self, weights, dtype):
+        self.dtype = dtype
+        self.w = {}
+        for key, weight in weights.items():
+            if weight.ndim == 4 and key.endswith(".weight"):
+                weight = mx.contiguous(weight.transpose(0, 2, 3, 1))
+            self.w[key] = weight.astype(dtype)
+
+    def linear(self, x, name):
+        w = self.w[name + ".weight"]
+        bias = self.w.get(name + ".bias")
+        return x @ w.T if bias is None else mx.addmm(bias, x, w.T)
+
+    def norm(self, x, name):
+        return mx.fast.layer_norm(x, self.w[name + ".weight"], self.w[name + ".bias"], 1e-5)
+
+    def conv(self, x, name, *, stride=1, padding=0, groups=1):
+        y = mx.conv2d(x, self.w[name + ".weight"], stride=stride, padding=padding, groups=groups)
+        bias = self.w.get(name + ".bias")
+        return y if bias is None else y + bias
+
+
+def attention(q, k, v, heads):
+    def split(x):
+        return x.reshape(*x.shape[:2], heads, -1).transpose(0, 2, 1, 3)
+
+    y = mx.fast.scaled_dot_product_attention(split(q), split(k), split(v), scale=(q.shape[-1] // heads)**-0.5)
+    return y.transpose(0, 2, 1, 3).flatten(2)

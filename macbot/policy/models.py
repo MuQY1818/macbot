@@ -17,6 +17,7 @@ pi0.5 notes (all measured on an M-series MacBook):
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -203,6 +204,9 @@ def load_policy(path: Path, device: str, task: str, steps: int | None = None, *,
             sys.exit(f"No MLX backend is implemented for {typ}")
         if device != "mps":
             sys.exit("The MLX backend runs on the Apple GPU; use --device mps")
+        if typ == "act":
+            # Set before importing MLX in a fresh CLI process; other policies keep their runtime defaults.
+            os.environ["MLX_ENABLE_TF32"] = "0"
         try:
             import mlx.core as mx
 
@@ -221,6 +225,14 @@ def load_policy(path: Path, device: str, task: str, steps: int | None = None, *,
                 return PI0MLX(Path(path), task, steps, **io)
             if steps is not None:
                 sys.exit("--steps is only supported for pi0.5 and MLX pi0")
+            if typ == "xvla":
+                from .mlx_xvla import XVLAMLX
+
+                return XVLAMLX(Path(path), task, **io)
+            if typ == "act":
+                from .mlx_act import ACTMLX
+
+                return ACTMLX(Path(path), task, **io)
             from .mlx_smolvla import SmolVLAMLX
 
             return SmolVLAMLX(Path(path), task, **io)
