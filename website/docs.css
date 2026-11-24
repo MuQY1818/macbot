@@ -1,0 +1,19 @@
+/* MkDocs Material colors matching the macbot website. */
+:root, [data-md-color-scheme="default"] {
+  --md-primary-fg-color: #1B1A2E;
+  --md-primary-fg-color--light: #2B2A4C;
+  --md-primary-fg-color--dark: #14131F;
+  --md-accent-fg-color: #FF7A1A;
+  --md-typeset-a-color: #E05F00;
+}
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: #14131F;
+  --md-accent-fg-color: #FF9A4D;
+  --md-typeset-a-color: #FF9A4D;
+  --md-default-bg-color: #17162A;
+}
+.md-header, .md-tabs { background-color: #14131F; }
+.md-typeset code, .md-typeset pre { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+.md-typeset h1 { font-weight: 800; letter-spacing: -.02em; }
+[data-md-color-scheme="default"] .md-typeset h1 { color: #1B1A2E; }
+[data-md-color-scheme="slate"] .md-typeset h1 { color: #F7F5F0; }
