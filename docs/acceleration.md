@@ -23,6 +23,8 @@ execution mode, compile setting and availability of a supported MLX runtime. It 
 the public checkpoint used to qualify the implementation or a one-line reason for falling
 back to PyTorch. Compatible SmolVLA checkpoints use MLX for synchronous chunks.
 Compatible π0.5 and π0 checkpoints use compiled MLX for synchronous chunks and RTC.
+Compatible X-VLA and stock ALOHA ACT layouts use compiled MLX for synchronous chunks.
+`run --backend auto` preserves ACT's default ensemble mode unless `--mode chunk` is requested.
 The measurements below describe the tested Apple silicon machine and dependency versions;
 they do not restrict selection to that machine. Use `--backend mlx` to request it explicitly.
 The default backend and the default execution modes for explicit backends are unchanged.
@@ -161,6 +163,77 @@ inference mode. MLX used the compiled FP16 path.
 Both MLX modes beat the eager reference on latency and stayed below the seed
 spread. Joint mean and p99 exceeded the absolute caps in both modes; chunk
 gripper p99 also exceeded the cap. This run preceded the recorded FP32 comparison.
+
+## X-VLA and ACT on recorded observations
+
+Both comparisons used Mac17,9 (Apple M5 Pro), macOS 27.0.1, PyTorch 2.11.0,
+MLX 0.32.4 and LeRobot 0.7.0. Each row uses saved processors, 25 observations
+across five training episodes, five warm-ups and 50 timed synchronous calls,
+from RGB and state conversion through action readback. The CPU references use
+four threads. These are offline comparisons on trained checkpoints.
+
+### X-VLA
+
+`whosricky/xvla-so101-pick-red-cube-2cam@7a007f64dd5910dd5cde76c8d31d9d7f7e6c0778`,
+replayed episodes 0, 54, 108, 147 and 181 of
+`whosricky/pick-red-cube-v3@f77f31614b10b9cf4ceb4c5f4c4edb503b12b74c`.
+Both recorded RGB streams are resized to the checkpoint's 256 × 256 input.
+The 30-action chunk uses 10 denoising steps. MLX batches the DaViT views, runs
+the Florence-2 BART encoder and reuses its projected context in the soft-prompted
+action head. It keeps the absent view slots in the action head and the original
+noise interpolation schedule. The LeRobot sampler has no RTC guidance.
+Joint errors use the five follower encoder spans (2116, 2343, 2203, 2294 and 4095
+ticks), recovered from within-episode state increments, times `360 / (4095 × 200)`.
+Gripper errors use the checkpoint's 0–100 scale.
+
+| Backend | Evidence | Median / p90 ms | Joint mean / p99 ° | Gripper mean / p99 |
+|---|---|---:|---:|---:|
+| Torch CPU FP32, seed 941 | Recorded reference | 4875.08 / 5619.00 | 0 / 0 | 0 / 0 |
+| Torch CPU FP32, seed 942 | Recorded seed spread | 4786.63 / 5063.67 | 0.13363 / 0.81821 | 0.34578 / 7.50583 |
+| Torch MPS BF16, seed 941 | Verified default | 178.19 / 205.14 | 0.13311 / 0.65928 | 0.06051 / 0.32293 |
+| MLX FP16, compiled, seed 941 | Verified, qualifies | 137.86 / 140.33 | 0.01014 / 0.04526 | 0.00556 / 0.03549 |
+
+MLX is below the seed spread on all four metrics, meets the absolute limits
+(joint 0.10° / 0.50°, gripper 0.10 / 0.50), and improves on the MPS BF16 error
+and latency. `auto` qualifies the measured architecture, saved processor
+layout, two-view input, and compiled chunk mode.
+
+### ACT
+
+MLX uses the full 100-action prediction, with frozen batch normalization folded
+into the ResNet-18 convolutions in FP32. The Transformer uses the saved position
+weights and a zero latent, as in LeRobot inference. ACT is deterministic and
+has no denoising. Full FP32 requires `MLX_ENABLE_TF32=0`; macbot sets it only
+when loading ACT on MLX in the policy process. Start a fresh process when
+comparing different MLX precision settings.
+
+The public checkpoint is
+`lerobot/act_aloha_sim_transfer_cube_human@ba73b2766f1371cdc133ca4efb97eb090d744625`.
+We moved its saved normalization tensors into LeRobot 0.7 processors with
+`lerobot.processor.migrate_policy_normalization` and checked that both statistics
+and model weights matched. We replayed episodes 0, 12, 24, 36 and 49 of
+`lerobot/aloha_sim_transfer_cube_human@6a43d500f101255823a9d2b9dc244eeb01a2cd31`.
+It has one 640 × 480 view and 14 actions. The 12 arm outputs are in radians
+before conversion to degrees; the two grippers use normalized position units
+with a nominal 0–1 range.
+
+| Checkpoint and backend | Evidence | Median / p90 ms | Joint mean / p99 ° | Gripper mean / p99 |
+|---|---|---:|---:|---:|
+| Public ACT, Torch CPU FP32 | Recorded reference | 56.25 / 63.35 | 0 / 0 | 0 / 0 |
+| Public ACT, Torch MPS FP32 | Verified default | 16.42 / 17.20 | 3.39e-6 / 2.05e-5 | 1.00e-7 / 5.07e-7 |
+| Public ACT, MLX FP32, compiled, TF32 off | Verified, qualifies | 8.32 / 8.57 | 4.18e-6 / 2.73e-5 | 1.24e-7 / 9.54e-7 |
+| Our ACT, Torch CPU FP32 | Recorded reference | 71.98 / 76.33 | 0 / 0 | 0 / 0 |
+| Our ACT, Torch MPS FP32 | Verified default | 22.80 / 23.47 | 6.93e-6 / 4.58e-5 | 1.76e-7 / 1.43e-6 |
+| Our ACT, MLX FP32, compiled, TF32 off | Verified, passes fidelity | 12.28 / 12.58 | 7.29e-6 / 4.58e-5 | 1.71e-7 / 1.28e-6 |
+| Our ACT, MLX FP32, compiled, TF32 on | Verified, lossy experiment | 9.95 / 10.11 | 0.02227 / 0.08749 | 0.000399 / 0.004394 |
+| Our ACT, MLX FP16, compiled | Verified, lossy experiment | 8.38 / 8.55 | 0.00706 / 0.03525 | 0.000153 / 0.001858 |
+
+The local checkpoint uses two recorded views and a binary close score (0–1).
+Both full FP32 results pass the 0.01° joint and 0.001 gripper limits. The TF32
+and FP16 experiments fail the gate. They can be reproduced with `--act-mlx-tf32`
+or `--act-mlx-fp16` in `tools.accel.compare_backend`. The
+public ALOHA layout qualifies for `auto`; the local layout is available with
+explicit `--backend mlx`. Neither benchmark evaluates task success.
 
 ## PyTorch MPS experiments
 
