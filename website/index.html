@@ -94,7 +94,7 @@
   <header class="head reveal">
     <p class="idx">02 / <span data-i18n="sp.kicker">speed</span></p>
     <h2 data-i18n="sp.title">Time per action chunk on a MacBook Pro.</h2>
-    <p class="sub" data-i18n="sp.sub">M5 Pro, 48 GB. π0.5 and SmolVLA run 10 denoising steps, bf16 on PyTorch and fp16 on MLX.</p>
+    <p class="sub" data-i18n="sp.sub">M5 Pro, 48 GB. π0.5, SmolVLA and X-VLA run 10 denoising steps, bf16 on PyTorch and fp16 on MLX. ACT runs fp32 on both.</p>
   </header>
   <div class="race px" id="race">
     <div class="race-head">
@@ -106,10 +106,10 @@
     <div class="lane" data-ms="170" style="--ms:170" data-kind="mlx"><span class="lbl"></span><div class="track"><div class="bar"></div><em>170 ms</em></div></div>
     <div class="lane gap" data-ms="296" style="--ms:296" data-kind="mps"><span class="lbl">SmolVLA</span><div class="track"><div class="bar"></div><em>296 ms</em></div></div>
     <div class="lane" data-ms="53" style="--ms:53" data-kind="mlx"><span class="lbl"></span><div class="track"><div class="bar"></div><em>53 ms</em></div></div>
-    <div class="lane gap" data-ms="235" style="--ms:235" data-kind="mps"><span class="lbl">X-VLA</span><div class="track"><div class="bar"></div><em>235 ms</em></div></div>
-    <div class="lane" data-kind="none"><span class="lbl"></span><div class="track"><span class="na" data-i18n="sp.na">MLX port in progress</span></div></div>
-    <div class="lane gap" data-ms="25" style="--ms:25" data-kind="mps"><span class="lbl">ACT</span><div class="track"><div class="bar"></div><em>25 ms</em></div></div>
-    <div class="lane" data-kind="none"><span class="lbl"></span><div class="track"><span class="na" data-i18n="sp.na">MLX port in progress</span></div></div>
+    <div class="lane gap" data-ms="178" style="--ms:178" data-kind="mps"><span class="lbl">X-VLA</span><div class="track"><div class="bar"></div><em>178 ms</em></div></div>
+    <div class="lane" data-ms="138" style="--ms:138" data-kind="mlx"><span class="lbl"></span><div class="track"><div class="bar"></div><em>138 ms</em></div></div>
+    <div class="lane gap" data-ms="23" style="--ms:23" data-kind="mps"><span class="lbl">ACT</span><div class="track"><div class="bar"></div><em>23 ms</em></div></div>
+    <div class="lane" data-ms="12" style="--ms:12" data-kind="mlx"><span class="lbl"></span><div class="track"><div class="bar"></div><em>12 ms</em></div></div>
     <p class="note" data-i18n="sp.note">Chunk length 50 for π0.5 and SmolVLA, 30 for X-VLA and 100 for ACT. π0.5 uses our fine-tune on recorded observations, SmolVLA the public <code>lerobot/smolvla_base</code>, X-VLA a public SO-101 fine-tune and ACT our trained checkpoint. RTC is Real-Time Chunking guidance. π0.5 needs a Mac with at least 32 GB of memory.</p>
     <a class="more" href="docs/acceleration/" data-href-zh="docs/acceleration_zh/" data-i18n="sp.more">method and full results →</a>
   </div>
