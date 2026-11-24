@@ -13,7 +13,7 @@ BUILTINS = (
 )
 
 STATUS = {
-    "act": ("verified", "built-in wrapper and generic chunks"),
+    "act": ("verified", "Torch and full-precision MLX chunks on trained checkpoints"),
     "diffusion": ("runs, tiny checkpoint", "generic select_action; tiny DDIM checkpoint"),
     "gaussian_actor": ("runs, tiny checkpoint", "generic select_action; continuous actions"),
     "pi0": ("runs, random weights", "torch generic chunks; MLX port has no trained-checkpoint verification"),
@@ -22,7 +22,7 @@ STATUS = {
     "vqbet": ("runs, tiny checkpoint", "generic select_action; one camera"),
     "pi05": ("verified", "built-in PyTorch MPS and MLX wrappers"),
     "smolvla": ("verified", "official base checkpoint: torch and MLX chunks; see auto limits"),
-    "xvla": ("verified", "SO-101 joint checkpoint; end-effector variants are unsupported"),
+    "xvla": ("verified", "Torch and MLX chunks on a public SO-101 joint checkpoint; no RTC"),
     "groot": ("not verified", "GR00T base model and robot-specific embodiment checkpoint needed"),
     "wall_x": ("not verified", "needs a compatible WALL-X checkpoint and Qwen vision-language assets"),
     "wall_oss_05": ("not verified", "separate WALL-OSS model and robot action convention needed"),

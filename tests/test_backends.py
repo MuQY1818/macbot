@@ -105,3 +105,36 @@ def test_pi05_camera_map_allows_masked_views():
     assert backends.pi05_camera_map(two, metadata) == {"top": "base_0_rgb", "wrist": "left_wrist_0_rgb"}
     with pytest.raises(ValueError):
         backends.pi05_camera_map({"cameras": {"top": {}, "side": {}}}, metadata)
+
+
+def test_act_auto_preserves_default_ensemble(monkeypatch, tmp_path):
+    metadata = {
+        "type": "act",
+        "input_features": {"observation.state": {"type": "STATE", "shape": [14]},
+                           "observation.images.top": {"type": "VISUAL", "shape": [3, 480, 640]}},
+        "output_features": {"action": {"type": "ACTION", "shape": [14]}},
+    }
+    norm = {"norm_map": {"VISUAL": "MEAN_STD", "STATE": "MEAN_STD", "ACTION": "MEAN_STD"}}
+    for side, steps in (
+        ("pre", ["rename_observations_processor", "to_batch_processor", "device_processor", "normalizer_processor"]),
+        ("post", ["unnormalizer_processor", "device_processor"]),
+    ):
+        state = f"{side}.safetensors"
+        (tmp_path / state).touch()
+        (tmp_path / f"policy_{side}processor.json").write_text(json.dumps({
+            "steps": [{"registry_name": name, "config": norm, "state_file": state} for name in steps],
+        }))
+    (tmp_path / "model.safetensors").touch()
+    monkeypatch.setattr(backends.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(backends.platform, "machine", lambda: "arm64")
+    monkeypatch.setattr(backends, "find_spec", lambda _: object())
+    monkeypatch.setattr(backends, "supported_mlx_dependencies", lambda: True)
+    monkeypatch.setattr(backends, "mlx_runtime_available", lambda: True)
+    cfg = {"cameras": {"top": {"save_size": [640, 480]}}}
+    args = SimpleNamespace(device="mps", mode="auto")
+    assert backends.select_backend("auto", tmp_path, metadata, args, config=cfg).backend == "torch"
+    assert backends.select_backend("auto", tmp_path, metadata, args, config=cfg, bench=True).backend == "mlx"
+    args.mode = "chunk"
+    assert backends.select_backend("auto", tmp_path, metadata, args, config=cfg).backend == "mlx"
+    args.no_compile = True
+    assert backends.select_backend("auto", tmp_path, metadata, args, config=cfg).backend == "torch"

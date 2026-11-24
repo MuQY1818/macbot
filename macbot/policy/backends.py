@@ -18,9 +18,11 @@ class Backend(NamedTuple):
 
 CHUNK = frozenset({"chunk", "ensemble", "async"})
 MLX_BACKENDS = {
+    "act": Backend("mlx", CHUNK),
     "pi0": Backend("mlx", CHUNK | {"rtc"}),
     "pi05": Backend("mlx", CHUNK | {"rtc"}),
     "smolvla": Backend("mlx", CHUNK),
+    "xvla": Backend("mlx", CHUNK),
 }
 
 
@@ -108,6 +110,84 @@ def compatible_pi(path, metadata):
     return (path / "model.safetensors").is_file() and not (path / "adapter_config.json").is_file()
 
 
+def compatible_xvla(path, metadata):
+    options = {
+        "n_obs_steps": 1, "chunk_size": 30, "n_action_steps": 30, "num_denoising_steps": 10,
+        "dtype": "bfloat16", "action_mode": "auto", "use_proprio": True, "max_state_dim": 20,
+        "max_action_dim": 20, "num_image_views": 4, "empty_cameras": 1, "resize_imgs_with_padding": [224, 224],
+        "hidden_size": 1024, "depth": 24, "num_heads": 16, "mlp_ratio": 4.0, "num_domains": 30,
+        "dim_time": 32, "len_soft_prompts": 32, "max_len_seq": 512, "use_hetero_proj": False,
+    }
+    if any(metadata.get(k) != v for k, v in options.items()):
+        return False
+    if (metadata.get("output_features", {}).get("action") or {}).get("shape") != [6]:
+        return False
+    visuals = [f["shape"] for k, f in metadata.get("input_features", {}).items()
+               if f["type"] == "VISUAL" and k != "observation.images.empty_camera_0"]
+    if visuals != [[3, 256, 256]] * 2:
+        return False
+    florence = metadata["florence_config"]
+    vision, text = florence["vision_config"], florence["text_config"]
+    if (vision.get("dim_embed", vision.get("embed_dim")) != [256, 512, 1024, 2048]
+            or vision.get("depths") != [1, 1, 9, 1] or vision.get("window_size") != 12
+            or text.get("encoder_layers") != 12 or text.get("d_model") != 1024):
+        return False
+    expected = {
+        "pre": ("rename_observations_processor", "to_batch_processor", "tokenizer_processor",
+                "xvla_add_domain_id", "xvla_image_to_float", "xvla_imagenet_normalize",
+                "device_processor", "normalizer_processor"),
+        "post": ("unnormalizer_processor", "device_processor"),
+    }
+    norm = {"STATE": "IDENTITY", "ACTION": "MEAN_STD", "VISUAL": "IDENTITY"}
+    for side, layout in expected.items():
+        steps = json.loads((path / f"policy_{side}processor.json").read_text())["steps"]
+        if tuple(step["registry_name"] for step in steps) != layout:
+            return False
+        normalizer = steps[-1 if side == "pre" else 0]
+        if normalizer["config"]["norm_map"] != norm or not (path / normalizer["state_file"]).is_file():
+            return False
+        if side == "pre":
+            tokenizer = steps[2]["config"]
+            if (tokenizer.get("tokenizer_name") != "facebook/bart-large" or tokenizer.get("max_length") != 50
+                    or tokenizer.get("padding") != "max_length" or tokenizer.get("padding_side") != "right"
+                    or steps[3]["config"].get("domain_id") != 0):
+                return False
+    return (path / "model.safetensors").is_file() and not (path / "adapter_config.json").is_file()
+
+
+def compatible_act(path, metadata):
+    stock = {
+        "n_obs_steps": 1, "chunk_size": 100, "n_action_steps": 100, "vision_backbone": "resnet18",
+        "replace_final_stride_with_dilation": False, "pre_norm": False, "dim_model": 512, "n_heads": 8,
+        "dim_feedforward": 3200, "feedforward_activation": "relu", "n_encoder_layers": 4,
+        "n_decoder_layers": 1, "temporal_ensemble_coeff": None,
+    }
+    if any(metadata.get(k, v) != v for k, v in stock.items()):
+        return False
+    features = metadata.get("input_features", {})
+    # The public timing covers a single 640x480 view. The local two-camera
+    # result is useful for explicit deployment but is not public evidence.
+    if features != {"observation.state": {"type": "STATE", "shape": [14]},
+                    "observation.images.top": {"type": "VISUAL", "shape": [3, 480, 640]}}:
+        return False
+    if metadata.get("output_features") != {"action": {"type": "ACTION", "shape": [14]}}:
+        return False
+    layouts = {
+        "pre": ("rename_observations_processor", "to_batch_processor", "device_processor", "normalizer_processor"),
+        "post": ("unnormalizer_processor", "device_processor"),
+    }
+    for side, layout in layouts.items():
+        steps = json.loads((path / f"policy_{side}processor.json").read_text())["steps"]
+        if tuple(step["registry_name"] for step in steps) != layout:
+            return False
+        normalizer = steps[-1 if side == "pre" else 0]
+        if normalizer["config"]["norm_map"] != {"VISUAL": "MEAN_STD", "STATE": "MEAN_STD", "ACTION": "MEAN_STD"}:
+            return False
+        if not (path / normalizer["state_file"]).is_file():
+            return False
+    return (path / "model.safetensors").is_file() and not (path / "adapter_config.json").is_file()
+
+
 def pi05_camera_map(config, metadata):
     from .models import PI05
 
@@ -143,6 +223,10 @@ def pi05_camera_map(config, metadata):
 # Entries must link to a trained public checkpoint and matched fidelity and latency
 # results in docs/acceleration.md. Results from private checkpoints do not transfer.
 QUALIFIED: dict[str, tuple[Qualification, ...]] = {
+    "act": (
+        Qualification("mlx", "lerobot/act_aloha_sim_transfer_cube_human", frozenset({"chunk"}), True,
+                      compatible_act),
+    ),
     "pi05": (
         Qualification("mlx", "zz4321/so101_pi05", frozenset({"chunk", "rtc"}), True, compatible_pi),
     ),
@@ -153,6 +237,9 @@ QUALIFIED: dict[str, tuple[Qualification, ...]] = {
         Qualification(
             "mlx", "lerobot/smolvla_base", frozenset({"chunk"}), True, compatible_smolvla,
         ),
+    ),
+    "xvla": (
+        Qualification("mlx", "whosricky/xvla-so101-pick-red-cube-2cam", frozenset({"chunk"}), True, compatible_xvla),
     ),
 }
 
@@ -227,6 +314,8 @@ def select_backend(requested, path, metadata, args, *, bench=False, config=None)
         return fallback("optional Apple silicon MLX runtime unavailable")
 
     compiled = not getattr(args, "no_compile", False)
+    if kind == "act" and not bench and getattr(args, "mode", "auto") == "auto":
+        return fallback("ACT defaults to ensemble; select --mode chunk to use qualified MLX")
     applicable = [row for row in rows if row.backend == capability.name and mode in row.modes
                   and row.compiled == compiled]
     if not applicable:
@@ -244,6 +333,14 @@ def select_backend(requested, path, metadata, args, *, bench=False, config=None)
                         camera_map = pi05_camera_map(config, metadata)
                     except (AttributeError, KeyError, TypeError, ValueError) as exc:
                         return fallback(f"cannot confirm pi0.5 camera mapping: {exc}")
+                if kind in {"act", "xvla"} and config is not None:
+                    from .generic import _features
+
+                    try:
+                        _features(path, metadata, {name: v["save_size"] for name, v in config["cameras"].items()},
+                                  config.get("policy", {}).get("camera_map", {}), None)
+                    except (KeyError, TypeError, ValueError) as exc:
+                        return fallback(f"cannot confirm {kind} camera mapping: {exc}")
                 return Selection("auto", row.backend, f"compatible {kind} {mode}; measured on {row.evidence}",
                                  camera_map)
     except (OSError, ValueError, KeyError, TypeError):

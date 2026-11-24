@@ -27,14 +27,16 @@ def decode(path, times, fps):
     return np.stack([samples[round(t * fps)] for t in times])
 
 
-def extract(data, episodes, tasks, videos, fps, out):
+def extract(data, episodes, tasks, videos, fps, out, *, resize=None):
     import pyarrow.parquet as pq
 
     columns = ["episode_index", "frame_index", "task_index", "timestamp", "observation.state"]
     rows = pq.read_table(data, columns=columns).to_pylist()
     headers = pq.read_table(episodes).to_pylist()
     headers.sort(key=lambda x: x["episode_index"])
-    task_names = {r["task_index"]: r["__index_level_0__"] for r in pq.read_table(tasks).to_pylist()}
+    task_table = pq.read_table(tasks)
+    task_key = "task" if "task" in task_table.column_names else "__index_level_0__"
+    task_names = {r["task_index"]: r[task_key] for r in task_table.to_pylist()}
     pairs = []
     for slot in np.linspace(0, len(headers) - 1, 5, dtype=int):
         h = headers[slot]
@@ -62,7 +64,12 @@ def extract(data, episodes, tasks, videos, fps, out):
             if h[f"{key}/chunk_index"] or h[f"{key}/file_index"]:
                 raise ValueError("This extractor expects one video shard per camera")
         times = [pair[0][f"{key}/from_timestamp"] + pair[i]["timestamp"] for i in (1, 2) for pair in pairs]
-        current, prior = np.split(decode(path, times, fps), 2)
+        frames = decode(path, times, fps)
+        if resize is not None:
+            import cv2
+
+            frames = np.stack([cv2.resize(frame, resize, interpolation=cv2.INTER_AREA) for frame in frames])
+        current, prior = np.split(frames, 2)
         arrays[f"rgb_{name}"], arrays[f"prior_rgb_{name}"] = current, prior
     np.savez_compressed(out, **arrays)
 
@@ -73,9 +80,10 @@ def main():
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--video", action="append", required=True, metavar="CAMERA=FILE")
     parser.add_argument("--fps", type=float, required=True)
+    parser.add_argument("--resize", type=int, nargs=2, metavar=("WIDTH", "HEIGHT"))
     args = parser.parse_args()
     videos = dict(v.split("=", 1) for v in args.video)
-    extract(args.data, args.episodes, args.tasks, videos, args.fps, args.out)
+    extract(args.data, args.episodes, args.tasks, videos, args.fps, args.out, resize=args.resize)
 
 
 if __name__ == "__main__":
