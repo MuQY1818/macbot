@@ -44,7 +44,7 @@ lint = ["pyflakes", "ruff==0.14.14"]
 
 [project.urls]
 Homepage = "https://github.com/MuQY1818/macbot"
-Documentation = "https://github.com/MuQY1818/macbot/blob/main/docs/guide.md"
+Documentation = "https://muqy1818.github.io/macbot/docs/"
 Issues = "https://github.com/MuQY1818/macbot/issues"
 Changelog = "https://github.com/MuQY1818/macbot/releases"
 

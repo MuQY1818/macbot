@@ -9,6 +9,10 @@ macbot 的主要变更记录在这里。本项目遵循
 
 ## [Unreleased]
 
+### 新增
+- 项目网站 https://muqy1818.github.io/macbot/ ，含文档；由 `scripts/build_site.sh` 从 `website/` 和 `docs/`
+  构建，`pages` 工作流部署。
+
 ## [0.3.5] - 2026-11-21
 
 ### 变更

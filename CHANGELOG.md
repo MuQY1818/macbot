@@ -9,6 +9,10 @@ All notable changes to macbot will be documented here. This project follows
 
 ## [Unreleased]
 
+### Added
+- Project website at https://muqy1818.github.io/macbot/ with the docs, built from `website/` and `docs/`
+  by `scripts/build_site.sh` and deployed by the `pages` workflow.
+
 ## [0.3.5] - 2026-11-21
 
 ### Changed

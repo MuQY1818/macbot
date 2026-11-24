@@ -14,3 +14,6 @@ outputs/
 macbot-data/
 tools/brand/*.png
 dist/
+
+# website build
+_site/

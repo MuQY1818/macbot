@@ -1,0 +1,66 @@
+# Documentation site, built into _site/docs by scripts/build_site.sh and deployed with .github/workflows/pages.yml.
+site_name: macbot docs
+site_url: https://muqy1818.github.io/macbot/docs/
+repo_url: https://github.com/MuQY1818/macbot
+repo_name: MuQY1818/macbot
+edit_uri: edit/main/docs/
+docs_dir: docs
+theme:
+  name: material
+  logo: assets/logo-mark.svg
+  favicon: assets/logo-mark.svg
+  font: false
+  palette:
+    - scheme: default
+      primary: custom
+      accent: custom
+      toggle: { icon: material/weather-night, name: Dark mode }
+    - scheme: slate
+      primary: custom
+      accent: custom
+      toggle: { icon: material/weather-sunny, name: Light mode }
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - search.highlight
+extra_css:
+  - assets/macbot.css
+markdown_extensions:
+  - admonition
+  - tables
+  - attr_list
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - toc: { permalink: true }
+validation:
+  links:
+    not_found: info
+    unrecognized_links: info
+    absolute_links: info
+extra:
+  homepage: ../
+nav:
+  - English:
+      - Quickstart: quickstart.md
+      - Migrate from Linux: migrate.md
+      - Setup: setup.md
+      - Workflow guide: guide.md
+      - Robots: robots.md
+      - Policies: policies.md
+      - Acceleration: acceleration.md
+      - Simulation: simulation.md
+      - Architecture: architecture.md
+      - Releasing: releasing.md
+  - 中文:
+      - 快速开始: quickstart_zh.md
+      - 从 Linux 迁移: migrate_zh.md
+      - 环境配置: setup_zh.md
+      - 工作流程: guide_zh.md
+      - 机械臂: robots_zh.md
+      - 策略: policies_zh.md
+      - 加速: acceleration_zh.md
+      - 仿真: simulation_zh.md
+      - 架构: architecture_zh.md
+      - 发布: releasing_zh.md

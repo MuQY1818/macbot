@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>macbot · LeRobot on a MacBook</title>
+<meta name="description" content="Bring your LeRobot arms, calibration, datasets and checkpoints to a MacBook, with fast inference on Apple silicon.">
+<meta property="og:title" content="macbot · LeRobot on a MacBook">
+<meta property="og:description" content="Teleoperate, record, export and run LeRobot policies such as ACT, π0.5 and SmolVLA on a MacBook.">
+<meta name="theme-color" content="#F3EFE6">
+<link rel="icon" href="assets/logo-mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="nav" id="top">
+  <a class="brand" href="#top" aria-label="macbot home"><img src="assets/logo.svg" alt="macbot" height="26"></a>
+  <nav class="links">
+    <a href="#workflow" data-i18n="nav.workflow">workflow</a>
+    <a href="#speed" data-i18n="nav.speed">speed</a>
+    <a href="#console" data-i18n="nav.console">console</a>
+    <a href="#support" data-i18n="nav.support">support</a>
+    <a href="docs/" data-i18n="nav.docs">docs</a>
+    <a href="https://github.com/MuQY1818/macbot" class="gh" aria-label="GitHub">
+      <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+    </a>
+    <button class="lang px" id="lang" aria-label="Switch language">中文</button>
+  </nav>
+</header>
+
+<section class="hero">
+  <div class="hero-inner">
+    <div class="hero-copy">
+      <p class="tag"><span>v0.3.5</span><span>macOS · Apple silicon</span><span>Apache-2.0</span></p>
+      <h1 data-i18n="hero.title">LeRobot on a <span class="mark">MacBook</span>.</h1>
+      <p class="lede" data-i18n="hero.lede">Bring your LeRobot arms, calibration, datasets and checkpoints to a MacBook, with fast inference on Apple silicon.</p>
+      <div class="install px">
+        <span class="prompt">$</span><code>pip install macbot</code>
+        <button class="copy" id="copy" aria-label="Copy install command" data-i18n="hero.copy">copy</button>
+      </div>
+      <div class="ctas">
+        <a class="btn px primary" href="docs/quickstart/" data-href-zh="docs/quickstart_zh/" data-i18n="hero.quickstart">Quickstart</a>
+        <a class="btn px" href="docs/migrate/" data-href-zh="docs/migrate_zh/" data-i18n="hero.migrate">Migrate from Linux</a>
+      </div>
+    </div>
+    <div class="term px" aria-label="macbot commands">
+      <div class="term-bar"><span class="sq"></span><span class="sq"></span><span class="sq"></span><b>~/robot</b><em id="stage-name">init</em></div>
+      <pre class="term-body" id="term"></pre>
+    </div>
+  </div>
+
+  <div class="scene-box" id="scene">
+    <img src="assets/scene.svg" alt="Collect on the robot, export a LeRobot dataset, train on a GPU, bring the checkpoint back and run it on the MacBook">
+    <div class="zone" data-zone="arms" style="--x:40;--y:118;--w:428;--h:224"></div>
+    <div class="zone" data-zone="mac" style="--x:592;--y:118;--w:318;--h:224"></div>
+    <div class="zone" data-zone="gpu" style="--x:1116;--y:118;--w:196;--h:224"></div>
+    <div class="packet" id="packet"></div>
+  </div>
+  <ol class="rail" id="rail">
+    <li data-stage="init"><b>init</b><span data-i18n="rail.init">set up arm &amp; cameras</span></li>
+    <li data-stage="collect"><b>collect</b><span data-i18n="rail.collect">record episodes</span></li>
+    <li data-stage="export"><b>export</b><span data-i18n="rail.export">LeRobot v3.0 dataset</span></li>
+    <li data-stage="train" class="gpu"><b>lerobot-train</b><span data-i18n="rail.train">on a GPU machine</span></li>
+    <li data-stage="run"><b>run</b><span data-i18n="rail.run">checkpoint on the arm</span></li>
+    <li data-stage="replay"><b>replay</b><span data-i18n="rail.replay">video, joints, chunks</span></li>
+  </ol>
+</section>
+
+<div class="statusline" role="list">
+  <span role="listitem"><i>π0.5 · mlx</i><b>165 ms</b><small data-i18n="st.chunk">/ chunk</small></span>
+  <span role="listitem"><i>teleop</i><b>60 Hz</b></span>
+  <span role="listitem"><i>record</i><b>30 fps</b></span>
+  <span role="listitem"><i>camera age p95</i><b>≤ 40 ms</b></span>
+  <span role="listitem"><i>mlx vs torch</i><b>&lt; 0.1°</b><small data-i18n="st.mean">mean</small></span>
+</div>
+
+<section class="section" id="workflow">
+  <header class="head reveal">
+    <p class="idx">01 / <span data-i18n="wf.kicker">workflow</span></p>
+    <h2 data-i18n="wf.title">One workflow, from teleoperation to a running policy.</h2>
+    <p class="sub" data-i18n="wf.sub">Datasets and checkpoints stay in the LeRobot format. They move between the MacBook and your GPU machine as they are.</p>
+  </header>
+  <div class="steps">
+    <article class="step px reveal"><code>macbot init</code><p data-i18n="wf.s1d">Pick the arm and cameras and check your saved LeRobot calibration. Already have a LeRobot command? Import it with <code>--from-lerobot</code>.</p></article>
+    <article class="step px reveal"><code>macbot collect</code><p data-i18n="wf.s2d">Record with live camera previews and a check of every episode. No arm yet? Try <code>collect --fake</code>.</p></article>
+    <article class="step px reveal"><code>macbot export</code><p data-i18n="wf.s3d">Write a LeRobot v3.0 dataset. <code>health</code> inspects local or Hub datasets in place.</p></article>
+    <article class="step px reveal gpu"><code>lerobot-train</code><p data-i18n="wf.s4d">Train with the standard LeRobot trainer on any GPU machine, then bring the checkpoint back.</p></article>
+    <article class="step px reveal"><code>macbot run</code><p data-i18n="wf.s5d">Load a local or Hub checkpoint and record every trial with cameras and timing.</p></article>
+    <article class="step px reveal"><code>macbot replay</code><p data-i18n="wf.s6d">Align trial video, joint traces and action chunks on one timeline.</p></article>
+  </div>
+</section>
+
+<section class="section ink" id="speed">
+  <header class="head reveal">
+    <p class="idx">02 / <span data-i18n="sp.kicker">speed</span></p>
+    <h2 data-i18n="sp.title">Time per action chunk on a MacBook Pro.</h2>
+    <p class="sub" data-i18n="sp.sub">M5 Pro, 48 GB. π0.5 and SmolVLA run 10 denoising steps, bf16 on PyTorch and fp16 on MLX.</p>
+  </header>
+  <div class="race px" id="race">
+    <div class="race-head">
+      <span class="key"><i class="sw mps"></i>PyTorch MPS</span><span class="key"><i class="sw mlx"></i>MLX</span>
+    </div>
+    <div class="lane" data-ms="270" style="--ms:270" data-kind="mps"><span class="lbl">π0.5</span><div class="track"><div class="bar"></div><em>270 ms</em></div></div>
+    <div class="lane" data-ms="165" style="--ms:165" data-kind="mlx"><span class="lbl"></span><div class="track"><div class="bar"></div><em>165 ms</em></div></div>
+    <div class="lane gap" data-ms="350" style="--ms:350" data-kind="mps"><span class="lbl">π0.5 + RTC</span><div class="track"><div class="bar"></div><em>350 ms</em></div></div>
+    <div class="lane" data-ms="170" style="--ms:170" data-kind="mlx"><span class="lbl"></span><div class="track"><div class="bar"></div><em>170 ms</em></div></div>
+    <div class="lane gap" data-ms="296" style="--ms:296" data-kind="mps"><span class="lbl">SmolVLA</span><div class="track"><div class="bar"></div><em>296 ms</em></div></div>
+    <div class="lane" data-ms="53" style="--ms:53" data-kind="mlx"><span class="lbl"></span><div class="track"><div class="bar"></div><em>53 ms</em></div></div>
+    <div class="lane gap" data-ms="235" style="--ms:235" data-kind="mps"><span class="lbl">X-VLA</span><div class="track"><div class="bar"></div><em>235 ms</em></div></div>
+    <div class="lane" data-kind="none"><span class="lbl"></span><div class="track"><span class="na" data-i18n="sp.na">MLX port in progress</span></div></div>
+    <div class="lane gap" data-ms="25" style="--ms:25" data-kind="mps"><span class="lbl">ACT</span><div class="track"><div class="bar"></div><em>25 ms</em></div></div>
+    <div class="lane" data-kind="none"><span class="lbl"></span><div class="track"><span class="na" data-i18n="sp.na">MLX port in progress</span></div></div>
+    <p class="note" data-i18n="sp.note">Chunk length 50 for π0.5 and SmolVLA, 30 for X-VLA and 100 for ACT. π0.5 uses our fine-tune on recorded observations, SmolVLA the public <code>lerobot/smolvla_base</code>, X-VLA a public SO-101 fine-tune and ACT our trained checkpoint. RTC is Real-Time Chunking guidance. π0.5 needs a Mac with at least 32 GB of memory.</p>
+    <a class="more" href="docs/acceleration/" data-href-zh="docs/acceleration_zh/" data-i18n="sp.more">method and full results →</a>
+  </div>
+</section>
+
+<section class="section" id="console">
+  <header class="head reveal">
+    <p class="idx">03 / <span data-i18n="cs.kicker">console</span></p>
+    <h2 data-i18n="cs.title">A browser console for each stage.</h2>
+  </header>
+  <div class="tabs reveal" role="tablist">
+    <button class="tab" data-shot="collect"><span data-i18n="cs.collect">collect</span><i></i></button>
+    <button class="tab" data-shot="run"><span data-i18n="cs.run">run</span><i></i></button>
+    <button class="tab" data-shot="replay"><span data-i18n="cs.replay">replay</span><i></i></button>
+  </div>
+  <figure class="shot px reveal">
+    <div class="win-bar"><span class="sq"></span><span class="sq"></span><span class="sq"></span><b>127.0.0.1</b></div>
+    <img id="shot" src="img/collect_en.jpg" alt="The macbot console">
+    <figcaption id="shotcap"></figcaption>
+  </figure>
+</section>
+
+<section class="section paper2" id="macos">
+  <header class="head reveal">
+    <p class="idx">04 / macOS</p>
+    <h2 data-i18n="mac.title">What it took to run this on macOS.</h2>
+  </header>
+  <div class="fixes reveal">
+    <div class="fix"><h3 data-i18n="mac.c1">CAN under sudo</h3><p data-i18n="mac.c1d">macbot preloads PCBUSB and gives recorded files back to the invoking user.</p></div>
+    <div class="fix"><h3 data-i18n="mac.c2">Camera selection</h3><p data-i18n="mac.c2d">AVFoundation unique IDs keep UVC camera roles separate from iPhone Continuity Camera.</p></div>
+    <div class="fix"><h3 data-i18n="mac.c3">VLA inference</h3><p data-i18n="mac.c3d">A compiled PyTorch MPS path, plus an optional MLX backend for π0.5, π0 and SmolVLA.</p></div>
+    <div class="fix"><h3 data-i18n="mac.c4">Safety</h3><p data-i18n="mac.c4d">Every console starts paused or idle, limits joint speed and range, clamps the gripper force, pauses when a camera stalls and returns to zero slowly before disabling the motors.</p></div>
+  </div>
+</section>
+
+<section class="section" id="support">
+  <header class="head reveal">
+    <p class="idx">05 / <span data-i18n="sup.kicker">support</span></p>
+    <h2 data-i18n="sup.title">What has been tested.</h2>
+  </header>
+  <div class="support reveal">
+    <table class="tbl px">
+      <thead><tr><th data-i18n="sup.robot">Robot</th><th data-i18n="sup.status">Status</th></tr></thead>
+      <tbody>
+        <tr><td>reBot B601-RS + Arm 102</td><td><span class="badge ok" data-i18n="sup.hw">hardware</span></td></tr>
+        <tr><td>SO-100/101, Koch, OMX, OpenArm, YAM</td><td><span class="badge fake" data-i18n="sup.fake">fake mode</span></td></tr>
+        <tr><td data-i18n="sup.sim">SO-101 tabletop in MuJoCo</td><td><span class="badge sim" data-i18n="sup.simb">simulation</span></td></tr>
+      </tbody>
+    </table>
+    <table class="tbl px">
+      <thead><tr><th data-i18n="sup.policy">Policy</th><th data-i18n="sup.status">Status</th></tr></thead>
+      <tbody>
+        <tr><td>ACT, π0.5</td><td><span class="badge ok" data-i18n="sup.verified">verified</span></td></tr>
+        <tr><td>SmolVLA, X-VLA</td><td><span class="badge ok" data-i18n="sup.verified">verified</span></td></tr>
+        <tr><td>Diffusion, VQ-BeT, TD-MPC, π0</td><td><span class="badge fake" data-i18n="sup.runs">runs, tiny checkpoints</span></td></tr>
+        <tr><td>GR00T, Wall-X <span data-i18n="sup.others">and others</span></td><td><span class="badge no" data-i18n="sup.no">not verified</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="sub center reveal"><a class="ul" href="docs/robots/" data-href-zh="docs/robots_zh/" data-i18n="sup.robots">robot support</a> · <a class="ul" href="docs/policies/" data-href-zh="docs/policies_zh/" data-i18n="sup.policies">policy support</a></p>
+</section>
+
+<footer class="foot">
+  <div class="foot-row">
+    <img src="assets/logo-dark.svg" alt="macbot" height="24">
+    <p class="flinks"><a href="https://github.com/MuQY1818/macbot">GitHub</a><a href="https://pypi.org/project/macbot/">PyPI</a><a href="docs/" data-i18n="nav.docs">docs</a><a href="https://github.com/MuQY1818/macbot/blob/main/CHANGELOG.md">changelog</a></p>
+  </div>
+  <p class="ack" data-i18n="foot.text">Built on LeRobot. π0.5 and the augmentation recipe come from openpi, Real-Time Chunking from Black et al., 2025. The reBot arms are by Seeed Studio. Apache-2.0.</p>
+</footer>
+
+<script src="main.js"></script>
+</body>
+</html>
