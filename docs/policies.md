@@ -1,140 +1,139 @@
-# LeRobot policies on macOS
+# Policies
 
 [简体中文](policies.zh.md)
 
-`macbot policies` shows the LeRobot 0.7.0 policy registry and the available test evidence.
-ACT and π0.5 use their original wrappers and defaults. Other policy types use the generic
-PyTorch adapter; pass `--policy-impl generic` to opt into that adapter for ACT or π0.5.
+macbot runs LeRobot 0.7.0 checkpoints. Every policy runs on PyTorch with the Apple GPU (MPS). Some also have an
+MLX backend, which is usually faster. This page lists what works today and how to bring your own checkpoint.
+[Acceleration](acceleration.md) explains how the MLX backends are checked and has the full measurements.
 
-`run` and `bench` accept `--backend auto` or `policy: {backend: auto}` in YAML.
-`policies` lists implemented backends independently of installed extras and
-[lossless qualification](acceleration.md#automatic-backend-selection).
+## Support at a glance
 
-## Bring a checkpoint
+Latency is the median for one policy call on an Apple M5 Pro, from the observation to the action chunk. The two
+numbers are PyTorch MPS and MLX.
 
-Use a local LeRobot `pretrained_model` directory with `config.json`, weights,
-`policy_preprocessor.json`, `policy_postprocessor.json`, and their referenced state files.
-For adapter-only PEFT exports, merge the adapter into the base policy before exporting.
-Install the matching LeRobot extra if the model needs it, for example
-`pip install 'lerobot[diffusion]==0.7.0'`, `pip install 'lerobot[smolvla]==0.7.0'` or
-`pip install 'lerobot[xvla]==0.7.0'`.
-Some models also need their original backbone and tokenizer files. Only use checkpoints and
-dependencies you trust.
+| Policy | MLX | `auto` uses MLX | MPS → MLX (ms) | Checked on |
+|---|---|---|---:|---|
+| ACT | yes | chunk | 16 → 8 | ALOHA, public |
+| π0.5 | yes | chunk, RTC | 270 → 165 | SO-101, public |
+| π0 | yes | chunk, RTC | 368 → 160 | SO-101, public |
+| SmolVLA | yes | chunk | 296 → 53 | base model |
+| X-VLA | yes | chunk | 178 → 138 | SO-101, public |
+| VQ-BeT | yes | no | 7.7 → 4.2 | PushT, public |
+| Diffusion | yes, slower | no | 819 → 1960 | PushT, public |
+| π0-FAST | yes | no | — → 885 | LIBERO, offline |
+| TD-MPC | yes | no | — | tiny, random |
 
-For a six-axis layout with two cameras and a language instruction, adapt the following to the
-checkpoint's actual features. `save_size` is `[width, height]`, the reverse of the last two
-dimensions in a checkpoint's RGB tensor. If camera names already match the checkpoint suffixes,
-omit `camera_map`. Use a full key for nonstandard names such as `observation.image`.
+`auto` picks MLX only where MLX has matched PyTorch on a trained checkpoint of that architecture, in the listed
+modes. Everywhere else it stays on PyTorch, and you can still ask for MLX with `--backend mlx`.
 
-```yaml
-robot: {type: lerobot, follower: {type: so101_follower}}
-task: {name: demo, instruction: "put the cube in the box"}
-cameras:
-  top: {type: uvc, save_size: [256, 256]}
-  wrist: {type: uvc, save_size: [256, 256]}
-policy:
-  camera_map: {top: camera1, wrist: camera2}
-```
+- **VQ-BeT** on MLX matches PyTorch to 0.0002 pixels when both run on the CPU. On the GPU, small float32
+  differences in the convolutions change about 0.3 pixels of a 512-pixel action on average, so `auto` leaves it on
+  PyTorch.
+- **Diffusion** on MLX is correct but slower than PyTorch for the 100-step public checkpoint. Use PyTorch.
+- **π0-FAST** on MLX decodes actions, but its action tokens differ from PyTorch's. The test checkpoint outputs
+  end-effector actions, so it ran in an offline harness, not on an arm. PyTorch latency was not measured.
+- **TD-MPC** has no public checkpoint in the LeRobot 0.7 format, so only the data path is tested.
 
-```bash
-macbot policies
-macbot --config robot.yaml bench --policy path/to/pretrained_model --profile
-macbot --config robot.yaml run --policy path/to/pretrained_model --fake --autostart 3
-```
+Gaussian actor and Multi-Task DiT run on PyTorch and were tested with tiny random checkpoints. GR00T, WALL-X and
+WALL-OSS need checkpoints and backbone files that have not been tried. The remaining LeRobot types (`cosmos3_edge`, `cosmos3_nano`, `dm05`, `eo1`, `evo1`, `fastwam`, `fineart_vla`, `flux3`,
+`g05`, `lawam`, `lingbot_va`, `lingbot_vla_v2`, `longwam`, `molmoact2`, `vla_jepa`) load through LeRobot's factory,
+but no checkpoint of theirs has been run. `macbot policies` prints the same table for your installation.
 
-For `lerobot/smolvla_base`, include a third 256 × 256 camera mapped to `camera3`.
-The SmolVLA MLX backend supports the stock SmolVLM2-500M geometry and chunk execution.
-The public base checkpoint qualifies for automatic selection in the tested configuration.
-For the tested two-camera X-VLA checkpoint, map `top` and `wrist` to `image` and `image2`.
+A result on one checkpoint does not carry over to every checkpoint of the same type. Benchmark yours with
+`macbot bench` before you rely on it.
 
-The π0 `--backend mlx` path accepts a stock 224px PaliGemma 2B checkpoint with absolute actions
-and uses `policy.camera_map` and the saved processors. It provides `--mode chunk` and
-guided `--mode rtc`, and defaults to chunks. `--backend auto` selects compiled MLX for compatible
-π0 and π0.5 checkpoints in both modes based on the [recorded comparisons](acceleration.md#π0-on-recorded-observations).
+## Bring your checkpoint
 
-`bench` measures observation conversion through action output. Use `--device cpu` for a
-CPU comparison. `--profile` adds a separate synchronized pass for observation conversion,
-preprocessing, model inference, postprocessing and copying the result. In `run`, `--mode auto`
-plays synchronous chunks when LeRobot declares direct chunk inference (`--k` limits playback),
-or calls `select_action` once per policy tick (`record.fps × speed`) when LeRobot needs history
-or owns the action queue. Each start resets policy and processor state. Generic inference
-does not use async, temporal ensembling or RTC.
+You need a LeRobot `pretrained_model` folder: `config.json`, the weights, `policy_preprocessor.json`,
+`policy_postprocessor.json` and the state files they refer to. Merge PEFT adapters into the base policy before you
+export. Install the LeRobot extra the model needs, for example `pip install 'lerobot[smolvla]==0.7.0'`. Only use
+checkpoints and dependencies you trust.
 
-The checkpoint's processed actions must be **absolute joint positions**, in the same order
-and units as the robot. A matching width does not establish those semantics. For real hardware,
-set `policy.action_space: joint_position` after confirming them. macbot does not do inverse
-kinematics or translate between joint conventions. Known end-effector layouts, missing required
-cameras, extra sensor modalities and non-finite outputs are rejected. Explicit model padding
-cameras are left to the policy to create and mask. The original ACT/π0.5 paths are unaffected.
+1. **Check the actions.** The checkpoint must output absolute joint positions, in the same order and units as your
+   arm. macbot rejects known end-effector layouts and a state or action width that does not match the arm, but a
+   matching width does not prove the meaning. Once you have confirmed it, set `policy.action_space: joint_position`.
 
-## Coverage
+2. **Map the cameras.** Name each camera in your config and map it to the checkpoint's image key. `save_size` is
+   `[width, height]`. You can leave out `camera_map` when the names already match.
 
-There are three levels. “Verified” means a public trained checkpoint ran on MPS and produced a
-fake-arm rollout, or the policy uses a stock wrapper with separate verification. “Runs” means the
-data path was exercised on MPS with a tiny or random-weight checkpoint, so latency and accuracy
-for a trained model of that type are still unmeasured. “Not verified” means nothing was executed.
-None of this means other checkpoints of the same type are interchangeable. The LeRobot factory resolved model classes for all 29 registered types
-on this installation. Loading a class does not load or execute weights.
+    ```yaml
+    robot: {type: lerobot, follower: {type: so101_follower}}
+    task: {name: demo, instruction: "put the cube in the box"}
+    cameras:
+      top: {type: uvc, save_size: [256, 256]}
+      wrist: {type: uvc, save_size: [256, 256]}
+    policy:
+      camera_map: {top: camera1, wrist: camera2}
+    ```
 
-| Policy types | Status and scope |
+3. **Measure, then try it without the arm.**
+
+    ```bash
+    CKPT=path/to/pretrained_model
+    macbot --config robot.yaml bench --policy "$CKPT" --backend auto --profile
+    macbot --config robot.yaml run --policy "$CKPT" --backend auto --fake --autostart 3
+    ```
+
+    `bench` feeds blank images and never opens a camera or the arm. `--profile` adds a separate pass that times
+    preprocessing, inference and postprocessing. `--fake` runs the whole loop against a simulated arm.
+
+`--policy` also takes a Hub ID such as `owner/model@revision`.
+
+### Notes for some policies
+
+| Policy | What to know |
 |---|---|
-| `act` | Verified stock Torch wrapper and MLX chunks. The public 14D ALOHA layout qualifies for `auto` in chunk mode. |
-| `pi05` | Verified stock Torch and MLX wrappers. |
-| `diffusion`, `vqbet`, `tdmpc`, `gaussian_actor` | Runs with the tiny offline checkpoints below. Gaussian actor was tested with continuous actions. |
-| `pi0` | Runs with a six-joint random checkpoint using the 2B PaliGemma prefix. The 300M prefix fails on both devices because vision and text embedding widths differ. |
-| `pi0_fast` | Loaded and generated tokens on CPU and MPS with a local tokenizer bundle. Both produced random tokens that failed FAST action decoding; no compatible trained checkpoint was tested. |
-| `smolvla` | Verified with `lerobot/smolvla_base`: three RGB inputs, six state/action values, 50-step chunks. |
-| `xvla` | Verified Torch and MLX chunks with `whosricky/xvla-so101-pick-red-cube-2cam`. The `ee6d` base and RTC are unsupported. |
-| `groot` | Not verified. GR00T N1.7 needs native base assets plus a compatible embodiment and saved processors. |
-| `wall_x`, `wall_oss_05` | Not verified. Separate model families; require a compatible checkpoint and its matching backbone and processors. |
-| `cosmos3_edge`, `cosmos3_nano`, `dm05`, `eo1`, `evo1`, `fineart_vla`, `g05`, `lawam`, `lingbot_vla_v2`, `molmoact2`, `vla_jepa` | Factory import only. No robot-specific checkpoint and backbone were exercised. |
-| `fastwam`, `flux3`, `lingbot_va`, `longwam` | Factory import only. Video or action history and checkpoint-specific processor behavior need separate validation. |
-| `multi_task_dit` | Runs with a tiny DDIM checkpoint and a local random CLIP model and tokenizer. |
+| ACT | Runs with temporal ensembling by default, which stays on PyTorch. `--mode chunk` lets `auto` use MLX. |
+| π0.5 | Needs at least 32 GB of memory. Supports RTC with `--mode rtc` on both backends. |
+| π0 | Supports RTC with `--mode rtc` on MLX only. |
+| π0, π0-FAST | Use the gated PaliGemma tokenizer. If your account has no access, set `MACBOT_PALIGEMMA_TOKENIZER` to a local PaliGemma `tokenizer.model`. |
+| SmolVLA | `lerobot/smolvla_base` expects three 256 × 256 cameras, mapped to `camera1`, `camera2` and `camera3`. |
+| X-VLA | The tested checkpoint uses two cameras mapped to `image` and `image2`. RTC and the `ee6d` base model are not supported. |
+| VQ-BeT, TD-MPC | Take one camera. TD-MPC names it `observation.image`, so map it with the full key. VQ-BeT needs a trained residual VQ for useful actions. |
 
-The measurements shown below did not require `PYTORCH_ENABLE_MPS_FALLBACK`. If an untested
-checkpoint hits an unsupported PyTorch MPS operator, try `--device cpu`. To diagnose a possible
-CPU fallback separately, set `PYTORCH_ENABLE_MPS_FALLBACK=1` **before** launching macbot
-and check the operator warnings. Fallback cannot fix a missing model asset, shape mismatch,
-or float64 created and used inside a model. The adapter overrides standard device-processor
-steps and converts their explicit float64 setting to float32 on MPS.
+ACT and π0.5 use their original LeRobot wrappers. Other types go through a generic adapter that calls LeRobot's
+`select_action` or chunk inference; `--policy-impl generic` uses the adapter for ACT and π0.5 too. The generic
+adapter does not do async execution, temporal ensembling or RTC.
 
-## MPS measurements
+## If a model fails on MPS
 
-MacBook Pro, Apple M5 Pro (48 GiB), macOS 27.0.1, PyTorch 2.11.0, LeRobot 0.7.0,
-Python 3.12. All generic timings include saved processors and transfer to CPU; no hardware was
-connected. The paired sweep uses five warm-ups, then 30 calls for tiny policies, 15 for
-SmolVLA and X-VLA, or five for π0, on deterministic synthetic RGB and state. CPU uses fp32 and four threads.
-For the error pass, both devices use the same CPU normal
-draws and categorical sampling; the latency pass uses native sampling. Memory is peak process
-RSS, not a GPU allocator peak. Step timings mix queue hits and the more expensive replans.
+Try `--device cpu` first to see whether the problem is specific to MPS. To let PyTorch run unsupported operators on
+the CPU, set `PYTORCH_ENABLE_MPS_FALLBACK=1` before you start macbot and watch for operator warnings. The fallback
+cannot fix a missing model file, a shape mismatch or float64 math inside the model. None of the measurements on
+these pages needed the fallback.
 
-| Policy / checkpoint | Execution | MPS median / p90 (ms) | CPU median / p90 (ms) | Max absolute action difference | MPS peak RSS (GiB) |
-|---|---|---:|---:|---:|---:|
-| ACT, tiny | Generic, 3-step chunk | 7.21 / 7.93 | 6.02 / 6.16 | 1.31e-6 | 0.66 |
-| Diffusion, tiny DDIM | Step, replan every 3 calls | 1.44 / 22.24 | 0.11 / 12.43 | 3.10e-6 | 0.80 |
-| VQ-BeT, tiny | Step, replan every 3 calls | 1.18 / 7.26 | 0.07 / 4.71 | 2.38e-7 | 0.69 |
-| TDMPC, tiny | Step, replan every 2 calls | 5.30 / 9.42 | 1.06 / 2.23 | 2.38e-7 | 0.64 |
-| Gaussian actor, tiny | Step, continuous | 3.70 / 3.97 | 0.60 / 0.67 | 4.77e-7 | 0.62 |
-| Multi-Task DiT, tiny DDIM | Step, replan every 3 calls | 1.74 / 7.63 | 0.12 / 1.47 | 4.77e-7 | 0.64 |
-| π0, random 2B prefix, fp32, two denoising steps | 3-step chunk | 490.01 / 492.80 | 2150.15 / 2219.61 | 2.68e-6 | 16.74 |
-| SmolVLA, official base | 50-step chunk | 297.80 / 309.43 | 1126.30 / 1164.04 | 0.0316 | 3.38 |
-| X-VLA, SO-101 two-camera fine-tune | 30-step chunk | 181.89 / 205.54 | 6226.21 / 7688.11 | 1.22 | 4.93 |
+??? note "Generic adapter: MPS against CPU"
 
-These random-weight runs verified the data path, not task performance. VQ-BeT and TDMPC each
-require one camera; TDMPC uses `observation.image`. VQ-BeT needs a trained Residual VQ for
-meaningful actions. Existing stock π0.5 numbers are in [inference benchmarks](acceleration.md).
-SmolVLA uses bf16 in its vision-language backbone, and X-VLA uses its saved bf16 configuration
-on MPS. These paired differences against fp32 are in the output units of each checkpoint.
-Compare them to your application's tolerance before using the Mac backend on hardware.
+    MacBook Pro with an Apple M5 Pro (48 GiB), macOS 27.0.1, PyTorch 2.11.0, LeRobot 0.7.0 and Python 3.12. Each
+    timing includes the saved processors and the copy back to the CPU. Five warm-ups, then 30 calls for tiny
+    policies, 15 for SmolVLA and X-VLA and five for π0, on fixed synthetic images and state. The CPU runs float32
+    on four threads. For the action difference, both devices use the same random draws. Step timings mix calls
+    served from the action queue with calls that replan.
 
-To repeat a tiny checkpoint sweep from the source checkout:
+    | Policy / checkpoint | Execution | MPS median / p90 (ms) | CPU median / p90 (ms) | Max action difference | Peak RSS (GiB) |
+    |---|---|---:|---:|---:|---:|
+    | ACT, tiny | 3-step chunk | 7.21 / 7.93 | 6.02 / 6.16 | 1.31e-6 | 0.66 |
+    | Diffusion, tiny DDIM | replan every 3 calls | 1.44 / 22.24 | 0.11 / 12.43 | 3.10e-6 | 0.80 |
+    | VQ-BeT, tiny | replan every 3 calls | 1.18 / 7.26 | 0.07 / 4.71 | 2.38e-7 | 0.69 |
+    | TD-MPC, tiny | replan every 2 calls | 5.30 / 9.42 | 1.06 / 2.23 | 2.38e-7 | 0.64 |
+    | Gaussian actor, tiny | continuous | 3.70 / 3.97 | 0.60 / 0.67 | 4.77e-7 | 0.62 |
+    | Multi-Task DiT, tiny DDIM | replan every 3 calls | 1.74 / 7.63 | 0.12 / 1.47 | 4.77e-7 | 0.64 |
+    | π0, random 2B prefix, two denoising steps | 3-step chunk | 490.01 / 492.80 | 2150.15 / 2219.61 | 2.68e-6 | 16.74 |
+    | SmolVLA, official base | 50-step chunk | 297.80 / 309.43 | 1126.30 / 1164.04 | 0.0316 | 3.38 |
+    | X-VLA, SO-101 two-camera | 30-step chunk | 181.89 / 205.54 | 6226.21 / 7688.11 | 1.22 | 4.93 |
 
-```bash
-python -m tools.tiny_policies diffusion /tmp/diffusion
-# Use two 64 × 64 cameras named top and wrist in robot.yaml.
-for device in cpu mps; do
-  PYTORCH_ENABLE_MPS_FALLBACK=0 python -m tools.policy_sweep /tmp/diffusion \
-    --config robot.yaml --device "$device" --out "/tmp/diffusion-$device.npy"
-done
-python -c 'import numpy as n; print(abs(n.load("/tmp/diffusion-cpu.npy")-n.load("/tmp/diffusion-mps.npy")).max())'
-```
+    The tiny and random-weight runs check the data path, not task performance. SmolVLA and X-VLA keep their saved
+    bf16 settings on MPS, so their differences from float32 are larger. Differences are in each checkpoint's action
+    units.
+
+    To repeat a tiny sweep from a source checkout:
+
+    ```bash
+    python -m tools.tiny_policies diffusion /tmp/diffusion
+    # Use two 64 × 64 cameras named top and wrist in robot.yaml.
+    for device in cpu mps; do
+      PYTORCH_ENABLE_MPS_FALLBACK=0 python -m tools.policy_sweep /tmp/diffusion \
+        --config robot.yaml --device "$device" --out "/tmp/diffusion-$device.npy"
+    done
+    python -c 'import numpy as n; print(abs(n.load("/tmp/diffusion-cpu.npy")-n.load("/tmp/diffusion-mps.npy")).max())'
+    ```

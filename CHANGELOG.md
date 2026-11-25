@@ -9,13 +9,25 @@ All notable changes to macbot will be documented here. This project follows
 
 ## [Unreleased]
 
+### Added
+
+- MLX backends for Diffusion, VQ-BeT, TD-MPC and π0-FAST, used with `--backend mlx`. `auto` does not pick them.
+  On the public PushT checkpoint, VQ-BeT runs in 4.2 ms instead of 7.7 ms. Diffusion is slower than PyTorch.
+  π0-FAST decodes actions greedily, but its tokens differ from PyTorch's.
+- `MACBOT_PALIGEMMA_TOKENIZER` points π0 and π0-FAST at a local PaliGemma `tokenizer.model` when the official
+  tokenizer is gated for your account.
+
+### Changed
+
+- `docs/policies.md` is now a support table, and `docs/acceleration.md` explains how backends are checked, with the
+  measurements in collapsible sections.
+
 ## [0.3.6] - 2026-11-24
 
 ### Added
 
 - Add opt-in MLX chunk inference for X-VLA and ACT. Automatic backend selection uses MLX
   for compatible configurations verified on trained checkpoints.
-
 - Project website at https://muqy1818.github.io/macbot/ with the docs, built from `website/` and `docs/`
   by `scripts/build_site.sh` and deployed by the `pages` workflow.
 

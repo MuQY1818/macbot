@@ -15,7 +15,7 @@ class MLXChunkIO:
     supports_rtc = False
     requires_task = True
 
-    def __init__(self, path, task, *, cameras, camera_map=None, joint_count=None):
+    def __init__(self, path, task, *, cameras, camera_map=None, joint_count=None, tokenizer=None):
         import torch
         from lerobot.configs import PreTrainedConfig
         from lerobot.policies.factory import make_pre_post_processors
@@ -37,6 +37,8 @@ class MLXChunkIO:
         self.H = config.n_action_steps
         pre, steps = _processor_overrides(path, "pre", "cpu")
         post, _ = _processor_overrides(path, "post", "cpu")
+        if tokenizer is not None:
+            pre["tokenizer_processor"] = {"tokenizer": tokenizer}
         self.task_keys = {step.get("config", {}).get("task_key", "task") for step in steps
                           if step.get("registry_name") == "tokenizer_processor"
                           or step.get("class", "").endswith(".TokenizerProcessorStep")}

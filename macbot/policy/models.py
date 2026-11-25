@@ -223,6 +223,10 @@ def load_policy(path: Path, device: str, task: str, steps: int | None = None, *,
                 from .mlx_pi0 import PI0MLX
 
                 return PI0MLX(Path(path), task, steps, **io)
+            if typ == "pi0_fast":
+                from .mlx_pi0_fast import PI0FastMLX
+
+                return PI0FastMLX(Path(path), task, **io)
             if steps is not None:
                 sys.exit("--steps is only supported for pi0.5 and MLX pi0")
             if typ == "xvla":
@@ -233,6 +237,11 @@ def load_policy(path: Path, device: str, task: str, steps: int | None = None, *,
                 from .mlx_act import ACTMLX
 
                 return ACTMLX(Path(path), task, **io)
+            if typ in {"diffusion", "tdmpc", "vqbet"}:
+                from .mlx_small import TDMPCMLX, DiffusionMLX, VQBeTMLX
+
+                classes = {"diffusion": DiffusionMLX, "tdmpc": TDMPCMLX, "vqbet": VQBeTMLX}
+                return classes[typ](Path(path), task, **io)
             from .mlx_smolvla import SmolVLAMLX
 
             return SmolVLAMLX(Path(path), task, **io)
@@ -254,7 +263,7 @@ def raw_state_shape(path: Path, cfg: dict) -> list[int] | None:
     """Resolve the raw input width when PI05 metadata describes the padded model state."""
     key = "observation.state"
     shape = ((cfg.get("input_features") or {}).get(key) or {}).get("shape")
-    if cfg.get("type") != "pi05" or not shape or shape != [cfg.get("max_state_dim")]:
+    if cfg.get("type") not in {"pi05", "pi0_fast"} or not shape or shape != [cfg.get("max_state_dim")]:
         return shape
     processor = path / "policy_preprocessor.json"
     if not processor.is_file():
