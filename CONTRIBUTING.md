@@ -40,7 +40,7 @@ macbot --config configs/so101.yaml health --data ~/macbot-data/raw/pick_cube_fak
 In the collection page, press **S** to start and **Enter** to save. For a simulator check, install
 `python -m pip install -e ".[dev,sim]"` and run `macbot --config configs/so101_sim.yaml collect`
 without `--fake`. The pinned scene downloads and executes Python on first use; see the
-[simulation setup](docs/setup.md#local-mujoco-simulator) and [workflow](docs/guide.md#simulation).
+[simulation setup](docs/setup.md#local-mujoco-simulator) and [workflow](docs/guide.md#without-hardware).
 For policy inference, use a checkpoint matching the joint layout and cameras; `run --fake` still runs the real policy.
 
 ## Extending macbot

@@ -1,6 +1,6 @@
 # LeRobot policies on macOS
 
-[简体中文](policies_zh.md)
+[简体中文](policies.zh.md)
 
 `macbot policies` shows the LeRobot 0.7.0 policy registry and the available test evidence.
 ACT and π0.5 use their original wrappers and defaults. Other policy types use the generic

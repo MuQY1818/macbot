@@ -1,6 +1,6 @@
 # Architecture
 
-[简体中文](architecture_zh.md)
+[简体中文](architecture.zh.md)
 
 ```text
 Robot + cameras -> collect -> raw NPZ -> export -> LeRobot dataset

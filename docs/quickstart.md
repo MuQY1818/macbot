@@ -1,90 +1,158 @@
-# First recording on a Mac
+# Quickstart
 
-[简体中文](quickstart_zh.md)
+[简体中文](quickstart.zh.md)
 
-Start with an assembled SO-100/101, Koch, OMX, or reBot B601-RS pair and at least one camera. The wizard
-can identify supported USB adapters, but it cannot discover the arm model or provision individual motors.
-Follow the kit's assembly and motor ID setup first. See [robot support](robots.md) for what's been tested.
+This page takes you from an assembled arm pair to your first saved demonstration.
 
-1. Install Python 3.12 on your Apple silicon Mac (for example, with the Python.org installer). For a UVC
-   webcam, run `xcode-select --install` and let the installation finish. In Terminal, create and activate
-   an environment:
+!!! note "Before you start"
 
-   ```bash
-   python3.12 -m venv ~/.venvs/macbot
-   source ~/.venvs/macbot/bin/activate
-   ```
+    - An Apple silicon Mac.
+    - An assembled leader and follower arm: SO-100/101, Koch, OMX or reBot B601-RS. Finish the kit's assembly and
+      motor ID setup first. macbot recognizes the USB adapter but does not set motor IDs. Tested arms are listed
+      under [Robots](robots.md).
+    - At least one camera.
+    - Using a reBot or an Orbbec camera? Do the extra steps under [Special hardware](#special-hardware) first.
 
-2. Connect and power the arms and plug in the cameras. Start setup:
+## 1. Install
 
-   ```bash
-   pip install macbot
-   macbot init
-   ```
-
-   Confirm the arm model. To distinguish identical adapters, click **Identify by movement**, then gently
-   move only the leader by hand with its torque disabled. If the result is unclear, unplug one USB cable, rescan to
-   identify the remaining adapter, reconnect, and assign the roles manually. Replugging devices with
-   unique USB serial numbers into new sockets preserves their roles. Adapters without unique serials
-   are tied to their selected port; keep them in those sockets and re-run setup if you change the wiring.
-
-3. Assign camera roles from the live previews. Grant camera access in macOS when prompted. The wizard
-   excludes iPhone and Continuity Camera and picks a supported capture mode for each camera. Re-run setup
-   if a UVC camera's unique ID changes after switching sockets.
-
-   ![Camera role selection with two simulated previews](img/init_en.png)
-
-4. For missing calibration, run the command shown for each arm in a separate Terminal with the same
-   environment active. If needed, install `pip install 'lerobot[core-scripts]==0.7.0'` there first.
-   Follow LeRobot's prompts and move the joints by hand. LeRobot saves the files in its normal calibration
-   folder. Return to the wizard, click **Check again**, then **Save and run doctor**. The wizard only reads
-   calibration files; the separate LeRobot command handles calibration.
-
-5. Support the follower, clear the workspace, and match the poses of the arms. Click **Start collection**
-   or stop the wizard with **Ctrl+C** and run:
-
-   ```bash
-   macbot collect
-   ```
-
-   The collection console opens in the browser (or use the link in the wizard). Wait for the teleoperation
-   status. Move the leader to verify tracking.
-   Press **S**, demonstrate the task for at least two seconds, and press **Enter** to save (**←** discards).
-   The first episode appears in the console and under `~/macbot-data/raw/cubes_to_box/`. Use the console's
-   quit control before disconnecting the arms.
-
-The default profile is `~/.config/macbot/config.yaml`; `macbot --config other.yaml collect` still uses that
-explicit file. To try the console without hardware, run `macbot collect --fake`.
-
-Policies must run with the camera framing they were trained with: the same capture mode, crop, and saved
-image size for each role. When migrating, use `macbot init --from existing.yaml` and keep **Keep framing from
-the existing config** selected. Exports store `meta/camera_framing.json`; the training scripts copy it into
-checkpoints. `macbot run` stops before connecting to the robot if known framing differs, unless you explicitly
-pass `--allow-framing-mismatch`. With older checkpoints that lack this information, verify the framing printed at startup.
-
-Each console opens in your default browser, also under `sudo`. A console page left open from an earlier session
-reloads itself instead, so repeated `macbot run` sessions share one tab. Pass `--no-browser` or set
-`MACBOT_NO_BROWSER=1` to only print the URL.
-
-The consoles default to ports 8765 (init), 8766 (collect), 8767 (run), and 8768 (replay). A busy default
-falls back to the next available port, up to nine ports higher. To fix the port, pass `--port` or set
-`init.port`, `teleop.port`, `run.port`, or `replay.port` in YAML. An explicit port must be available.
-
-For an existing calibrated setup, `macbot init --yes` reuses the saved roles and runs doctor. For a fresh serial
-pair, scripts can confirm the setup with `--family so101 --leader-serial … --follower-serial …`; one external
-camera is assigned to `top`. If any role or model is ambiguous or calibration is missing, use the wizard.
-
-For **reBot**, install PCBUSB and follow the [reference procedure](setup.md#2-can-driver-pcan-usb). The wizard
-recognizes the standard PCAN-USB, uses `can0`, and keeps the reference calibration IDs. For **Orbbec**, install
-the SDK before setup. On Python 3.12/3.13 its current PyPI package pins a PyAV version incompatible with
-LeRobot 0.7.0; for color streaming, install macbot first, then `pip install --no-deps pyorbbecsdk2==2.1.3`
-in the same environment. If the SDK requires root, run setup and collection from that environment like this:
+Install Python 3.12, for example with the installer from python.org. If you use a UVC webcam, also run
+`xcode-select --install` once. Then create an environment and install macbot:
 
 ```bash
-export HF_LEROBOT_CALIBRATION="$(python -c 'from lerobot.utils.constants import HF_LEROBOT_CALIBRATION; print(HF_LEROBOT_CALIBRATION)')"
-sudo -E "$(command -v macbot)" init
-sudo -E "$(command -v macbot)" collect
+python3.12 -m venv ~/.venvs/macbot
+source ~/.venvs/macbot/bin/activate
+pip install macbot
 ```
 
-Calibrate from your normal user account. The environment setting points both instances to the same
-LeRobot calibration directory.
+## 2. Run the setup wizard
+
+Connect and power both arms, plug in the cameras and start the wizard:
+
+```bash
+macbot init
+```
+
+The wizard opens in your browser. Confirm the arm model, then tell the two arms apart: click
+**Identify by movement**, then gently move the leader by hand and leave the follower still. The leader's
+torque is disabled, so it moves freely.
+
+??? tip "The wizard cannot tell the two arms apart"
+
+    Unplug one USB cable and rescan. The adapter that remains is the other arm. Plug the cable back in and assign
+    the roles by hand.
+
+    Adapters with a unique USB serial number keep their role in any socket. Adapters without one are tied to the
+    socket you chose, so keep them there or run the wizard again after rewiring.
+
+## 3. Assign the cameras
+
+Pick a role for each camera from the live previews, and allow camera access when macOS asks. The wizard skips
+iPhone and Continuity Camera and chooses a capture mode that each camera supports.
+
+![Camera role selection with two simulated previews](img/init_en.png)
+
+If a UVC camera gets a new ID after you move it to another socket, run the wizard again.
+
+## 4. Calibrate, if the wizard asks
+
+macbot reads LeRobot calibration files but does not calibrate the arms itself. When a file is missing, the wizard
+shows a LeRobot command for each arm.
+
+1. Open a second Terminal, activate the same environment and run the command. If it reports missing packages,
+   run `pip install 'lerobot[core-scripts]==0.7.0'` first.
+2. Follow LeRobot's prompts and move the joints by hand. The files go to LeRobot's usual calibration folder.
+3. Back in the wizard, click **Check again**, then **Save and run doctor**.
+
+## 5. Record your first episode
+
+Support the follower, clear the workspace and bring both arms into the same pose. Click **Start collection** in
+the wizard, or press ++ctrl+c++ and run:
+
+```bash
+macbot collect
+```
+
+The collection console opens in the browser. Wait until it shows that teleoperation is running, then move the
+leader and check that the follower tracks it.
+
+| Key | Action |
+|---|---|
+| ++s++ | Start recording |
+| ++enter++ | Save the episode |
+| ++arrow-left++ | Discard the episode |
+
+Record for at least two seconds. The saved episode appears in the console and under
+`~/macbot-data/raw/cubes_to_box/`. Quit from the console before you unplug the arms.
+
+No hardware at hand? `macbot collect --fake` opens the same console with simulated arms and cameras.
+
+## Next steps
+
+- Check, export and train on your episodes: [Workflow guide](guide.md).
+- Run the trained policy on the robot: [Run a policy](guide.md#5-run-a-policy).
+- Make the policy faster on your Mac: [Acceleration](acceleration.md).
+
+## Keep the camera framing
+
+!!! warning "A policy needs the framing it was trained with"
+
+    Each camera role must keep the same capture mode, crop and saved image size between recording and running.
+
+Exports store the framing in `meta/camera_framing.json`, and the training scripts copy it into the checkpoint.
+`macbot run` stops before it connects to the robot when the framing differs. Pass `--allow-framing-mismatch` only
+when you know the difference does not matter. Older checkpoints have no framing record, so compare the framing
+that `macbot run` prints at startup with the one you trained with.
+
+When you move an existing setup to macbot, run `macbot init --from existing.yaml` and keep
+**Keep framing from the existing config** selected.
+
+## Special hardware
+
+??? note "reBot B601-RS (PCAN-USB)"
+
+    Install the PCBUSB driver as described in [Setup](setup.md#can-driver-pcan-usb). The wizard recognizes the
+    standard PCAN-USB adapter, uses `can0` and keeps the reference calibration IDs.
+
+??? note "Orbbec cameras"
+
+    Install the Orbbec SDK before you run the wizard. Its current PyPI package pins a PyAV version that conflicts
+    with LeRobot 0.7.0 on Python 3.12 and 3.13. For color streams, install macbot first and then run, in the same
+    environment:
+
+    ```bash
+    pip install --no-deps pyorbbecsdk2==2.1.3
+    ```
+
+    If the SDK needs root, run the wizard and collection with sudo and point them at your own calibration folder:
+
+    ```bash
+    export HF_LEROBOT_CALIBRATION="$(python -c 'from lerobot.utils.constants import HF_LEROBOT_CALIBRATION; print(HF_LEROBOT_CALIBRATION)')"
+    sudo -E "$(command -v macbot)" init
+    sudo -E "$(command -v macbot)" collect
+    ```
+
+    Run the calibration commands from your normal account.
+
+## Reference
+
+??? note "Configuration file"
+
+    The wizard saves the setup to `~/.config/macbot/config.yaml`. `macbot --config other.yaml collect` uses the
+    given file instead.
+
+??? note "Browser tabs and ports"
+
+    Each console opens in your default browser, also under sudo. A console tab left open from an earlier session
+    reloads instead of opening a new one, so repeated `macbot run` sessions share one tab. Pass `--no-browser` or
+    set `MACBOT_NO_BROWSER=1` to print the URL only.
+
+    The default ports are 8765 for init, 8766 for collect, 8767 for run and 8768 for replay. When one is busy,
+    macbot tries up to nine higher ports. To fix a port, pass `--port` or set `init.port`, `teleop.port`,
+    `run.port` or `replay.port` in the config. An explicit port must be free.
+
+??? note "Setup without the wizard"
+
+    For a calibrated setup that already has a config, `macbot init --yes` reuses the saved roles and runs doctor.
+    For a new serial arm pair, scripts can confirm the setup with
+    `--family so101 --leader-serial … --follower-serial …`, and a single external camera becomes `top`. When the
+    model or a role is ambiguous, or calibration is missing, use the wizard.

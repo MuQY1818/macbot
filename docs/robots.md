@@ -1,17 +1,26 @@
-# Robot support
+# Robots
 
-[简体中文](robots_zh.md)
+[简体中文](robots.zh.md)
 
-| `robot.type` | Robot | Validation in macbot |
+| `robot.type` | Robot | Status |
 |---|---|---|
-| `rebot_b601` | Seeed reBot B601-RS follower and Arm 102 leader | Tested on hardware on Apple silicon. |
-| `lerobot` | SO-100/101, Koch, OMX, OpenArm, YAM and other compatible LeRobot arms | Configured through LeRobot. Fake mode only: the SO-101 collect/export path was exercised; other arms have layout support or can supply `robot.joints`. No hardware validation. |
-| `sim` | SO-101 tabletop in MuJoCo | Keyboard teleoperation (synthetic input completed the task; a person placed one cube by hand), scripted demos, export, ACT training and seeded evaluation run end to end. A trained policy solving the task is not shown. |
+| `rebot_b601` | Seeed reBot B601-RS follower and Arm 102 leader | Tested on hardware on Apple silicon |
+| `lerobot` | SO-100/101, Koch, OMX, OpenArm, YAM and other compatible LeRobot arms | Fake mode only; no hardware validation yet |
+| `sim` | SO-101 tabletop in MuJoCo | Whole workflow runs end to end |
 
-Run `macbot robots` to list registered LeRobot types. The list reflects installed packages;
-it is not a list of validated arms. Generic followers must accept joint-position (`.pos`)
-actions and observe those same joints. A leader used for collection must have the same joint
-names. Policy checkpoints must match the joint order, units and camera inputs.
+- **`lerobot`** arms are configured through LeRobot. In fake mode, the SO-101 collection and export path was exercised.
+  Other arms have a built-in joint layout or can supply `robot.joints`.
+- **`sim`** covers keyboard teleoperation, scripted demonstrations, export, ACT training and seeded evaluation.
+  Synthetic keyboard input completed the task, and a person placed one cube by hand. A trained policy that solves the
+  task has not been shown yet.
+
+!!! note "`macbot robots` is not a list of tested arms"
+
+    `macbot robots` lists the LeRobot types registered by the installed packages, not the arms that have been
+    validated.
+
+Generic followers must accept joint-position (`.pos`) actions and observe those same joints. A leader used for
+collection must have the same joint names. Policy checkpoints must match the joint order, units and camera inputs.
 
 ## reBot B601-RS
 

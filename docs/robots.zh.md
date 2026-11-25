@@ -1,20 +1,26 @@
-# 机械臂支持
+# 机械臂
 
 [English](robots.md)
 
-| `robot.type` | 机械臂 | 在 macbot 中的验证情况 |
+| `robot.type` | 机械臂 | 状态 |
 |---|---|---|
-| `rebot_b601` | Seeed reBot B601-RS 从臂与 Arm 102 主臂 | 已在 Apple 芯片 Mac 上验证真机。 |
-| `lerobot` | SO-100/101、Koch、OMX、OpenArm、YAM，以及其他兼容的 LeRobot 机械臂 | 通过 LeRobot 配置。仅 fake 模式：SO-101 已验证采集和导出；其他型号有内置关节布局或可提供 `robot.joints`。未验证真机。 |
-| `sim` | MuJoCo 中的 SO-101 桌面场景 | 键盘遥操作（合成输入完成任务，真人手动放入一个方块）、脚本示教、导出、ACT 训练和按种子评估已跑通。尚未证明训练出的策略能完成任务。 |
+| `rebot_b601` | Seeed reBot B601-RS 从臂与 Arm 102 主臂 | 已在 Apple 芯片 Mac 上实机测试 |
+| `lerobot` | SO-100/101、Koch、OMX、OpenArm、YAM，以及其他兼容的 LeRobot 机械臂 | 仅在假硬件模式下验证，尚未实机验证 |
+| `sim` | MuJoCo 中的 SO-101 桌面场景 | 整个工作流程端到端跑通 |
 
-运行 `macbot robots` 可列出已注册的 LeRobot 类型。列表取决于已安装的包，不代表验证结果。
+- **`lerobot`** 机械臂通过 LeRobot 配置。假硬件模式下已验证 SO-101 的采集和导出；其他型号有内置的关节布局，或者可以自己提供 `robot.joints`。
+- **`sim`** 已跑通键盘遥操作、脚本示范、导出、ACT 训练和按种子评测。合成的键盘输入完成了任务，真人手动放入了一个方块。训练出的策略能否完成任务，目前还没有验证。
+
+!!! note "`macbot robots` 不是已测试机械臂的列表"
+
+    `macbot robots` 列出的是已安装的包注册的 LeRobot 类型，不代表这些机械臂已经验证过。
+
 通用从臂必须接受关节位置（`.pos`）动作，并能观测这些关节。用于采集的主臂必须有相同的关节名。
-策略检查点必须和关节顺序、单位及相机输入匹配。
+策略权重必须和关节顺序、单位及相机输入匹配。
 
 ## reBot B601-RS
 
-从 [`configs/example.yaml`](../configs/example.yaml) 和[安装指南](setup_zh.md)开始。
+从 [`configs/example.yaml`](../configs/example.yaml) 和[环境配置](setup.zh.md)开始。
 参考配置通过 PCBUSB 使用 PCAN-USB，并自动检测 Arm 102 的串口。重力前馈另需 URDF。
 
 ```yaml
@@ -46,7 +52,7 @@ Koch 使用 `koch_follower` 和 `koch_leader`，OMX 使用 `omx_follower` 和 `o
 
 ## 本地仿真
 
-安装、键盘遥操作、脚本示教和策略评估见[仿真指南](simulation_zh.md)。
+安装、键盘遥操作、脚本示教和策略评估见[仿真指南](simulation.zh.md)。
 完整的 [`configs/so101_sim.yaml`](../configs/so101_sim.yaml) 保留正弦输入，用于快速检查流程。
 采集不加 `--fake`，各频率须与场景匹配。首次运行会下载并执行固定版本的 EnvHub Python 代码。
 
@@ -66,7 +72,7 @@ cameras:
 
 `macbot init` 检查标定文件并提供对应命令。请单独运行 `lerobot-calibrate`，使用相同的设备类型、串口、ID
 及可选的 `calibration_dir`。从臂使用 `--robot.*`，主臂使用 `--teleop.*`，命令见
-[安装指南](setup_zh.md)。macbot 以 `calibrate=False` 连接。无实体领臂的仿真和 fake 模式不需要标定。
+[环境配置](setup.zh.md)。macbot 以 `calibrate=False` 连接。无实体领臂的仿真和 fake 模式不需要标定。
 
 运行 `macbot --config my.yaml doctor` 检查所选配置。对于通用机械臂，
 它检查驱动导入、配置中的串口路径和标定文件是否存在，不打开设备。

@@ -1,6 +1,6 @@
 # Versioning and releases
 
-[简体中文](releasing_zh.md)
+[简体中文](releasing.zh.md)
 
 macbot follows [Semantic Versioning](https://semver.org/) with the usual rule for 0.x projects. A version
 is `MAJOR.MINOR.PATCH`.

@@ -5,7 +5,7 @@
 macbot 的主要变更记录在这里。本项目遵循
 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 和
 [语义化版本](https://semver.org/lang/zh-CN/)。版本号各位的含义和升级时机见
-[docs/releasing_zh.md](docs/releasing_zh.md)。
+[docs/releasing.zh.md](docs/releasing.zh.md)。
 
 ## [Unreleased]
 
@@ -118,7 +118,7 @@ macbot 的主要变更记录在这里。本项目遵循
   属于有损选项，请先在自己的 checkpoint 上评测。
 - `tools/accel/`：矩阵乘形状测速、其他求解器（二次时间网格、AB2、中点法），以及按注意力丢弃图像 token，
   仅供离线研究。
-- 版本号与发版规则（`docs/releasing_zh.md`）。
+- 版本号与发版规则（`docs/releasing.zh.md`）。
 
 ### 变更
 
@@ -137,7 +137,7 @@ macbot 的主要变更记录在这里。本项目遵循
   `--steps` 可设更短的去噪步数。
 - `tools/accel/`：离线保真度评测工具，从采集的数据里抽固定观测集，用相同噪声对比任意配置，
   报告延迟和动作误差，并以换种子的差异为标尺。
-- 推理基准文档（`docs/acceleration.md`、`docs/acceleration_zh.md`）。
+- 推理基准文档（`docs/acceleration.md`、`docs/acceleration.zh.md`）。
 
 ### 修复
 

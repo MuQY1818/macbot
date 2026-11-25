@@ -20,8 +20,10 @@ theme:
       accent: custom
       toggle: { icon: material/weather-sunny, name: Light mode }
   features:
-    - navigation.tabs
     - navigation.sections
+    - navigation.indexes
+    - navigation.footer
+    - toc.follow
     - navigation.top
     - content.code.copy
     - search.highlight
@@ -29,39 +31,72 @@ extra_css:
   - assets/macbot.css
 markdown_extensions:
   - admonition
+  - pymdownx.details
+  - pymdownx.tabbed: { alternate_style: true }
+  - pymdownx.keys
+  - def_list
   - tables
   - sane_lists
   - attr_list
+  - md_in_html
   - pymdownx.highlight
   - pymdownx.superfences
-  - toc: { permalink: true }
+  - toc:
+      permalink: true
+      slugify: !!python/object/apply:pymdownx.slugs.slugify { kwds: { case: lower } }
 validation:
   links:
     not_found: info
+    anchors: warn
     unrecognized_links: info
     absolute_links: info
 extra:
   homepage: ../
+hooks:
+  - scripts/mkdocs_hooks.py
+plugins:
+  - search
+  - i18n:
+      docs_structure: suffix
+      fallback_to_default: true
+      reconfigure_material: true
+      reconfigure_search: true
+      languages:
+        - locale: en
+          default: true
+          name: English
+          build: true
+        - locale: zh
+          name: 简体中文
+          build: true
+          site_name: macbot 文档
+          nav_translations:
+            Get started: 开始使用
+            Home: 首页
+            Quickstart: 快速开始
+            Migrate from Linux: 从 Linux 迁移
+            Setup: 环境配置
+            Use macbot: 使用
+            Workflow guide: 工作流程
+            Robots: 机械臂
+            Policies: 策略
+            Acceleration: 加速
+            Simulation: 仿真
+            Contributing: 参与开发
+            Architecture: 架构
+            Releasing: 发布
 nav:
-  - English:
+  - Home: index.md
+  - Get started:
       - Quickstart: quickstart.md
       - Migrate from Linux: migrate.md
       - Setup: setup.md
+  - Use macbot:
       - Workflow guide: guide.md
       - Robots: robots.md
       - Policies: policies.md
       - Acceleration: acceleration.md
       - Simulation: simulation.md
+  - Contributing:
       - Architecture: architecture.md
       - Releasing: releasing.md
-  - 中文:
-      - 快速开始: quickstart_zh.md
-      - 从 Linux 迁移: migrate_zh.md
-      - 环境配置: setup_zh.md
-      - 工作流程: guide_zh.md
-      - 机械臂: robots_zh.md
-      - 策略: policies_zh.md
-      - 加速: acceleration_zh.md
-      - 仿真: simulation_zh.md
-      - 架构: architecture_zh.md
-      - 发布: releasing_zh.md
