@@ -110,7 +110,7 @@ When you move an existing setup to macbot, run `macbot init --from existing.yaml
 
 ??? note "reBot B601-RS (PCAN-USB)"
 
-    Install the PCBUSB driver as described in [Setup](setup.md#2-can-driver-pcan-usb). The wizard recognizes the
+    Install the PCBUSB driver as described in [Setup](setup.md#can-driver-pcan-usb). The wizard recognizes the
     standard PCAN-USB adapter, uses `can0` and keeps the reference calibration IDs.
 
 ??? note "Orbbec cameras"

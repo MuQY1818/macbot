@@ -45,3 +45,4 @@
 
 .md-typeset kbd { font-size: .72rem; }
 .md-nav__item--section > .md-nav__link { font-weight: 700; color: var(--md-default-fg-color); }
+.md-typeset table:not([class]) td:first-child code, .md-typeset table:not([class]) th code { white-space: nowrap; word-break: keep-all; }

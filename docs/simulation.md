@@ -1,4 +1,4 @@
-# SO-101 simulation
+# Simulation
 
 [简体中文](simulation.zh.md)
 

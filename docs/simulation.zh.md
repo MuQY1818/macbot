@@ -1,4 +1,4 @@
-# SO-101 仿真
+# 仿真
 
 [English](simulation.md)
 

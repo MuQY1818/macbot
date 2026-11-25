@@ -93,7 +93,7 @@ macbot collect
 
 ??? note "reBot B601-RS（PCAN-USB）"
 
-    按[环境配置](setup.zh.md#2-can-驱动pcan-usb)安装 PCBUSB 驱动。向导能识别标准的 PCAN-USB 适配器，使用 `can0`，并保留参考配置里的标定 ID。
+    按[环境配置](setup.zh.md#can-驱动pcan-usb)安装 PCBUSB 驱动。向导能识别标准的 PCAN-USB 适配器，使用 `can0`，并保留参考配置里的标定 ID。
 
 ??? note "Orbbec 相机"
 
