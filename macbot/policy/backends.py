@@ -19,10 +19,13 @@ class Backend(NamedTuple):
 CHUNK = frozenset({"chunk", "ensemble", "async"})
 MLX_BACKENDS = {
     "act": Backend("mlx", CHUNK),
+    "diffusion": Backend("mlx", CHUNK),
     "pi0": Backend("mlx", CHUNK | {"rtc"}),
     "pi0_fast": Backend("mlx", CHUNK),
     "pi05": Backend("mlx", CHUNK | {"rtc"}),
     "smolvla": Backend("mlx", CHUNK),
+    "tdmpc": Backend("mlx", CHUNK),
+    "vqbet": Backend("mlx", CHUNK),
     "xvla": Backend("mlx", CHUNK),
 }
 

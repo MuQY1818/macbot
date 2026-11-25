@@ -237,6 +237,11 @@ def load_policy(path: Path, device: str, task: str, steps: int | None = None, *,
                 from .mlx_act import ACTMLX
 
                 return ACTMLX(Path(path), task, **io)
+            if typ in {"diffusion", "tdmpc", "vqbet"}:
+                from .mlx_small import TDMPCMLX, DiffusionMLX, VQBeTMLX
+
+                classes = {"diffusion": DiffusionMLX, "tdmpc": TDMPCMLX, "vqbet": VQBeTMLX}
+                return classes[typ](Path(path), task, **io)
             from .mlx_smolvla import SmolVLAMLX
 
             return SmolVLAMLX(Path(path), task, **io)

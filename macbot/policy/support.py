@@ -14,12 +14,12 @@ BUILTINS = (
 
 STATUS = {
     "act": ("verified", "Torch and full-precision MLX chunks on trained checkpoints"),
-    "diffusion": ("runs, tiny checkpoint", "generic select_action; tiny DDIM checkpoint"),
+    "diffusion": ("runs, tiny checkpoint", "Torch generic and explicit MLX; tiny DDIM checkpoint"),
     "gaussian_actor": ("runs, tiny checkpoint", "generic select_action; continuous actions"),
     "pi0": ("runs, random weights", "torch generic chunks; MLX port has no trained-checkpoint verification"),
     "pi0_fast": ("runs, trained checkpoint pending fidelity", "MLX greedy FAST path is implemented; trained parity is pending"),
-    "tdmpc": ("runs, tiny checkpoint", "generic select_action; one camera named observation.image"),
-    "vqbet": ("runs, tiny checkpoint", "generic select_action; one camera"),
+    "tdmpc": ("runs, tiny checkpoint", "Torch generic and explicit MLX; one camera named observation.image"),
+    "vqbet": ("runs, tiny checkpoint", "Torch generic and explicit MLX; one camera"),
     "pi05": ("verified", "built-in PyTorch MPS and MLX wrappers"),
     "smolvla": ("verified", "official base checkpoint: torch and MLX chunks; see auto limits"),
     "xvla": ("verified", "Torch and MLX chunks on a public SO-101 joint checkpoint; no RTC"),
