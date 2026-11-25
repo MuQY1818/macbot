@@ -9,6 +9,7 @@ All notable changes to macbot will be documented here. This project follows
 
 ## [Unreleased]
 
+- Add explicit MLX inference wiring for LeRobot `pi0_fast` checkpoints, including greedy FAST token decoding and DCT action reconstruction. The trained public parity check remains pending, so automatic selection stays on PyTorch.
 ## [0.3.6] - 2026-11-24
 
 ### Added

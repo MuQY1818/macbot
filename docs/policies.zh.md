@@ -69,8 +69,8 @@ macbot --config robot.yaml run --policy path/to/pretrained_model --fake --autost
 | `act` | 原有 Torch 封装和 MLX 分块均已验证。公开 14 维 ALOHA 布局通过 `auto` 分块验证。 |
 | `pi05` | 原有 Torch 和 MLX 封装均已验证。 |
 | `diffusion`、`vqbet`、`tdmpc`、`gaussian_actor` | 能运行，用下表中的离线小模型跑通。GaussianActor 测试的是连续动作。 |
-| `pi0` | 能运行，用 2B PaliGemma 前缀、六关节的随机权重 checkpoint 跑通。300M 前缀的视觉和文本嵌入维度不同，两端都会报错。 |
-| `pi0_fast` | 用本地分词器在 CPU 和 MPS 加载并生成 token，两端的随机输出都未通过 FAST 动作解码，未验证匹配机械臂的训练权重。 |
+| `pi0` | 用公开 `lerobot/pi0_libero_finetuned_v044` checkpoint 跑通显式 MLX 路径；tokenizer 和 fp32 对照待完成，因此不作为 `auto` 资格。 |
+| `pi0_fast` | 用公开 `lerobot/pi0fast-libero` checkpoint 跑通显式 MLX 路径；训练 token 尚未逐项一致，因此 `auto` 保持 PyTorch。 |
 | `smolvla` | 用 `lerobot/smolvla_base` 验证：三路 RGB、六维状态与动作，50 步动作块。 |
 | `xvla` | 用 `whosricky/xvla-so101-pick-red-cube-2cam` 验证了 Torch 和 MLX 分块。`ee6d` 基座和 RTC 不支持。 |
 | `groot` | 未验证。GR00T N1.7 需要原生底座、对应机械臂本体及保存的处理器。 |

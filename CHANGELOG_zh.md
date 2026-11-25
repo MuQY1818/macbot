@@ -9,6 +9,7 @@ macbot 的主要变更记录在这里。本项目遵循
 
 ## [Unreleased]
 
+- 增加 LeRobot `pi0_fast` checkpoint 的显式 MLX 推理接线，包含 greedy FAST token 解码和 DCT 动作重建。训练权重的逐 token 对照仍待完成，因此自动选择继续使用 PyTorch。
 ## [0.3.6] - 2026-11-24
 
 ### 新增

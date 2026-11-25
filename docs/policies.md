@@ -81,8 +81,8 @@ on this installation. Loading a class does not load or execute weights.
 | `act` | Verified stock Torch wrapper and MLX chunks. The public 14D ALOHA layout qualifies for `auto` in chunk mode. |
 | `pi05` | Verified stock Torch and MLX wrappers. |
 | `diffusion`, `vqbet`, `tdmpc`, `gaussian_actor` | Runs with the tiny offline checkpoints below. Gaussian actor was tested with continuous actions. |
-| `pi0` | Runs with a six-joint random checkpoint using the 2B PaliGemma prefix. The 300M prefix fails on both devices because vision and text embedding widths differ. |
-| `pi0_fast` | Loaded and generated tokens on CPU and MPS with a local tokenizer bundle. Both produced random tokens that failed FAST action decoding; no compatible trained checkpoint was tested. |
+| `pi0` | Runs with the public `lerobot/pi0_libero_finetuned_v044` checkpoint through the explicit MLX path; tokenizer and fp32 parity are pending, so the row is not an `auto` qualification. |
+| `pi0_fast` | Runs with the public `lerobot/pi0fast-libero` checkpoint through the explicit MLX path; trained token parity is not verified, so `auto` stays on PyTorch. |
 | `smolvla` | Verified with `lerobot/smolvla_base`: three RGB inputs, six state/action values, 50-step chunks. |
 | `xvla` | Verified Torch and MLX chunks with `whosricky/xvla-so101-pick-red-cube-2cam`. The `ee6d` base and RTC are unsupported. |
 | `groot` | Not verified. GR00T N1.7 needs native base assets plus a compatible embodiment and saved processors. |

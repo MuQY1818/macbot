@@ -17,7 +17,7 @@ STATUS = {
     "diffusion": ("runs, tiny checkpoint", "generic select_action; tiny DDIM checkpoint"),
     "gaussian_actor": ("runs, tiny checkpoint", "generic select_action; continuous actions"),
     "pi0": ("runs, random weights", "torch generic chunks; MLX port has no trained-checkpoint verification"),
-    "pi0_fast": ("not verified", "weights loaded; random tokens failed FAST action decoding"),
+    "pi0_fast": ("runs, trained checkpoint pending fidelity", "MLX greedy FAST path is implemented; trained parity is pending"),
     "tdmpc": ("runs, tiny checkpoint", "generic select_action; one camera named observation.image"),
     "vqbet": ("runs, tiny checkpoint", "generic select_action; one camera"),
     "pi05": ("verified", "built-in PyTorch MPS and MLX wrappers"),

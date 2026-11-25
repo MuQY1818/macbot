@@ -20,6 +20,7 @@ CHUNK = frozenset({"chunk", "ensemble", "async"})
 MLX_BACKENDS = {
     "act": Backend("mlx", CHUNK),
     "pi0": Backend("mlx", CHUNK | {"rtc"}),
+    "pi0_fast": Backend("mlx", CHUNK),
     "pi05": Backend("mlx", CHUNK | {"rtc"}),
     "smolvla": Backend("mlx", CHUNK),
     "xvla": Backend("mlx", CHUNK),
@@ -233,6 +234,7 @@ QUALIFIED: dict[str, tuple[Qualification, ...]] = {
     "pi0": (
         Qualification("mlx", "zz4321/so101_pi0_cube", frozenset({"chunk", "rtc"}), True, compatible_pi),
     ),
+    "pi0_fast": (),
     "smolvla": (
         Qualification(
             "mlx", "lerobot/smolvla_base", frozenset({"chunk"}), True, compatible_smolvla,

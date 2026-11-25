@@ -333,6 +333,16 @@ All shortened schedules and all patch pruning are **lossy**. For the quadratic g
 
 Explicit MLX RTC was tested separately on three observations with matched noise, model-space leftovers, delay 4, horizon 16 and maximum guidance weight 10. Against guided PyTorch, arm mean/p99 was **0.071/0.350°**; timed guided MLX calls took **163.17/175.12 ms**. LeRobot 0.7.0 evaluates the velocity before enabling gradients on its input, so the reference correction is the weighted residual. Differentiating through the entire denoiser instead gave 0.183/1.670° and is not the deployed rule. No hardware rollout was performed.
 
+## Large VLA status
+
+| Policy | Checkpoint and revision | Backend | Precision / tokens | Median / p90 ms | Fidelity | Evidence |
+|---|---|---|---|---:|---|---|
+| π0 | `lerobot/pi0_libero_finetuned_v044@45dcc8fc0e02601c8ccf0554fbd1d26a55070c1f` | MLX | fp16, 10 flow steps | not measured | trained checkpoint loaded; tokenizer and fp32 parity pending | runs |
+| π0-FAST | `lerobot/pi0fast-libero@840f4b503f4c09110421c33c810a85b6684fd658` | MLX | bf16, greedy, max 256 tokens | 885.22 / 1281.60 | token sequence diverges from PyTorch after `Action:` prefix | runs |
+| GR00T | `nvidia/gr00t17-lerobot-libero_10-640@5ee08ab09fac5c5ef2388a14c882ea825ac861db` | MLX | not run | not measured | fp16 memory/download gate not attempted | not verified |
+
+The π0-FAST row used five warm-ups and 50 synchronized calls on Mac17,9, Apple M5 Pro, 48 GB, macOS 27.0.1, PyTorch 2.15.0, MLX 0.32.4 and LeRobot 0.7.0. `auto` does not select π0, π0-FAST or GR00T from these rows.
+
 ## Implementation references
 
 The port follows LeRobot's `pi05` implementation and uses MLX's fused attention, normalization and quantized matmul APIs. We consulted the `tokimoa/pi0-mlx` model card and implementation (Apache-2.0), `mlx-smolvla` (Apache-2.0), `mlx-lm` (MIT), and `mlx-vlm`'s PaliGemma/SigLIP (MIT). No external source code or converted weights were imported.

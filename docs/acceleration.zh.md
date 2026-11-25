@@ -290,6 +290,16 @@ FP32 MPS 对照用于校准数值误差，换初始噪声的对照用于校准�
 
 显式 MLX RTC 在三条观测上单独对照，使用相同噪声和模型空间的剩余动作，延迟 4、引导范围 16、最大引导权重 10。相对 PyTorch guided 输出，机械臂均值/p99 为 **0.071/0.350°**；MLX guided 调用为 **163.17/175.12 ms**。LeRobot 0.7.0 在计算速度之后才打开输入梯度，因此参考实现的校正量等于加权残差。对整个去噪器求导得到 0.183/1.670°，部署采用前一种语义。未做真机回放。
 
+## 大型 VLA 状态
+
+| 策略 | checkpoint 与 revision | 后端 | 精度 / token | 中位数 / p90 ms | 保真 | 证据等级 |
+|---|---|---|---|---:|---|---|
+| π0 | `lerobot/pi0_libero_finetuned_v044@45dcc8fc0e02601c8ccf0554fbd1d26a55070c1f` | MLX | fp16，流匹配 10 步 | 未测 | 已加载训练权重；tokenizer 与 fp32 对照待完成 | runs |
+| π0-FAST | `lerobot/pi0fast-libero@840f4b503f4c09110421c33c810a85b6684fd658` | MLX | bf16，greedy，最多 256 token | 885.22 / 1281.60 | `Action:` 前缀后 token 序列与 PyTorch 分歧 | runs |
+| GR00T | `nvidia/gr00t17-lerobot-libero_10-640@5ee08ab09fac5c5ef2388a14c882ea825ac861db` | MLX | 未运行 | 未测 | 未启动 fp16 内存与下载门槛 | 未验证 |
+
+π0-FAST 行使用 Mac17,9、Apple M5 Pro、48 GB、macOS 27.0.1、PyTorch 2.15.0、MLX 0.32.4、LeRobot 0.7.0，预热 5 次后同步计时 50 次。根据这些结果，`auto` 不选择 π0、π0-FAST 或 GR00T。
+
 ## 实现参考
 
 移植以 LeRobot 的 `pi05` 为准，使用 MLX 的融合注意力、归一化和量化矩阵乘 API。调研参考了 `tokimoa/pi0-mlx` 的模型卡和实现（Apache-2.0）、`mlx-smolvla`（Apache-2.0）、`mlx-lm`（MIT）和 `mlx-vlm` 的 PaliGemma/SigLIP（MIT）。未引入外部源码或转换后的权重。

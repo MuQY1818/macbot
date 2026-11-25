@@ -47,7 +47,7 @@ def _features(path, metadata, cameras, camera_map, joint_count):
     xvla_padding = (metadata.get("type") == "xvla" and mode == "auto"
                     and (metadata.get("normalization_mapping") or {}).get("STATE") == "IDENTITY"
                     and state and len(state) == 1 and width[0] < state[0] <= metadata.get("max_state_dim", 0))
-    if state is not None and state != width and not xvla_padding:
+    if state is not None and state != width and metadata.get("type") not in {"pi0", "pi0_fast"} and not xvla_padding:
         raise ValueError(f"Expected joint state shape {width}, got {state}")
 
     features = metadata.get("input_features") or {}
