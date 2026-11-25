@@ -19,30 +19,16 @@
     `macbot robots` lists the LeRobot types registered by the installed packages, not the arms that have been
     validated.
 
-Generic followers must accept joint-position (`.pos`) actions and observe those same joints. A leader used for
-collection must have the same joint names. Policy checkpoints must match the joint order, units and camera inputs.
+## Requirements for any arm
 
-## reBot B601-RS
-
-Start with [`configs/example.yaml`](../configs/example.yaml) and the [setup guide](setup.md).
-The reference profile uses PCAN-USB with PCBUSB and auto-detects the Arm 102 serial port.
-Gravity feedforward additionally needs a URDF.
-
-```yaml
-robot:
-  type: rebot_b601
-  can_channel: can0
-  follower_id: follower1
-  leader_id: rebot_arm_102_leader
-```
+- The follower takes joint-position (`.pos`) actions and reports the same joints.
+- The leader used for collection has the same joint names as the follower.
+- A policy checkpoint matches the joint order, units and camera inputs of the arm it runs on.
 
 ## Generic LeRobot arms
 
-[`configs/so101.yaml`](../configs/so101.yaml) is a complete SO-101 example with one UVC
-camera. Install the LeRobot extra for your arm, for example `lerobot[feetech]==0.7.0`
-for SO-100/101 or `lerobot[dynamixel]==0.7.0` for Koch and OMX. Replace both device types
-for another arm, and supply the fields its LeRobot configs require. Use top-level `cameras`;
-omit `leader` for policy inference without a teleoperator.
+[configs/so101.yaml](../configs/so101.yaml) is a complete SO-101 example with one UVC camera. Install the LeRobot
+extra for your arm: `lerobot[feetech]==0.7.0` for SO-100/101, `lerobot[dynamixel]==0.7.0` for Koch and OMX.
 
 ```yaml
 robot:
@@ -52,17 +38,37 @@ robot:
   limits: {gripper: [0, 100]}
 ```
 
-For Koch use `koch_follower` and `koch_leader`; for OMX use `omx_follower` and `omx_leader`.
-For other models, consult the installed LeRobot config and list the ordered `robot.joints`
-when fake mode has no built-in layout. Set limits and any binary gripper thresholds in the
-driver's units. Reuse the same IDs and calibration directories when recording or running.
+| Arm | `follower.type` | `leader.type` |
+|---|---|---|
+| SO-100/101 | `so101_follower` | `so101_leader` |
+| Koch | `koch_follower` | `koch_leader` |
+| OMX | `omx_follower` | `omx_leader` |
+
+For other arms, replace both types and fill in the fields that their LeRobot configs require. If fake mode has no
+built-in layout for the arm, list its joints in order under `robot.joints`. Limits and binary gripper thresholds are
+in the driver's units. Put cameras under the top-level `cameras`, and leave out `leader` if you only run policies.
+Use the same IDs and calibration folders for recording and for running.
+
+## reBot B601-RS
+
+Start from [configs/example.yaml](../configs/example.yaml) and the reBot section of [Setup](setup.md#rebot-b601-rs-reference-setup).
+The reference profile reaches the follower through a PCAN-USB adapter with the PCBUSB driver and finds the Arm 102
+leader's serial port on its own. Gravity feedforward also needs the arm's URDF.
+
+```yaml
+robot:
+  type: rebot_b601
+  can_channel: can0
+  follower_id: follower1
+  leader_id: rebot_arm_102_leader
+```
 
 ## Local simulation
 
-Follow the [simulation guide](simulation.md) for setup, keyboard teleoperation, scripted
-demonstrations, and policy evaluation. The complete [`configs/so101_sim.yaml`](../configs/so101_sim.yaml)
-keeps scripted sine input for smoke tests. Run collection without `--fake`.
-The pinned EnvHub scene downloads and executes Python on first use; the control rates must match it.
+[Simulation](simulation.md) covers setup, keyboard teleoperation, scripted demonstrations and evaluation. The complete
+config is [configs/so101_sim.yaml](../configs/so101_sim.yaml); it drives the arm with a sine wave for smoke tests.
+Run collection without `--fake`, and keep the control rates equal to the scene's. The pinned EnvHub scene downloads
+and runs Python code on first use.
 
 ```yaml
 robot:
@@ -78,22 +84,25 @@ cameras:
 
 ## Calibration and checks
 
-`macbot init` checks for calibration and supplies the matching `lerobot-calibrate` commands.
-Run them separately with the same device types,
-ports, IDs and optional `calibration_dir`. Use `--robot.*` for the follower and `--teleop.*`
-for the leader; see the [setup guide](setup.md) for commands. macbot connects with
-`calibrate=False`. Simulation without a physical leader, and fake mode, need no calibration.
+macbot always connects with `calibrate=False`, so arms must be calibrated with LeRobot first. `macbot init` looks for
+the calibration files and shows the matching `lerobot-calibrate` commands. Run them separately with the same device
+types, ports, IDs and optional `calibration_dir`, using `--robot.*` for the follower and `--teleop.*` for the leader.
+Simulation without a physical leader, and fake mode, need no calibration.
 
-Run `macbot --config my.yaml doctor` to check the selected profile. For generic arms it checks
-driver imports, configured serial paths and calibration file presence without opening a device.
-For the bundled simulator it checks the local configuration and MuJoCo import without loading
-the scene. A passing check does not verify calibration quality or arm motion.
+`macbot --config my.yaml doctor` checks the selected profile without moving anything:
+
+- For generic arms, it checks that the drivers import, the serial paths exist and the calibration files are present,
+  without opening a device.
+- For the simulator, it checks the config and the MuJoCo import, without loading the scene.
+
+A passing check does not mean the calibration is good or that the arm moves correctly.
 
 ## Adding a robot class
 
-Use `robot.type: lerobot` if the upstream driver already fits. Otherwise implement the
-[`Robot` interface](../macbot/robot/base.py) and register the profile in
-[`open_robot`](../macbot/robot/__init__.py). Define ordered `joints`, optional `gripper` and
-`limits`, and `info()` metadata. Implement the connection, observation, command and shutdown
-behavior for that device; preserve the calibration guard and document what happens on shutdown.
-Add a matching fake layout, a config example and tests with no hardware.
+If an upstream LeRobot driver already fits, use `robot.type: lerobot`. Otherwise:
+
+1. Implement the [`Robot` interface](../macbot/robot/base.py): ordered `joints`, optional `gripper` and `limits`,
+   `info()` metadata, and the connection, observation, command and shutdown behavior of the device.
+2. Register the profile in [`open_robot`](../macbot/robot/__init__.py).
+3. Keep the calibration guard, and document what happens on shutdown.
+4. Add a matching fake layout, an example config and tests that need no hardware.
