@@ -6,7 +6,7 @@
 </p>
 
 <p align="center"><b>LeRobot on a MacBook.</b><br>
-Bring your LeRobot arms, calibration, datasets and checkpoints to a MacBook, with fast inference on Apple silicon.</p>
+Record demonstrations and run LeRobot policies on a real arm, straight from an Apple silicon Mac.</p>
 
 <p align="center">
   <img alt="macOS" src="https://img.shields.io/badge/macOS-Apple%20silicon-18171F">
@@ -25,59 +25,48 @@ Bring your LeRobot arms, calibration, datasets and checkpoints to a MacBook, wit
   </picture>
 </p>
 
-## Start here
-
-Already using LeRobot on Linux? Follow the [migration guide](docs/migrate.md) to reuse your
-calibration and import your command. Setting up from scratch? See the [quickstart](docs/quickstart.md).
-Use Python 3.12+ on Apple silicon. LeRobot datasets and checkpoints move between machines as-is.
+## Getting started
 
 ```bash
 pip install macbot
-macbot doctor
-macbot init
-# Already have a LeRobot command? Use macbot init --from-lerobot "$LEROBOT_COMMAND" instead.
-macbot collect
-macbot health
-macbot export --out ./dataset
-# Train with lerobot-train on a GPU machine, then bring the checkpoint back.
-macbot run --policy ./pretrained_model       # or owner/model@revision
-macbot replay
+macbot init        # pick the arms and cameras in your browser
+macbot collect     # record demonstrations
 ```
 
-The reBot B601-RS is verified on hardware. The [SO-101 tabletop workflow](docs/simulation.md) runs
-end to end in simulation (demos, export, LeRobot training, seeded evaluation); a trained policy
-solving the task is not shown yet. See [robot support](docs/robots.md) for the scope of each profile.
-For π0.5, use an Apple silicon Mac with at least 32 GB of memory. See [policy support](docs/policies.md)
-for tested checkpoints.
+The [quickstart](docs/quickstart.md) walks through the first recording. If you already use LeRobot on Linux,
+`macbot init --from-lerobot` takes your `lerobot-record` command and the [migration guide](docs/migrate.md) covers
+the rest. You need Python 3.12 or later.
 
-Measured on a MacBook Pro (M5 Pro, 48 GB). Approximate time per action chunk:
+macbot reads and writes plain LeRobot formats, so nothing gets locked in. A full round looks like this:
 
-| Policy | Backend | Execution | Latency |
-|---|---|---|---:|
-| π0.5 | PyTorch MPS | Chunk 50 | 270 ms |
-| π0.5 | MLX | Chunk 50 | **165 ms** |
-| π0.5 | PyTorch MPS | RTC 50 | 350 ms |
-| π0.5 | MLX | RTC 50 | **170 ms** |
-| SmolVLA | PyTorch MPS | Chunk 50 | 296 ms |
-| SmolVLA | MLX | Chunk 50 | **53 ms** |
-| X-VLA | PyTorch MPS | Chunk 30 | 178 ms |
-| X-VLA | MLX | Chunk 30 | **138 ms** |
-| ACT | PyTorch MPS | Chunk 100 | 16 ms |
-| ACT | MLX | Chunk 100 | **8 ms** |
+```bash
+macbot collect                               # record
+macbot health                                # check the episodes
+macbot export --out ./dataset                # LeRobot v3.0 dataset
+# train with lerobot-train on a GPU machine, then copy the checkpoint back
+macbot run --policy ./pretrained_model       # or owner/model@revision from the Hub
+macbot replay                                # review the trials
+```
 
-π0.5 uses our SO-101-class fine-tune on recorded observations, with 10 denoising steps (compiled PyTorch
-BF16 or MLX FP16). RTC is Real-Time Chunking guidance. SmolVLA uses the public `lerobot/smolvla_base`
-checkpoint at 10 steps (MPS BF16 backbone or compiled MLX FP16). X-VLA uses a public SO-101 fine-tune
-at 10 steps (MPS BF16 or compiled MLX FP16). ACT uses the public ALOHA transfer cube checkpoint
-(MPS FP32 or compiled MLX FP32 with TF32 disabled). Both comparisons use recorded observations. For methods and more results, see
-[docs/acceleration.md](https://github.com/MuQY1818/macbot/blob/main/docs/acceleration.md), other policies in
-[docs/policies.md](https://github.com/MuQY1818/macbot/blob/main/docs/policies.md).
+## Speed
 
-| Data collection | Measured |
-|---|---:|
-| Teleoperation loop | 60 Hz |
-| Recording | 30 fps |
-| Camera frame age at sampling, p95 | ≤ 40 ms |
+Time per action chunk on a MacBook Pro (M5 Pro, 48 GB):
+
+| Policy | Execution | PyTorch MPS | MLX |
+|---|---|---:|---:|
+| π0.5 | chunk 50 | 270 ms | **165 ms** |
+| π0.5 | RTC 50 | 350 ms | **170 ms** |
+| SmolVLA | chunk 50 | 296 ms | **53 ms** |
+| X-VLA | chunk 30 | 178 ms | **138 ms** |
+| ACT | chunk 100 | 16 ms | **8 ms** |
+
+Pass `--backend auto` to `macbot run` to use MLX where it has been checked against PyTorch. We measured on recorded
+observations with an SO-101 π0.5 fine-tune and public SmolVLA, X-VLA and ACT checkpoints, using 10 denoising steps
+for the VLAs. [Acceleration](docs/acceleration.md) has the error numbers and exact settings, and
+[Policies](docs/policies.md) lists every supported policy. π0.5 needs at least 32 GB of memory.
+
+Teleoperation runs at 60 Hz and recording at 30 fps. When a frame is sampled, the camera image is at most 40 ms old
+(p95).
 
 <p align="center"><img src="https://raw.githubusercontent.com/MuQY1818/macbot/main/docs/img/collect_en.jpg" alt="The macbot collection console" width="100%"></p>
 
@@ -85,22 +74,22 @@ at 10 steps (MPS BF16 or compiled MLX FP16). ACT uses the public ALOHA transfer 
 |---|---|
 | <img src="https://raw.githubusercontent.com/MuQY1818/macbot/main/docs/img/run_en.jpg" alt="Policy runner"> | <img src="https://raw.githubusercontent.com/MuQY1818/macbot/main/docs/img/replay_en.jpg" alt="Trial replay"> |
 
-- `init` guides arm and camera selection and checks saved LeRobot calibration.
-- `collect` records with live cameras and checks each episode; try `collect --fake` without an arm.
-- `health --dataset` and `replay --dataset` inspect local or Hub LeRobot v3.0 data in place.
-- `run` loads LeRobot checkpoints and records each trial with cameras and timing.
-- `replay` aligns trial video, joint traces and action chunks. See the [workflow guide](docs/guide.md).
+## Hardware
 
-## What it took to run this on macOS
+We test on a Seeed reBot B601-RS. SO-100/101, Koch and OMX arms run through their LeRobot drivers, but so far only
+with simulated hardware, so reports from real arms are very welcome. The SO-101
+[simulation](docs/simulation.md) runs the whole workflow, although no trained policy solves its task yet.
+[Robots](docs/robots.md) lists what each profile has been tested on.
 
-- **CAN under sudo:** macbot preloads PCBUSB and gives recorded files back to the invoking user.
-- **Camera selection:** AVFoundation unique IDs keep UVC roles separate from iPhone Continuity Camera.
-- **π0.5 inference:** macbot compiles the PyTorch MPS path and offers an optional MLX backend; see the benchmarks above.
+A few things needed extra care on macOS. The reference setup runs under sudo for its Orbbec camera, and sudo drops
+the library path, so macbot loads the PCBUSB CAN driver itself and gives recorded files back to your user. macOS also
+likes to offer a nearby iPhone as a camera, so macbot picks cameras by their unique ID instead of by name or index.
 
 ## Contributing
 
-See [CONTRIBUTING](CONTRIBUTING.md) for development and hardware reports,
-[architecture](docs/architecture.md) for the code layout, and the [roadmap](ROADMAP.md) for planned work.
+Bug reports, hardware reports and pull requests are welcome. [CONTRIBUTING](CONTRIBUTING.md) explains the
+development setup, [Architecture](docs/architecture.md) the code layout, and the [roadmap](ROADMAP.md) what comes
+next.
 
 ## Safety
 

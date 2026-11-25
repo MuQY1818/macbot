@@ -6,7 +6,7 @@
 </p>
 
 <p align="center"><b>在 MacBook 上跑 LeRobot。</b><br>
-把已有的 LeRobot 机械臂、校准、数据集和 checkpoint 搬到 MacBook，在 Apple 芯片上加速推理。</p>
+在 Apple 芯片的 Mac 上录制示范，把 LeRobot 策略直接跑在真实机械臂上。</p>
 
 <p align="center">
   <img alt="macOS" src="https://img.shields.io/badge/macOS-Apple%20silicon-18171F">
@@ -25,79 +25,62 @@
   </picture>
 </p>
 
-## 从这里开始
-
-已经在 Linux 上用 LeRobot？按[迁移指南](docs/migrate.zh.md)复用校准并导入原命令。
-从空白环境开始，见[快速开始](docs/quickstart.zh.md)。
-使用 Apple 芯片 Mac 和 Python 3.12 或更高版本。数据集和 checkpoint 保持 LeRobot 格式，可在两台机器间直接使用。
+## 上手
 
 ```bash
 pip install macbot
-macbot doctor
-macbot init
-# 已有 LeRobot 命令？改用 macbot init --from-lerobot "$LEROBOT_COMMAND"。
-macbot collect
-macbot health
-macbot export --out ./dataset
-# 在 GPU 机器上用 lerobot-train 训练，再把 checkpoint 拿回来。
-macbot run --policy ./pretrained_model       # 也可用 owner/model@revision
-macbot replay
+macbot init        # 在浏览器里选机械臂和相机
+macbot collect     # 录制示范
 ```
 
-reBot B601-RS 已做真机验证。[SO-101 桌面流程](docs/simulation.zh.md)已在仿真跑通
-（示教、导出、LeRobot 训练、按种子评估），尚未证明训练出的策略能完成任务。
-各配置的验证范围见[机械臂支持](docs/robots.zh.md)。运行 π0.5 建议使用至少 32 GB 内存的 Apple 芯片 Mac。
-已测 checkpoint 见[策略支持](docs/policies.zh.md)。
+第一次录制的完整步骤见[快速开始](docs/quickstart.zh.md)。如果你已经在 Linux 上用 LeRobot，`macbot init --from-lerobot` 可以直接导入你的 `lerobot-record` 命令，其余的看[迁移指南](docs/migrate.zh.md)。需要 Python 3.12 或更高版本。
 
-以下数据在 MacBook Pro（M5 Pro，48 GB）上实测，为每个动作块的大致耗时：
+macbot 读写的都是标准 LeRobot 格式，随时可以换回自己的工具。完整走一遍是这样的：
 
-| 策略 | 后端 | 执行 | 延迟 |
-|---|---|---|---:|
-| π0.5 | PyTorch MPS | 分块 50 | 270 ms |
-| π0.5 | MLX | 分块 50 | **165 ms** |
-| π0.5 | PyTorch MPS | RTC 50 | 350 ms |
-| π0.5 | MLX | RTC 50 | **170 ms** |
-| SmolVLA | PyTorch MPS | 分块 50 | 296 ms |
-| SmolVLA | MLX | 分块 50 | **53 ms** |
-| X-VLA | PyTorch MPS | 分块 30 | 178 ms |
-| X-VLA | MLX | 分块 30 | **138 ms** |
-| ACT | PyTorch MPS | 分块 100 | 16 ms |
-| ACT | MLX | 分块 100 | **8 ms** |
+```bash
+macbot collect                               # 录制
+macbot health                                # 检查示范
+macbot export --out ./dataset                # 导出 LeRobot v3.0 数据集
+# 在 GPU 机器上用 lerobot-train 训练，再把权重拷回来
+macbot run --policy ./pretrained_model       # 也可以用 Hub 上的 owner/model@revision
+macbot replay                                # 回看试验
+```
 
-π0.5 使用我们在 SO-101 同类机械臂上训练的微调权重和录制观测，去噪 10 步（编译后的 PyTorch BF16 或 MLX FP16）。RTC 指 Real-Time Chunking 引导。SmolVLA 使用公开的 `lerobot/smolvla_base`，去噪 10 步（MPS BF16 底座或编译后的 MLX FP16）。X-VLA 使用公开的 SO-101 微调权重，去噪 10 步（MPS BF16 或编译后的 MLX FP16）；ACT 使用公开的 ALOHA 方块转移权重（MPS FP32 或关闭 TF32 的编译 MLX FP32）。两者均用录制观测对比。测法和更多结果见[推理基准](https://github.com/MuQY1818/macbot/blob/main/docs/acceleration.zh.md)和[策略支持](https://github.com/MuQY1818/macbot/blob/main/docs/policies.zh.md)。
+## 速度
 
-| 数据采集 | 实测 |
-|---|---:|
-| 遥操作控制频率 | 60 Hz |
-| 录制采样频率 | 30 fps |
-| 采样时刻的画面延迟 p95 | ≤ 40 ms |
+MacBook Pro（M5 Pro，48 GB）上每个动作块的耗时：
+
+| 策略 | 执行方式 | PyTorch MPS | MLX |
+|---|---|---:|---:|
+| π0.5 | 分块 50 | 270 ms | **165 ms** |
+| π0.5 | RTC 50 | 350 ms | **170 ms** |
+| SmolVLA | 分块 50 | 296 ms | **53 ms** |
+| X-VLA | 分块 30 | 178 ms | **138 ms** |
+| ACT | 分块 100 | 16 ms | **8 ms** |
+
+给 `macbot run` 加上 `--backend auto`，在已经和 PyTorch 对照验证过的配置上就会用 MLX。测量用的是录制的真实观测，π0.5 是一个 SO-101 微调权重，SmolVLA、X-VLA 和 ACT 用公开权重，VLA 都去噪 10 步。误差数字和具体设置见[加速](docs/acceleration.zh.md)，支持的全部策略见[策略](docs/policies.zh.md)。π0.5 需要至少 32 GB 内存。
+
+遥操作以 60 Hz 运行，录制为 30 fps。采样时相机画面最多延迟 40 ms（p95）。
 
 <p align="center"><img src="https://raw.githubusercontent.com/MuQY1818/macbot/main/docs/img/collect_zh.jpg" alt="macbot 采集控制台" width="100%"></p>
 
-| 跑策略 | 回放试验 |
+| 运行策略 | 回放试验 |
 |---|---|
-| <img src="https://raw.githubusercontent.com/MuQY1818/macbot/main/docs/img/run_zh.jpg" alt="跑策略"> | <img src="https://raw.githubusercontent.com/MuQY1818/macbot/main/docs/img/replay_zh.jpg" alt="回放"> |
+| <img src="https://raw.githubusercontent.com/MuQY1818/macbot/main/docs/img/run_zh.jpg" alt="运行策略"> | <img src="https://raw.githubusercontent.com/MuQY1818/macbot/main/docs/img/replay_zh.jpg" alt="回放"> |
 
-- `init` 引导选择机械臂和相机，并检查已有的 LeRobot 校准。
-- `collect` 提供相机预览和逐条检查；没有机械臂可以试 `collect --fake`。
-- `health --dataset` 和 `replay --dataset` 只读查看本地或 Hub 上的 LeRobot v3.0 数据集。
-- `run` 加载 LeRobot checkpoint，并记录每次试验的画面和时序。
-- `replay` 同步回放试验画面、关节曲线和动作块，详见[工作流程](docs/guide.zh.md)。
+## 硬件
 
-## 在 macOS 上跑起来要解决的问题
+我们在 Seeed reBot B601-RS 上做实机测试。SO-100/101、Koch 和 OMX 通过各自的 LeRobot 驱动运行，但目前只在假硬件上验证过，非常欢迎用真机的朋友反馈结果。SO-101 [仿真](docs/simulation.zh.md)能跑通整个流程，不过还没有训练出能完成任务的策略。各配置测过哪些见[机械臂](docs/robots.zh.md)。
 
-- **sudo 下的 CAN：**macbot 预载 PCBUSB，并把生成的录制文件交回调用用户。
-- **相机识别：**用 AVFoundation unique ID 固定 UVC 相机角色，避开 iPhone 连续互通相机。
-- **π0.5 推理：**macbot 支持 PyTorch MPS 编译和可选的 MLX 后端，数据见上面的基准。
+有几处在 macOS 上要额外处理。参考配置因为 Orbbec 相机要用 sudo 运行，而 sudo 会丢掉库路径，所以 macbot 自己加载 PCBUSB CAN 驱动，并把 sudo 下录制的文件交还给你的用户。macOS 还喜欢把附近的 iPhone 当成相机，所以 macbot 按唯一 ID 选相机，不按名称或序号。
 
 ## 参与贡献
 
-开发与真机报告见[贡献指南](CONTRIBUTING_zh.md)，代码布局见[架构](docs/architecture.zh.md)，
-后续工作见[路线图](ROADMAP_zh.md)。
+欢迎提交问题、硬件测试报告和 PR。开发环境见[贡献指南](CONTRIBUTING_zh.md)，代码结构见[架构](docs/architecture.zh.md)，接下来的计划见[路线图](ROADMAP_zh.md)。
 
 ## 安全
 
-macbot 会驱动真实的机械臂。所有控制台启动时都处于暂停或待机状态；会限制关节速度和范围、限制夹爪夹紧力；相机断流时自动暂停；退出时先慢速回零再让电机失能。请保持工作区域无人、手边留着电源开关；新策略先用 `--speed 0.3` 跑。
+macbot 会驱动真实的机械臂。所有控制台启动时都是暂停或待机状态，会限制关节速度和范围、限制夹爪力度，相机断流时自动暂停，退出时先慢速回零再让电机断使能。请清空工作区，手放在电源开关附近，新策略先用 `--speed 0.3` 跑。
 
 ## 致谢
 
