@@ -9,15 +9,22 @@ macbot 的主要变更记录在这里。本项目遵循
 
 ## [Unreleased]
 
-- 增加 LeRobot `pi0_fast` checkpoint 的显式 MLX 推理接线，包含 greedy FAST token 解码和 DCT 动作重建。训练权重的逐 token 对照仍待完成，因此自动选择继续使用 PyTorch。
+### 新增
+
+- Diffusion、VQ-BeT、TD-MPC 和 π0-FAST 的 MLX 后端，用 `--backend mlx` 手动指定，`auto` 不会选它们。在公开 PushT
+  权重上，VQ-BeT 从 7.7 ms 降到 4.2 ms；Diffusion 比 PyTorch 慢；π0-FAST 用贪心解码出动作，但 token 和 PyTorch 不同。
+- 官方 PaliGemma 分词器对你的账号未开放时，可以用 `MACBOT_PALIGEMMA_TOKENIZER` 让 π0 和 π0-FAST 使用本地的
+  `tokenizer.model`。
+
+### 变更
+
+- `docs/policies.zh.md` 改为支持一览表，`docs/acceleration.zh.md` 改为说明后端如何验证，测量数据放进折叠块。
+
 ## [0.3.6] - 2026-11-24
 
 ### 新增
 
 - 增加 X-VLA 和 ACT 的可选 MLX 分块推理。自动选择只对已经用训练权重验证的兼容配置启用 MLX。
-- 增加 Diffusion、VQ-BeT 和 TD-MPC 的显式 MLX 推理路径。小策略后端目前是实验性功能，
-  没有通过训练权重的无损验证时不会由 `auto` 选择。
-
 - 项目网站 https://muqy1818.github.io/macbot/ ，含文档；由 `scripts/build_site.sh` 从 `website/` 和 `docs/`
   构建，`pages` 工作流部署。
 

@@ -1,348 +1,290 @@
-# π0.5 inference on Apple silicon
+# Acceleration
 
 [简体中文](acceleration.zh.md)
 
-The standard macbot backend is PyTorch. The optional MLX backend reads stock LeRobot 0.7.0 `pi05` safetensors in place and uses the checkpoint's original LeRobot tokenizer, state normalizer and action postprocessor. It supports single observations with one or more configured RGB views. Memory variants, checkpoint-configured RTC and adapters are outside this backend's scope.
+PyTorch on the Apple GPU (MPS) is the default backend. For several policies macbot also has an MLX backend that
+reads the same LeRobot checkpoint, uses its saved tokenizer and processors, and is usually faster. This page shows
+how to use MLX, how a backend is checked before `auto` picks it, and the measurements behind each row of the
+[support table](policies.md#support-at-a-glance).
 
-## Automatic backend selection
+## Use MLX
 
-An optimization is **lossless** for a tested configuration when, using the same weights and
-starting noise or seed, its actions stay within documented tolerances against an FP32 CPU
-reference or the stated existing BF16/FP16 reference. Mean and p99 joint error in degrees
-and gripper error must each be no larger than the same statistic between two reference
-runs with different seeds. If a policy is deterministic and the measured seed spread is
-zero, use an absolute tolerance instead: mean and p99 joint error ≤ 0.01° and mean and
-p99 gripper error ≤ 0.1% of the documented gripper range. Weight
-quantization, fewer denoising steps and visual token dropping are lossy options.
-For the recorded π0.5 and π0 comparisons, MLX must be faster and either meet all
-four absolute limits or stay at or below the deployed BF16 path's error against
-the same FP32 reference on all four metrics. The seed spread is reported separately.
+Install the extra on an Apple silicon Mac, then compare the two backends on your checkpoint:
 
-`--backend auto` is opt-in. It checks the policy architecture, saved processor layout,
-execution mode, compile setting and availability of a supported MLX runtime. It prints
-the public checkpoint used to qualify the implementation or a one-line reason for falling
-back to PyTorch. Compatible SmolVLA checkpoints use MLX for synchronous chunks.
-Compatible π0.5 and π0 checkpoints use compiled MLX for synchronous chunks and RTC.
-Compatible X-VLA and stock ALOHA ACT layouts use compiled MLX for synchronous chunks.
-`run --backend auto` preserves ACT's default ensemble mode unless `--mode chunk` is requested.
-The measurements below describe the tested Apple silicon machine and dependency versions;
-they do not restrict selection to that machine. Use `--backend mlx` to request it explicitly.
-The default backend and the default execution modes for explicit backends are unchanged.
-`bench --mode rtc` measures guided calls with a fixed leftover chunk and no robot.
-
-SmolVLA qualification: `lerobot/smolvla_base` revision
-`5e8d12a6e2975b0e5e5fce7c8caf47c371d257b6`, Mac17,9 (Apple M5 Pro),
-macOS 27.0.1, PyTorch 2.11.0, MLX 0.32.4, LeRobot 0.7.0. One 50-action chunk
-with 10 denoising steps, three 256 × 256 RGB views, saved processors, five warm-ups
-and 50 timed calls. The synthetic observations exercise the complete inference path;
-no robot is involved. The FP32 CPU reference strictly loads all weights from the checkpoint.
-The absolute caps for this comparison are 0.01° joint error and 0.01 gripper units for
-each statistic, in addition to the measured seed spread.
-
-| Backend | Median / p90 ms | Joint mean / p99 ° | Gripper mean / p99 |
-|---|---:|---:|---:|
-| Torch CPU FP32 | 1195.22 / 1411.72 | Reference | Reference |
-| Torch CPU FP32, other seed | 1067.91 / 1095.52 | 0.31330 / 1.47535 | 0.41570 / 2.23537 |
-| Torch MPS, BF16 backbone | 295.70 / 307.56 | 0.00387 / 0.01744 | 0.00478 / 0.03623 |
-| MLX FP16, compiled | 52.76 / 53.24 | 0.00062 / 0.00258 | 0.00059 / 0.00315 |
-
-### π0.5 on recorded observations
-
-We replayed 25 frames across five episodes (0, 12, 24, 36, 49) from
-`zz4321/so101_cube@a34feb2f19718483fd6db7fac1d47927c84a5b4e` using
-`zz4321/so101_pi05@dbd6d5754bbf78318808aea1706ff23beeb8b663`. All variants
-used the recorded state, RGB and task with saved processors. Each variant timed
-50 calls after five warm-ups (two passes over the 25 frames), on the same system
-as SmolVLA. For RTC we reused an FP32 plan from four frames earlier, shifted
-four steps, with a 20-step guidance horizon and linear guidance capped at 10.
-
-The reference is MPS FP32 eager (seed 941), with median / p90 latency of
-1057.14 / 1068.51 ms for chunk and 1093.42 / 1111.33 ms for RTC. The BF16 rows
-use macbot's compiled inference path; only the checkpoint's own incompatible
-`max-autotune` wrapper was disabled. MLX used compiled FP16. Joint and gripper
-units are as described in the synthetic comparison below.
-
-| Mode | Backend | Median / p90 ms | Joint mean / p99 ° | Gripper mean / p99 |
-|---|---|---:|---:|---:|
-| Chunk | Torch BF16, compiled | 330.30 / 335.94 | 0.401 / 3.961 | 0.111 / 0.790 |
-| Chunk | MLX FP16, compiled | 222.81 / 229.14 | 0.074 / 0.886 | 0.017 / 0.158 |
-| Chunk | Torch FP32, seed 942 | 1072.99 / 1087.34 | 11.425 / 104.201 | 4.034 / 23.821 |
-| RTC | Torch BF16, compiled | 346.87 / 367.02 | 0.342 / 4.532 | 0.069 / 0.637 |
-| RTC | MLX FP16, compiled | 226.67 / 277.24 | 0.056 / 0.841 | 0.009 / 0.113 |
-| RTC | Torch FP32, seed 942 | 1087.41 / 1102.96 | 8.798 / 100.508 | 2.552 / 22.653 |
-
-Both modes qualify through the BF16 comparison; the joint p99 exceeds the
-absolute 0.50° cap. The earlier 0.082° / 0.416° result below used our own
-checkpoint, different recorded episodes and BF16 as the reference. Direct
-MLX-to-BF16 error for this public checkpoint is 0.393° / 3.965° in chunk mode
-and 0.330° / 4.257° in RTC. Against FP32 on these frames, MLX is the closer
-backend on all four statistics. The public retest and earlier result describe
-different checkpoints and reference protocols.
-
-### Public π0.5 checkpoint on synthetic observations
-
-`zz4321/so101_pi05` revision `dbd6d5754bbf78318808aea1706ff23beeb8b663` was
-trained for 5,000 steps on `zz4321/so101_cube`. It used the same machine and software
-versions as the SmolVLA test, with three 640 × 480 views, 50-action chunks, 10
-denoising steps, five warm-ups and 50 timed calls per row. The harness used the
-saved processors and matched synthetic observations. RTC shared a model-space
-leftover chunk, a four-step delay, a 20-step horizon and linear guidance capped at 10.
-
-The saved Torch sampler requests `max-autotune`, which fails on this MPS build
-with `NoValidChoicesError` during `bias_addmm` selection. The BF16 reference uses the
-existing wrapper with compilation disabled for the measurement (`TORCHDYNAMO_DISABLE=1`).
-Seed 941 is the same-noise reference; seed 942 measures the Torch seed spread.
-Joint errors are continuous SO-101 target angles, calculated from the normalized
-outputs with per-joint scales of `span × 360 / (4095 × 200)` degrees per unit. The
-spans recovered from recorded follower states are 2337, 2431, 2273, 2182 and 3887
-encoder ticks. Gripper error is in native 0–100 units.
-
-| Mode | Backend | Median / p90 ms | Joint mean / p99 ° | Gripper mean / p99 |
-|---|---|---:|---:|---:|
-| Chunk | Torch MPS BF16, eager | 460.22 / 466.64 | Reference | Reference |
-| Chunk | Torch MPS BF16, other seed | 460.32 / 467.00 | 20.926 / 102.412 | 3.268 / 10.543 |
-| Chunk | MLX FP16, compiled | 207.25 / 210.26 | 0.878 / 4.550 | 0.150 / 0.520 |
-| RTC | Torch MPS BF16, eager | 475.17 / 487.15 | Reference | Reference |
-| RTC | Torch MPS BF16, other seed | 483.18 / 492.75 | 15.690 / 100.621 | 3.275 / 13.470 |
-| RTC | MLX FP16, compiled | 225.43 / 231.51 | 0.604 / 4.315 | 0.109 / 0.511 |
-
-MLX was faster and all four errors were below the corresponding seed spread
-in both modes. Both modes exceeded the absolute caps set for this test: joint
-mean / p99 of 0.10° / 0.50° and gripper mean / p99 of 0.10 / 0.50.
-This preliminary synthetic test used BF16 as its reference and did not qualify either mode.
-The recorded FP32 comparison above is the basis for current automatic selection.
-
-### π0 on recorded observations
-
-We used `zz4321/so101_pi0_cube@ec54d7a73d8959a7640edd7dad2690f460e64af2` and
-25 frames from episodes 0, 7, 14, 21 and 29 of
-`zz4321/so101_stick@06f6856ea2a7dd43bfb72696a99e1087649a268b`. This is the same
-replay protocol as above, with two recorded views. The checkpoint's saved
-`max-autotune` failed on MPS in both modes with `NoValidChoicesError`. The BF16
-comparison uses the same saved BF16 configuration with that compiler disabled.
-The RTC reference calls the LeRobot guided sampler directly because the generic
-wrapper uses inference mode.
-
-The FP32 reference (seed 941) ran at 692.58 / 718.63 ms median / p90 for chunk
-and 704.17 / 718.71 ms for RTC.
-
-| Mode | Backend | Median / p90 ms | Joint mean / p99 ° | Gripper mean / p99 |
-|---|---|---:|---:|---:|
-| Chunk | Torch BF16, eager | 368.02 / 374.15 | 0.151 / 0.800 | 0.050 / 0.840 |
-| Chunk | MLX FP16, compiled | 160.28 / 163.59 | 0.027 / 0.135 | 0.012 / 0.159 |
-| Chunk | Torch FP32, seed 942 | 695.33 / 738.39 | 6.162 / 40.905 | 2.401 / 22.928 |
-| RTC | Torch BF16, eager | 383.45 / 388.20 | 0.093 / 0.832 | 0.039 / 0.704 |
-| RTC | MLX FP16, compiled | 169.65 / 175.58 | 0.015 / 0.101 | 0.007 / 0.114 |
-| RTC | Torch FP32, seed 942 | 727.07 / 749.78 | 4.461 / 40.704 | 1.809 / 23.799 |
-
-Both modes qualify under the absolute caps and against the BF16 baseline.
-
-Use `python -m tools.accel.recorded_observations --help` to extract the frame archive
-from the dataset shards, and `python -m tools.accel.compare_backend --help` to time
-the policies with `--observations`. `--pi-fp32` sets up the eager Torch reference;
-`--save-rtc-leftovers` and `--rtc-leftovers` share the history across backends.
-
-### Public π0 checkpoint on synthetic observations
-
-`zz4321/so101_pi0_cube` revision `ec54d7a73d8959a7640edd7dad2690f460e64af2` was
-trained for 5,000 steps on `zz4321/so101_stick`. It used two 640 × 480 views and
-the same timing, noise, RTC and angle conversion protocol described above. Torch
-used its saved BF16 configuration with Dynamo disabled; the RTC reference called
-LeRobot's guided sampler directly because macbot's generic wrapper runs in
-inference mode. MLX used the compiled FP16 path.
-
-| Mode | Backend | Median / p90 ms | Joint mean / p99 ° | Gripper mean / p99 |
-|---|---|---:|---:|---:|
-| Chunk | Torch MPS BF16, eager | 362.64 / 365.83 | Reference | Reference |
-| Chunk | Torch MPS BF16, other seed | 362.03 / 366.54 | 29.285 / 152.684 | 8.909 / 37.207 |
-| Chunk | MLX FP16, compiled | 156.08 / 158.34 | 0.378 / 2.795 | 0.082 / 0.554 |
-| RTC | Torch MPS BF16, eager | 371.93 / 377.15 | Reference | Reference |
-| RTC | Torch MPS BF16, other seed | 372.08 / 380.31 | 23.126 / 146.821 | 7.516 / 35.967 |
-| RTC | MLX FP16, compiled | 156.74 / 161.46 | 0.270 / 2.283 | 0.068 / 0.466 |
-
-Both MLX modes beat the eager reference on latency and stayed below the seed
-spread. Joint mean and p99 exceeded the absolute caps in both modes; chunk
-gripper p99 also exceeded the cap. This run preceded the recorded FP32 comparison.
-
-## X-VLA and ACT on recorded observations
-
-Both comparisons used Mac17,9 (Apple M5 Pro), macOS 27.0.1, PyTorch 2.11.0,
-MLX 0.32.4 and LeRobot 0.7.0. Each row uses saved processors, 25 observations
-across five training episodes, five warm-ups and 50 timed synchronous calls,
-from RGB and state conversion through action readback. The CPU references use
-four threads. These are offline comparisons on trained checkpoints.
-
-### X-VLA
-
-`whosricky/xvla-so101-pick-red-cube-2cam@7a007f64dd5910dd5cde76c8d31d9d7f7e6c0778`,
-replayed episodes 0, 54, 108, 147 and 181 of
-`whosricky/pick-red-cube-v3@f77f31614b10b9cf4ceb4c5f4c4edb503b12b74c`.
-Both recorded RGB streams are resized to the checkpoint's 256 × 256 input.
-The 30-action chunk uses 10 denoising steps. MLX batches the DaViT views, runs
-the Florence-2 BART encoder and reuses its projected context in the soft-prompted
-action head. It keeps the absent view slots in the action head and the original
-noise interpolation schedule. The LeRobot sampler has no RTC guidance.
-Joint errors use the five follower encoder spans (2116, 2343, 2203, 2294 and 4095
-ticks), recovered from within-episode state increments, times `360 / (4095 × 200)`.
-Gripper errors use the checkpoint's 0–100 scale.
-
-| Backend | Evidence | Median / p90 ms | Joint mean / p99 ° | Gripper mean / p99 |
-|---|---|---:|---:|---:|
-| Torch CPU FP32, seed 941 | Recorded reference | 4875.08 / 5619.00 | 0 / 0 | 0 / 0 |
-| Torch CPU FP32, seed 942 | Recorded seed spread | 4786.63 / 5063.67 | 0.13363 / 0.81821 | 0.34578 / 7.50583 |
-| Torch MPS BF16, seed 941 | Verified default | 178.19 / 205.14 | 0.13311 / 0.65928 | 0.06051 / 0.32293 |
-| MLX FP16, compiled, seed 941 | Verified, qualifies | 137.86 / 140.33 | 0.01014 / 0.04526 | 0.00556 / 0.03549 |
-
-MLX is below the seed spread on all four metrics, meets the absolute limits
-(joint 0.10° / 0.50°, gripper 0.10 / 0.50), and improves on the MPS BF16 error
-and latency. `auto` qualifies the measured architecture, saved processor
-layout, two-view input, and compiled chunk mode.
-
-### ACT
-
-MLX uses the full 100-action prediction, with frozen batch normalization folded
-into the ResNet-18 convolutions in FP32. The Transformer uses the saved position
-weights and a zero latent, as in LeRobot inference. ACT is deterministic and
-has no denoising. Full FP32 requires `MLX_ENABLE_TF32=0`; macbot sets it only
-when loading ACT on MLX in the policy process. Start a fresh process when
-comparing different MLX precision settings.
-
-The public checkpoint is
-`lerobot/act_aloha_sim_transfer_cube_human@ba73b2766f1371cdc133ca4efb97eb090d744625`.
-We moved its saved normalization tensors into LeRobot 0.7 processors with
-`lerobot.processor.migrate_policy_normalization` and checked that both statistics
-and model weights matched. We replayed episodes 0, 12, 24, 36 and 49 of
-`lerobot/aloha_sim_transfer_cube_human@6a43d500f101255823a9d2b9dc244eeb01a2cd31`.
-It has one 640 × 480 view and 14 actions. The 12 arm outputs are in radians
-before conversion to degrees; the two grippers use normalized position units
-with a nominal 0–1 range.
-
-| Checkpoint and backend | Evidence | Median / p90 ms | Joint mean / p99 ° | Gripper mean / p99 |
-|---|---|---:|---:|---:|
-| Public ACT, Torch CPU FP32 | Recorded reference | 56.25 / 63.35 | 0 / 0 | 0 / 0 |
-| Public ACT, Torch MPS FP32 | Verified default | 16.42 / 17.20 | 3.39e-6 / 2.05e-5 | 1.00e-7 / 5.07e-7 |
-| Public ACT, MLX FP32, compiled, TF32 off | Verified, qualifies | 8.32 / 8.57 | 4.18e-6 / 2.73e-5 | 1.24e-7 / 9.54e-7 |
-| Our ACT, Torch CPU FP32 | Recorded reference | 71.98 / 76.33 | 0 / 0 | 0 / 0 |
-| Our ACT, Torch MPS FP32 | Verified default | 22.80 / 23.47 | 6.93e-6 / 4.58e-5 | 1.76e-7 / 1.43e-6 |
-| Our ACT, MLX FP32, compiled, TF32 off | Verified, passes fidelity | 12.28 / 12.58 | 7.29e-6 / 4.58e-5 | 1.71e-7 / 1.28e-6 |
-| Our ACT, MLX FP32, compiled, TF32 on | Verified, lossy experiment | 9.95 / 10.11 | 0.02227 / 0.08749 | 0.000399 / 0.004394 |
-| Our ACT, MLX FP16, compiled | Verified, lossy experiment | 8.38 / 8.55 | 0.00706 / 0.03525 | 0.000153 / 0.001858 |
-
-The local checkpoint uses two recorded views and a binary close score (0–1).
-Both full FP32 results pass the 0.01° joint and 0.001 gripper limits. The TF32
-and FP16 experiments fail the gate. They can be reproduced with `--act-mlx-tf32`
-or `--act-mlx-fp16` in `tools.accel.compare_backend`. The
-public ALOHA layout qualifies for `auto`; the local layout is available with
-explicit `--backend mlx`. Neither benchmark evaluates task success.
-
-## PyTorch MPS experiments
-
-For ACT or Diffusion on MPS, `--torch-channels-last` changes the layout of Conv2d
-weights, and `--torch-autocast fp16` or `bf16` changes inference precision and can
-be lossy. `--torch-single-readback` drops ACT's redundant explicit device barrier.
-`--torch-compile` experiments with compiling Diffusion's denoiser. ACT compilation
-is disabled after the tested MPS build failed to generate its Metal kernels.
-These flags are opt-in and excluded from `auto`. The Diffusion action queue and scheduler
-are unchanged. The offline runner `python -m tools.accel.compare_backend --help` can
-compare matched-input action chunks without opening robot or camera devices.
-
-## Try it offline
-
-Install the optional dependencies on Apple silicon, then benchmark with your own checkpoint and configured camera sizes:
-
-```sh
-python -m pip install '.[mlx]'
-macbot --config "$CONFIG" bench --policy "$CHECKPOINT" --backend mlx -n 30
-macbot --config "$CONFIG" bench --policy "$CHECKPOINT" --backend torch --profile -n 30
+```bash
+pip install 'macbot[mlx]'
+CKPT=path/to/pretrained_model
+macbot --config robot.yaml bench --policy "$CKPT" --backend torch -n 30
+macbot --config robot.yaml bench --policy "$CKPT" --backend mlx -n 30
 ```
 
-`bench` uses generated blank RGB arrays; it never opens a camera or a robot. Synchronized stage timings are a separate pass and will not add up to the end-to-end latency. `--no-compile` disables the backend's graph compiler. To select MLX for deployment, pass `--backend mlx` to `macbot run` or add `policy: {backend: mlx}` to your YAML. With MLX, `--mode auto` uses unguided asynchronous execution. Explicit `--mode rtc` uses the selected backend for guidance.
+`bench` feeds blank images and never opens a camera or the arm. `--profile` adds a separate timed pass per stage,
+so the stages do not add up to the end-to-end time. `--no-compile` turns off the graph compiler.
 
-Weight quantization is an experimental option: `--mlx-bits 8` or `--mlx-bits 4`, with `--mlx-quantize prefix`, `expert` or `both`. Reducing `--steps` changes the flow integration. Evaluate each of these options against your checkpoint before using it.
+To deploy, pass `--backend auto` or `--backend mlx` to `macbot run`, or set `policy: {backend: auto}` in the config.
 
-## Reproduce latency and fidelity
+- `--backend auto` uses MLX only for the architectures and modes in the support table and prints the checkpoint
+  that qualified it. Otherwise it prints one line saying why it stays on PyTorch.
+- `--backend mlx` uses MLX whenever the policy has an MLX port, whether or not it qualified.
+- With MLX, `--mode auto` runs chunks asynchronously without guidance. `--mode rtc` runs guided RTC on MLX for
+  π0 and π0.5.
 
-Run the commands below from the macbot source directory with a LeRobot 0.7.0 environment. Set `DATA` to your raw `episode_*.npz` directory and `EVAL` to a writable directory outside the repo. Store observation archives, action arrays and intermediate traces privately.
+The default backend and the default execution modes do not change when MLX is installed.
 
-```sh
-mkdir -p "$EVAL"
-python -m tools.accel.eval_fidelity prepare --data "$DATA" --out "$EVAL/observations.npz"
-python -m tools.accel.eval_fidelity run --checkpoint "$CHECKPOINT" \
-  --observations "$EVAL/observations.npz" --out "$EVAL/bf16.json" --profile
-python -m tools.accel.eval_fidelity run --checkpoint "$CHECKPOINT" \
-  --observations "$EVAL/observations.npz" --out "$EVAL/seed2.json" \
-  --reference "$EVAL/bf16.npy" --seed 942
-python -m tools.accel.eval_fidelity run --checkpoint "$CHECKPOINT" \
-  --observations "$EVAL/observations.npz" --out "$EVAL/fp32.json" \
-  --reference "$EVAL/bf16.npy" --dtype fp32
-python -m tools.accel.bench_mlx --checkpoint "$CHECKPOINT" \
-  --observations "$EVAL/observations.npz" --out "$EVAL/torch_stages.npz" --capture-torch
-python -m tools.accel.bench_mlx --checkpoint "$CHECKPOINT" \
-  --observations "$EVAL/observations.npz" --out "$EVAL/mlx.json" \
-  --trace "$EVAL/torch_stages.npz" --reference "$EVAL/bf16.npy" \
-  --trim --compile --precompute-adarms --fused-rope --pack-linears --precision fp16 --profile
+## What "lossless" means
+
+A faster backend must give the same actions as the reference for the same weights, observations and starting
+noise. We compare actions after the postprocessor, in degrees for arm joints and in the checkpoint's units for the
+gripper, and report the mean and the 99th percentile.
+
+- For a deterministic policy such as ACT, the joint error must stay within 0.01° for both statistics, and the
+  gripper error within 0.1% of its range.
+- For a policy that samples noise, the errors must also be smaller than the difference between two reference runs
+  with different seeds.
+- For π0 and π0.5, the reference is a float32 run. MLX must be faster and either meet the absolute limits above or
+  be at least as close to float32 as the bf16 PyTorch path that macbot deploys.
+
+Matching on these frames does not prove that every rollout is the same, and none of these comparisons measures task
+success on a robot.
+
+## How `auto` decides
+
+`auto` checks the policy type, the saved processor layout, the execution mode, the compile setting and whether MLX
+is installed. It picks MLX only when all of these match a configuration that passed the comparison above on a public
+or recorded checkpoint. It does not check the machine, so the timings here describe an M5 Pro and nothing more.
+
+## Faster but lossy
+
+These options trade accuracy for speed. Check them against your own checkpoint before you use them.
+
+| Option | Effect |
+|---|---|
+| `--steps N` | Fewer denoising steps for π0.5, and for π0 on MLX. |
+| `--mlx-time-grid quadratic` | Spends the denoising steps near the clean end. Better than uniform steps at the same count. |
+| `--mlx-bits 8` or `4`, with `--mlx-quantize prefix`, `expert` or `both` | Quantized weights. 8-bit saved memory but was slower; 4-bit raised the error a lot. |
+| `--torch-autocast fp16` or `bf16` | Lower precision for ACT and Diffusion on MPS. |
+
+Two more PyTorch MPS experiments change how the model runs, not its precision: `--torch-channels-last` changes the
+Conv2d weight layout, and `--torch-single-readback` drops a redundant device barrier in ACT. `--torch-compile` compiles Diffusion's denoiser
+as an experiment; ACT compilation is disabled because the tested MPS build failed to generate its kernels.
+`auto` never turns any of these on.
+
+## Measurements
+
+Unless a section says otherwise: Mac17,9 (Apple M5 Pro, 20 GPU cores, 48 GiB), macOS 27.0.1, MLX 0.32.4 and
+LeRobot 0.7.0, one benchmark process at a time, at least five warm-ups and 50 timed calls. Timings run from the
+observation to the action on the CPU. Errors are mean / p99.
+
+??? note "π0.5 on recorded observations (qualifies chunk and RTC)"
+
+    25 frames from episodes 0, 12, 24, 36 and 49 of
+    `zz4321/so101_cube@a34feb2f19718483fd6db7fac1d47927c84a5b4e`, with
+    `zz4321/so101_pi05@dbd6d5754bbf78318808aea1706ff23beeb8b663`, PyTorch 2.11.0. Recorded state, images and task go
+    through the saved processors. RTC reuses a float32 plan from four frames earlier, shifted four steps, with a
+    20-step guidance horizon and linear guidance capped at 10.
+
+    The reference is MPS float32 eager with seed 941 (1057.14 / 1068.51 ms for chunks, 1093.42 / 1111.33 ms for RTC).
+    The bf16 rows use macbot's compiled path with the checkpoint's `max-autotune` wrapper disabled, because it fails
+    on this MPS build. MLX runs compiled float16. Joint angles come from the normalized outputs with a per-joint
+    scale of `span × 360 / (4095 × 200)` degrees, using spans of 2337, 2431, 2273, 2182 and 3887 encoder ticks. The
+    gripper is in its 0–100 units.
+
+    | Mode | Backend | Median / p90 ms | Joint ° | Gripper |
+    |---|---|---:|---:|---:|
+    | Chunk | Torch bf16, compiled | 330.30 / 335.94 | 0.401 / 3.961 | 0.111 / 0.790 |
+    | Chunk | MLX fp16, compiled | 222.81 / 229.14 | 0.074 / 0.886 | 0.017 / 0.158 |
+    | Chunk | Torch fp32, seed 942 | 1072.99 / 1087.34 | 11.425 / 104.201 | 4.034 / 23.821 |
+    | RTC | Torch bf16, compiled | 346.87 / 367.02 | 0.342 / 4.532 | 0.069 / 0.637 |
+    | RTC | MLX fp16, compiled | 226.67 / 277.24 | 0.056 / 0.841 | 0.009 / 0.113 |
+    | RTC | Torch fp32, seed 942 | 1087.41 / 1102.96 | 8.798 / 100.508 | 2.552 / 22.653 |
+
+    Both modes qualify through the bf16 comparison: MLX is closer to float32 than bf16 on all four statistics. The
+    joint p99 is above the absolute 0.50° cap. Measured directly against bf16, MLX differs by 0.393 / 3.965° for
+    chunks and 0.330 / 4.257° for RTC.
+
+??? note "π0.5 on our own checkpoint, and where the time goes"
+
+    An earlier test used our own SO-101 checkpoint, 50 recorded observations from 10 episodes, 30 timed calls and
+    PyTorch 2.11.0, with bf16 as the reference. A different starting noise measures the policy's own variation.
+
+    | Configuration | Median / p90 ms | Peak RSS / GPU GiB | Arm, all ° | Arm, first 10 ° | Gripper, all | Gripper, first 10 |
+    | :-- | :-- | :-- | :-- | :-- | :-- | :-- |
+    | MPS bf16 | 297.71 / 311.91 | 12.38 / 9.16 | reference | reference | reference | reference |
+    | MPS bf16, same noise again | 276.83 / 291.30 | 15.01 / 9.17 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+    | MPS bf16, other noise | 279.03 / 284.38 | 15.19 / 9.17 | 0.626 / 8.037 | 0.274 / 1.179 | 0.0060 / 0.0071 | 0.0057 / 0.0064 |
+    | MPS fp32, eager | 923.30 / 980.37 | 15.07 / 21.16 | 0.081 / 0.431 | 0.063 / 0.265 | 0.0007 / 0.0024 | 0.0007 / 0.0022 |
+    | MLX fp16, deployed | **168.53 / 188.62** | 8.44 / 6.89 | 0.082 / 0.416 | 0.061 / 0.263 | 0.0007 / 0.0023 | 0.0007 / 0.0022 |
+    | MLX fp16, `--steps 2`, lossy | 122.40 / 131.40 | 8.49 / 6.89 | 0.447 / 2.466 | 0.316 / 1.373 | 0.0050 / 0.0273 | 0.0056 / 0.0122 |
+    | MLX fp16, pooled vision and two steps, lossy | 70.96 / 71.81 | 8.42 / 6.69 | 4.173 / 26.491 | 1.807 / 7.609 | 0.0304 / 0.9806 | 0.0347 / 0.9848 |
+
+    Every error of the deployed MLX setting is at most 34% of the matching seed-spread statistic, and the median is
+    39% lower than MPS. RSS is the process peak including loading and compiling.
+
+    The time goes mostly to the language prefix. On MPS, the two-camera SigLIP batch took 36.45 ms, the Gemma prefix
+    and KV cache 126.41 ms, and each of the ten action-expert steps 13.5–13.9 ms. On MLX the split was 24.32 ms,
+    98.58 ms and 5.2–5.7 ms. The prefix holds about 2.2 TFLOP of dense projections, 2.03 TFLOP of it from the image
+    tokens, and MLX already runs these matrix sizes at 21–28 TFLOP/s, close to the 30 TFLOP/s the chip reaches on a
+    large square matrix. Fewer steps cannot remove that cost, so lossless latency below 100 ms was not reached.
+    Padding, a different weight layout, compiling the whole denoising loop and a custom AdaRMS kernel gave no
+    repeatable gain.
+
+    Shorter schedules and image-token pruning are all lossy:
+
+    | Full replay, matched noise | Median / p90 ms | Arm ° | Worst error / seed spread |
+    | :-- | --: | --: | --: |
+    | Default, ten steps | 160.74 / 162.85 | 0.082 / 0.416 | 34.0% |
+    | Uniform Euler, three steps | 159.42 / 181.83 | 0.320 / 1.587 | 134.4% |
+    | Quadratic Euler, three steps | 132.94 / 135.83 | 0.145 / 1.350 | 50.7% |
+    | Half the image patches, three uniform steps | 95.17 / 99.24 | 0.818 / 5.788 | 933.6% |
+    | A quarter of the patches, three uniform steps | 82.62 / 88.07 | 1.530 / 11.938 | 13847.9% |
+
+    Patch pruning exists only in the offline tools (`--keep-visual-fraction`). Explicit MLX RTC, checked on three
+    observations with a delay of 4 and a horizon of 16, differed from guided PyTorch by 0.071 / 0.350° at
+    163.17 / 175.12 ms.
+
+??? note "π0.5 public checkpoint on synthetic observations (did not qualify)"
+
+    `zz4321/so101_pi05@dbd6d5754bbf78318808aea1706ff23beeb8b663`, three 640 × 480 synthetic views, PyTorch 2.11.0,
+    bf16 eager as the reference with seed 941 and seed 942 for the spread.
+
+    | Mode | Backend | Median / p90 ms | Joint ° | Gripper |
+    |---|---|---:|---:|---:|
+    | Chunk | Torch bf16, eager | 460.22 / 466.64 | reference | reference |
+    | Chunk | Torch bf16, other seed | 460.32 / 467.00 | 20.926 / 102.412 | 3.268 / 10.543 |
+    | Chunk | MLX fp16, compiled | 207.25 / 210.26 | 0.878 / 4.550 | 0.150 / 0.520 |
+    | RTC | Torch bf16, eager | 475.17 / 487.15 | reference | reference |
+    | RTC | Torch bf16, other seed | 483.18 / 492.75 | 15.690 / 100.621 | 3.275 / 13.470 |
+    | RTC | MLX fp16, compiled | 225.43 / 231.51 | 0.604 / 4.315 | 0.109 / 0.511 |
+
+    MLX was faster and below the seed spread, but above the absolute caps of 0.10 / 0.50° and 0.10 / 0.50 gripper
+    units set for this test. The recorded float32 comparison replaced it.
+
+??? note "π0 on recorded observations (qualifies chunk and RTC)"
+
+    `zz4321/so101_pi0_cube@ec54d7a73d8959a7640edd7dad2690f460e64af2`, 25 frames from episodes 0, 7, 14, 21 and 29 of
+    `zz4321/so101_stick@06f6856ea2a7dd43bfb72696a99e1087649a268b`, two recorded views, PyTorch 2.11.0, the same
+    protocol as π0.5. The float32 reference ran at 692.58 / 718.63 ms for chunks and 704.17 / 718.71 ms for RTC. The
+    RTC reference calls LeRobot's guided sampler directly.
+
+    | Mode | Backend | Median / p90 ms | Joint ° | Gripper |
+    |---|---|---:|---:|---:|
+    | Chunk | Torch bf16, eager | 368.02 / 374.15 | 0.151 / 0.800 | 0.050 / 0.840 |
+    | Chunk | MLX fp16, compiled | 160.28 / 163.59 | 0.027 / 0.135 | 0.012 / 0.159 |
+    | Chunk | Torch fp32, seed 942 | 695.33 / 738.39 | 6.162 / 40.905 | 2.401 / 22.928 |
+    | RTC | Torch bf16, eager | 383.45 / 388.20 | 0.093 / 0.832 | 0.039 / 0.704 |
+    | RTC | MLX fp16, compiled | 169.65 / 175.58 | 0.015 / 0.101 | 0.007 / 0.114 |
+    | RTC | Torch fp32, seed 942 | 727.07 / 749.78 | 4.461 / 40.704 | 1.809 / 23.799 |
+
+    Both modes meet the absolute caps and beat the bf16 path.
+
+??? note "SmolVLA (qualifies chunk mode)"
+
+    `lerobot/smolvla_base@5e8d12a6e2975b0e5e5fce7c8caf47c371d257b6`, PyTorch 2.11.0, one 50-action chunk with 10
+    denoising steps, three 256 × 256 synthetic views. The float32 CPU reference loads every weight from the
+    checkpoint. The caps are 0.01° for the joints and 0.01 gripper units, on top of the seed spread.
+
+    | Backend | Median / p90 ms | Joint ° | Gripper |
+    |---|---:|---:|---:|
+    | Torch CPU fp32 | 1195.22 / 1411.72 | reference | reference |
+    | Torch CPU fp32, other seed | 1067.91 / 1095.52 | 0.31330 / 1.47535 | 0.41570 / 2.23537 |
+    | Torch MPS, bf16 backbone | 295.70 / 307.56 | 0.00387 / 0.01744 | 0.00478 / 0.03623 |
+    | MLX fp16, compiled | 52.76 / 53.24 | 0.00062 / 0.00258 | 0.00059 / 0.00315 |
+
+??? note "X-VLA (qualifies chunk mode)"
+
+    `whosricky/xvla-so101-pick-red-cube-2cam@7a007f64dd5910dd5cde76c8d31d9d7f7e6c0778`, 25 frames from episodes 0,
+    54, 108, 147 and 181 of `whosricky/pick-red-cube-v3@f77f31614b10b9cf4ceb4c5f4c4edb503b12b74c`, PyTorch 2.11.0,
+    CPU references on four threads. Both views are resized to 256 × 256; 30-action chunks with 10 denoising steps.
+    Joint spans are 2116, 2343, 2203, 2294 and 4095 ticks; the gripper is in 0–100 units. LeRobot's X-VLA sampler
+    has no RTC guidance.
+
+    | Backend | Median / p90 ms | Joint ° | Gripper |
+    |---|---:|---:|---:|
+    | Torch CPU fp32, seed 941 | 4875.08 / 5619.00 | reference | reference |
+    | Torch CPU fp32, seed 942 | 4786.63 / 5063.67 | 0.13363 / 0.81821 | 0.34578 / 7.50583 |
+    | Torch MPS bf16 | 178.19 / 205.14 | 0.13311 / 0.65928 | 0.06051 / 0.32293 |
+    | MLX fp16, compiled | 137.86 / 140.33 | 0.01014 / 0.04526 | 0.00556 / 0.03549 |
+
+    MLX meets the absolute caps of 0.10 / 0.50° and 0.10 / 0.50 gripper units, stays below the seed spread, and is
+    both faster and closer than MPS bf16.
+
+??? note "ACT (public layout qualifies chunk mode)"
+
+    MLX runs the full 100-action prediction in float32, with batch normalization folded into the ResNet-18
+    convolutions and a zero latent as in LeRobot inference. Exact float32 needs `MLX_ENABLE_TF32=0`, which macbot
+    sets when it loads ACT on MLX. Start a fresh process to compare precision settings.
+
+    The public checkpoint is
+    `lerobot/act_aloha_sim_transfer_cube_human@ba73b2766f1371cdc133ca4efb97eb090d744625`, with its normalization
+    moved into LeRobot 0.7 processors by `lerobot.processor.migrate_policy_normalization`. We replayed episodes 0,
+    12, 24, 36 and 49 of `lerobot/aloha_sim_transfer_cube_human@6a43d500f101255823a9d2b9dc244eeb01a2cd31`: one
+    640 × 480 view and 14 actions, of which 12 are arm joints in radians. Our own checkpoint uses two views and a
+    0–1 gripper score. PyTorch 2.11.0, CPU references on four threads.
+
+    | Checkpoint and backend | Median / p90 ms | Joint ° | Gripper |
+    |---|---:|---:|---:|
+    | Public, Torch CPU fp32 | 56.25 / 63.35 | reference | reference |
+    | Public, Torch MPS fp32 | 16.42 / 17.20 | 3.39e-6 / 2.05e-5 | 1.00e-7 / 5.07e-7 |
+    | Public, MLX fp32, TF32 off | 8.32 / 8.57 | 4.18e-6 / 2.73e-5 | 1.24e-7 / 9.54e-7 |
+    | Ours, Torch CPU fp32 | 71.98 / 76.33 | reference | reference |
+    | Ours, Torch MPS fp32 | 22.80 / 23.47 | 6.93e-6 / 4.58e-5 | 1.76e-7 / 1.43e-6 |
+    | Ours, MLX fp32, TF32 off | 12.28 / 12.58 | 7.29e-6 / 4.58e-5 | 1.71e-7 / 1.28e-6 |
+    | Ours, MLX fp32, TF32 on, lossy | 9.95 / 10.11 | 0.02227 / 0.08749 | 0.000399 / 0.004394 |
+    | Ours, MLX fp16, lossy | 8.38 / 8.55 | 0.00706 / 0.03525 | 0.000153 / 0.001858 |
+
+    `auto` qualifies the public ALOHA layout. Other layouts run on MLX with `--backend mlx`.
+
+??? note "VQ-BeT, Diffusion and TD-MPC (explicit MLX only)"
+
+    PyTorch 2.15.0 and Python 3.13, three warm-ups on MPS. 25 real frames from five episodes of
+    `lerobot/pusht@7628202a2180972f291ba1bc6723834921e72c19`. PushT actions are pixel positions from 0 to 512.
+
+    | Checkpoint and backend | Median / p90 ms | Action error, mean / p99 / max (px) |
+    |---|---:|---:|
+    | VQ-BeT, Torch MPS fp32, argmax | 7.69 / 8.52 | reference |
+    | VQ-BeT, MLX fp32, compiled, argmax | 4.24 / 4.66 | 0.261 / 0.766 / 0.816 |
+    | Diffusion, Torch MPS fp32, DDPM 100 steps | 818.79 / 978.45 | reference |
+    | Diffusion, MLX fp32, compiled | 1960.36 / 2039.27 | 0.034 / 0.170 / 0.211 |
+
+    The checkpoints are `lerobot/vqbet_pusht@15c2d0af889c401c7e5db7a07499d3b498afc276` and
+    `lerobot/diffusion_pusht@84a7c23178445c6bbf7e1a884ff497017910f653`. VQ-BeT picks the most likely code in both
+    backends, and Diffusion shares the starting and per-step noise.
+
+    The ports themselves match PyTorch. Run on the CPU, MLX VQ-BeT differs from PyTorch by 0.0002 px on a test frame,
+    and the ResNet-18 image features agree to 2e-6. The gap on the GPU comes from MLX float32 convolutions, which
+    differ from PyTorch by a few parts in 10,000. PyTorch on the CPU and on MPS agree to 0.0001 px on all 25 frames. VQ-BeT's discrete code choice and
+    Diffusion's 100 denoising steps amplify that gap, so neither qualifies for `auto`. Diffusion is also slower.
+
+    TD-MPC has no public checkpoint in the LeRobot 0.7 format. Its MLX planner runs on a tiny random checkpoint and
+    returns finite actions of the right shape. The unit tests in `tests/test_mlx_small.py` compare the VQ-BeT and
+    Diffusion ports with PyTorch and run the TD-MPC port, all on tiny random checkpoints on the CPU.
+
+??? note "π0-FAST and GR00T (not qualified)"
+
+    | Policy | Checkpoint | Result |
+    |---|---|---|
+    | π0-FAST | `lerobot/pi0fast-libero@840f4b503f4c09110421c33c810a85b6684fd658` | MLX greedy decoding, bf16, up to 256 tokens: 885.22 / 1281.60 ms. The action tokens diverge from PyTorch's from the first action token on. |
+    | GR00T | `nvidia/gr00t17-lerobot-libero_10-640@5ee08ab09fac5c5ef2388a14c882ea825ac861db` | Not run. It needs a 12.6 GB checkpoint plus the N1.7 base and Qwen3-VL assets. |
+
+    PyTorch 2.15.0. The π0-FAST checkpoint outputs end-effector actions, so it ran in the offline harness only.
+
+## Reproduce
+
+The offline tools live in `tools/accel` in a source checkout. They need a LeRobot 0.7.0 environment and never open a
+camera or the arm. Keep observation archives and traces outside the repository.
+
+```bash
+python -m tools.accel.recorded_observations --help   # extract frames from a dataset
+python -m tools.accel.compare_backend --help         # time backends and compare actions on those frames
+python -m tools.accel.eval_fidelity --help           # π0.5 fidelity runs against a reference
+python -m tools.accel.bench_mlx --help               # π0.5 stage-by-stage MLX benchmark
 ```
 
-Use only one benchmark process at a time. The default fidelity sample is 50 observations across 10 quality-checked episodes. Timing uses 30 calls after five warm-up calls and regular random noise. Fidelity uses the same saved-equivalent FP32 starting noise for each observation in every run (seed 941, except the seed-spread control). Arm errors are computed after unnormalization in degrees. A binary gripper uses the unnormalized close score, reported separately. Both populations report mean and p99 over the full chunk and the first ten action positions. Agreement on this replay does not establish real robot task success.
+`compare_backend --pi-fp32` sets up the float32 PyTorch reference for π0 and π0.5, and `--save-rtc-leftovers` with
+`--rtc-leftovers` shares the RTC history between backends. `--act-mlx-tf32` and `--act-mlx-fp16` reproduce the lossy
+ACT rows.
 
-The stage check compares projected SigLIP features, each layer's valid prefix K/V, velocity at time 1, and the final actions before benchmarking MLX. The baseline profile and results below come from real recorded observations; CLI blank-input timing is a separate check.
+## References
 
-## M5 Pro measurements
-
-Apple M5 Pro, 20 GPU cores and 48 GiB unified memory, with macOS 27.0.1, PyTorch 2.11.0 and MLX 0.32.4. Each benchmark used one GPU process at a time. Desktop background activity remained, so small differences between runs should not be attributed to individual settings.
-
-The synchronized MPS baseline spent 36.45 ms in the two-view SigLIP batch (isolated views took 19.25 and 19.23 ms), 126.41 ms in Gemma prefix/KV, and 13.54–13.87 ms per expert step. RGB conversion, host-to-device transfer and image resize took 0.67, 1.27 and 0.56 ms respectively. Action unnormalization and raw readback took 0.54 and 0.22 ms. These are medians from separate runs or instrumented stages.
-
-The prefix has roughly 2.2 TFLOP of dense projections even after trimming the text padding; the visual tokens alone account for about 2.03 TFLOP. SigLIP has about 0.42 TFLOP of projections per two-view call. The expert performs about 33 GFLOP of projections for each step and accesses roughly 0.63 GB of dense projection weights. These counts exclude attention, normalization and small projections. The prefix and vision are high arithmetic intensity; the expert has less work per byte and is more sensitive to data movement and dispatch.
-
-FP32 MPS calibrates the size of numerical differences; a second noise draw calibrates the policy's inherent variation. For this checkpoint, we use “lossless in practice” when the configuration keeps all visual tokens and all ten steps, uses no weight quantization, and each of the eight action statistics is below half of its corresponding seed-spread statistic. This is an empirical test, not equivalence of arbitrary rollouts.
-
-| Configuration | Median / p90 (ms) | Peak RSS / GPU (GiB) | Arm all (°) | Arm first 10 (°) | Gripper all | Gripper first 10 |
-| :-- | :-- | :-- | :-- | :-- | :-- | :-- |
-| MPS BF16, initial profile | 297.71 / 311.91 | 12.38 / 9.16 | Reference | Reference | Reference | Reference |
-| MPS BF16, same-noise repeat | 276.83 / 291.30 | 15.01 / 9.17 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
-| MPS BF16, different starting noise | 279.03 / 284.38 | 15.19 / 9.17 | 0.626 / 8.037 | 0.274 / 1.179 | 0.0060 / 0.0071 | 0.0057 / 0.0064 |
-| MPS FP32, eager control | 923.30 / 980.37 | 15.07 / 21.16 | 0.081 / 0.431 | 0.063 / 0.265 | 0.0007 / 0.0024 | 0.0007 / 0.0022 |
-| MLX FP16, deployed configuration | **168.53 / 188.62** | 8.44 / 6.89 | 0.082 / 0.416 | 0.061 / 0.263 | 0.0007 / 0.0023 | 0.0007 / 0.0022 |
-| MLX FP16, all visual tokens and `--steps 2`, lossy | 122.40 / 131.40 | 8.49 / 6.89 | 0.447 / 2.466 | 0.316 / 1.373 | 0.0050 / 0.0273 | 0.0056 / 0.0122 |
-| MLX FP16, pooled vision and two steps, lossy | **70.96 / 71.81** | 8.42 / 6.69 | 4.173 / 26.491 | 1.807 / 7.609 | 0.0304 / 0.9806 | 0.0347 / 0.9848 |
-
-Each error cell is mean / p99. RSS is the process lifetime peak, including load and compile. The GPU figure is the maximum sampled driver allocation for MPS and peak timed allocation for MLX. They overlap with RSS on unified memory.
-
-**Below 100 ms with fidelity was not reached.** Each of the eight error statistics for the deployed MLX setting was at most 34% of the corresponding seed-spread statistic, and median latency was 39% lower than the repeated MPS baseline. Its synchronized split was 24.32 ms for vision, 98.58 ms for prefix/KV, and 5.20–5.65 ms per expert step. Fewer steps alone cannot fix the prefix cost. Removing padding, MLX compilation, and precomputing AdaRMS helped. Affine 8-bit quantization saved GPU allocations but was slower; 4-bit prefix quantization caused much larger KV and action errors. The sub-100 ms result above uses a 2×2 mean over projected visual tokens and a two-step Euler schedule. It is available only in the offline harness (`--pool-images --steps 2`), not as a deployment setting. Start from the FP16 command above and omit `--pack-linears` to reproduce that result.
-
-An additional speed gain at the same fidelity would require substantially faster prefix projection and attention kernels, or a model with a smaller prefix. A reduced-step model designed or distilled for that schedule might also lower expert cost. These alternatives were not trained or tested here.
-
-## Round 2: where the time goes
-
-The standard ten-step MLX output remained bit-for-bit identical to v0.3.0 on all 50 observations. It took **164.00/167.32 ms** (median/p90); the final integration check took **160.74/162.85 ms**. AC power, an active desktop, one benchmark at a time, at least five warm-ups and 30 timed calls. The difference between these repeats is not an optimization.
-
-Metal capture of synthetic matrices at the real dimensions confirmed that MLX 0.32.4 already dispatches gate/up to `steel_gemm_fused_nax` and down to `steel_gemm_splitk_nax`. The replay had 553–558 tokens. At 557 rows, FP16 gate/up (2048→32768) delivered **27.7 TFLOP/s**, and down (16384→2048) delivered **21.1 TFLOP/s**. The same device delivered **30.0 TFLOP/s** on a 4096-square FP16 control. Padding to 576 rows changed gate/up from 2.696 to 2.690 ms and down from 1.771 to 1.872 ms. More FLOP/s on padded work does not necessarily save time. Reproduce the dtype/layout/alignment sweep with `python -m tools.accel.bench_mlx_shapes --out "$EVAL/shapes.json"`.
-
-The initial synchronized split was 1.93 ms for preparation, 23.60 ms for both cameras, 92.54 ms for prefix/KV and 5.21–5.52 ms per expert evaluation. In a separate, slower run, device-ready inputs through both cameras and complete KV creation took **146.51/174.19 ms** without any denoising or intermediate barrier. These timings describe the tested implementation, not a theoretical hardware limit. Padding, changing the weight layout, compiling the entire denoising loop, a custom AdaRMS kernel and pre-slicing modulation did not establish a repeatable end-to-end improvement sufficient to change the default.
-
-| Full replay, matched noise | Median/p90 ms | Arm mean/p99 ° | Worst of eight errors / seed spread |
-| :-- | --: | --: | --: |
-| Integrated default, ten steps | 160.74/162.85 | 0.082/0.416 | 34.0% |
-| Uniform Euler, three evaluations | 159.42/181.83 | 0.320/1.587 | 134.4% |
-| Quadratic Euler, three evaluations | 132.94/135.83 | 0.145/1.350 | 50.7% |
-| Keep half the patches, three uniform evaluations | 95.17/99.24 | 0.818/5.788 | 933.6% |
-| Keep one quarter, three uniform evaluations | 82.62/88.07 | 1.530/11.938 | 13847.9% |
-
-All shortened schedules and all patch pruning are **lossy**. For the quadratic grid, set `--backend mlx --steps 3 --mlx-time-grid quadratic` in `bench` or `run`. It spends more evaluations near the clean end of the flow. Compare fidelity at equal evaluation counts; absolute timings in different desktop-load windows do not isolate solver overhead. To reproduce in the offline command above, add `--steps 3 --solver quadratic`; `ab2` and `midpoint` are also available for comparison (midpoint requires an even budget). Patch selection is offline only: `--steps 3 --keep-visual-fraction 0.5` keeps the highest attention patches per camera after block two, retains the text, and preserves absolute token positions. With half the patches the full-chunk gripper p99 error was 0.06643, against a seed spread of 0.00712.
-
-Explicit MLX RTC was tested separately on three observations with matched noise, model-space leftovers, delay 4, horizon 16 and maximum guidance weight 10. Against guided PyTorch, arm mean/p99 was **0.071/0.350°**; timed guided MLX calls took **163.17/175.12 ms**. LeRobot 0.7.0 evaluates the velocity before enabling gradients on its input, so the reference correction is the weighted residual. Differentiating through the entire denoiser instead gave 0.183/1.670° and is not the deployed rule. No hardware rollout was performed.
-
-## Large VLA status
-
-| Policy | Checkpoint and revision | Backend | Precision / tokens | Median / p90 ms | Fidelity | Evidence |
-|---|---|---|---|---:|---|---|
-| π0 | `lerobot/pi0_libero_finetuned_v044@45dcc8fc0e02601c8ccf0554fbd1d26a55070c1f` | MLX | fp16, 10 flow steps | not measured | trained checkpoint loaded; tokenizer and fp32 parity pending | runs |
-| π0-FAST | `lerobot/pi0fast-libero@840f4b503f4c09110421c33c810a85b6684fd658` | MLX | bf16, greedy, max 256 tokens | 885.22 / 1281.60 | token sequence diverges from PyTorch after `Action:` prefix | runs |
-| GR00T | `nvidia/gr00t17-lerobot-libero_10-640@5ee08ab09fac5c5ef2388a14c882ea825ac861db` | MLX | not run | not measured | fp16 memory/download gate not attempted | not verified |
-
-The π0-FAST row used five warm-ups and 50 synchronized calls on Mac17,9, Apple M5 Pro, 48 GB, macOS 27.0.1, PyTorch 2.15.0, MLX 0.32.4 and LeRobot 0.7.0. `auto` does not select π0, π0-FAST or GR00T from these rows.
-
-## Implementation references
-
-The port follows LeRobot's `pi05` implementation and uses MLX's fused attention, normalization and quantized matmul APIs. We consulted the `tokimoa/pi0-mlx` model card and implementation (Apache-2.0), `mlx-smolvla` (Apache-2.0), `mlx-lm` (MIT), and `mlx-vlm`'s PaliGemma/SigLIP (MIT). No external source code or converted weights were imported.
+The ports follow LeRobot's own implementations. We also consulted `tokimoa/pi0-mlx` and `mlx-smolvla` (Apache-2.0),
+`mlx-lm` (MIT) and the PaliGemma and SigLIP code in `mlx-vlm` (MIT). No outside code or converted weights were copied.

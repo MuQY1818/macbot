@@ -14,12 +14,12 @@ BUILTINS = (
 
 STATUS = {
     "act": ("verified", "Torch and full-precision MLX chunks on trained checkpoints"),
-    "diffusion": ("runs, trained public checkpoint", "Explicit MLX; public PushT replay is not lossless"),
+    "diffusion": ("runs, trained public checkpoint", "explicit MLX matches PyTorch on the CPU but is slower than MPS"),
     "gaussian_actor": ("runs, tiny checkpoint", "generic select_action; continuous actions"),
-    "pi0": ("runs, random weights", "torch generic chunks; MLX port has no trained-checkpoint verification"),
-    "pi0_fast": ("runs, trained checkpoint pending fidelity", "MLX greedy FAST path is implemented; trained parity is pending"),
-    "tdmpc": ("runs, tiny checkpoint", "Torch generic and explicit MLX; one camera named observation.image"),
-    "vqbet": ("runs, trained public checkpoint", "Explicit MLX argmax; public PushT replay is not lossless"),
+    "pi0": ("verified", "MLX chunks and RTC checked on a trained SO-101 checkpoint; torch generic adapter"),
+    "pi0_fast": ("runs, trained checkpoint", "explicit MLX greedy decoding; tokens diverge from PyTorch"),
+    "tdmpc": ("runs, tiny checkpoint", "torch generic and explicit MLX; one camera named observation.image"),
+    "vqbet": ("runs, trained public checkpoint", "explicit MLX, 1.8x faster; matches PyTorch on the CPU"),
     "pi05": ("verified", "built-in PyTorch MPS and MLX wrappers"),
     "smolvla": ("verified", "official base checkpoint: torch and MLX chunks; see auto limits"),
     "xvla": ("verified", "Torch and MLX chunks on a public SO-101 joint checkpoint; no RTC"),
