@@ -31,9 +31,9 @@
 <section class="hero">
   <div class="hero-inner">
     <div class="hero-copy">
-      <p class="tag"><span>v0.3.5</span><span>macOS · Apple silicon</span><span>Apache-2.0</span></p>
+      <p class="tag"><span>v0.3.6</span><span>macOS · Apple silicon</span><span>Apache-2.0</span></p>
       <h1 data-i18n="hero.title">LeRobot on a <span class="mark">MacBook</span>.</h1>
-      <p class="lede" data-i18n="hero.lede">Bring your LeRobot arms, calibration, datasets and checkpoints to a MacBook, with fast inference on Apple silicon.</p>
+      <p class="lede" data-i18n="hero.lede">Record demonstrations and run LeRobot policies on a real arm, straight from an Apple silicon Mac.</p>
       <div class="install px">
         <span class="prompt">$</span><code>pip install macbot</code>
         <button class="copy" id="copy" aria-label="Copy install command" data-i18n="hero.copy">copy</button>
@@ -77,8 +77,8 @@
 <section class="section" id="workflow">
   <header class="head reveal">
     <p class="idx">01 / <span data-i18n="wf.kicker">workflow</span></p>
-    <h2 data-i18n="wf.title">One workflow, from teleoperation to a running policy.</h2>
-    <p class="sub" data-i18n="wf.sub">Datasets and checkpoints stay in the LeRobot format. They move between the MacBook and your GPU machine as they are.</p>
+    <h2 data-i18n="wf.title">From teleoperation to a running policy.</h2>
+    <p class="sub" data-i18n="wf.sub">Everything stays in LeRobot formats, so data and checkpoints move between your Mac and your GPU machine as they are.</p>
   </header>
   <div class="steps">
     <article class="step px reveal"><code>macbot init</code><p data-i18n="wf.s1d">Pick the arm and cameras and check your saved LeRobot calibration. Already have a LeRobot command? Import it with <code>--from-lerobot</code>.</p></article>
@@ -108,9 +108,9 @@
     <div class="lane" data-ms="53" style="--ms:53" data-kind="mlx"><span class="lbl"></span><div class="track"><div class="bar"></div><em>53 ms</em></div></div>
     <div class="lane gap" data-ms="178" style="--ms:178" data-kind="mps"><span class="lbl">X-VLA</span><div class="track"><div class="bar"></div><em>178 ms</em></div></div>
     <div class="lane" data-ms="138" style="--ms:138" data-kind="mlx"><span class="lbl"></span><div class="track"><div class="bar"></div><em>138 ms</em></div></div>
-    <div class="lane gap" data-ms="23" style="--ms:23" data-kind="mps"><span class="lbl">ACT</span><div class="track"><div class="bar"></div><em>23 ms</em></div></div>
-    <div class="lane" data-ms="12" style="--ms:12" data-kind="mlx"><span class="lbl"></span><div class="track"><div class="bar"></div><em>12 ms</em></div></div>
-    <p class="note" data-i18n="sp.note">Chunk length 50 for π0.5 and SmolVLA, 30 for X-VLA and 100 for ACT. π0.5 uses our fine-tune on recorded observations, SmolVLA the public <code>lerobot/smolvla_base</code>, X-VLA a public SO-101 fine-tune and ACT our trained checkpoint. RTC is Real-Time Chunking guidance. π0.5 needs a Mac with at least 32 GB of memory.</p>
+    <div class="lane gap" data-ms="16" style="--ms:16" data-kind="mps"><span class="lbl">ACT</span><div class="track"><div class="bar"></div><em>16 ms</em></div></div>
+    <div class="lane" data-ms="8" style="--ms:8" data-kind="mlx"><span class="lbl"></span><div class="track"><div class="bar"></div><em>8 ms</em></div></div>
+    <p class="note" data-i18n="sp.note">Chunks of 50 actions for π0.5 and SmolVLA, 30 for X-VLA and 100 for ACT, all on recorded observations. π0.5 is an SO-101 fine-tune; SmolVLA (<code>lerobot/smolvla_base</code>), X-VLA (an SO-101 fine-tune) and ACT (ALOHA transfer cube) are public checkpoints. RTC is Real-Time Chunking. π0.5 needs at least 32 GB of memory.</p>
     <a class="more" href="docs/acceleration/" data-href-zh="docs/zh/acceleration/" data-i18n="sp.more">method and full results →</a>
   </div>
 </section>
@@ -135,13 +135,13 @@
 <section class="section paper2" id="macos">
   <header class="head reveal">
     <p class="idx">04 / macOS</p>
-    <h2 data-i18n="mac.title">What it took to run this on macOS.</h2>
+    <h2 data-i18n="mac.title">The parts macOS makes hard.</h2>
   </header>
   <div class="fixes reveal">
-    <div class="fix"><h3 data-i18n="mac.c1">CAN under sudo</h3><p data-i18n="mac.c1d">macbot preloads PCBUSB and gives recorded files back to the invoking user.</p></div>
-    <div class="fix"><h3 data-i18n="mac.c2">Camera selection</h3><p data-i18n="mac.c2d">AVFoundation unique IDs keep UVC camera roles separate from iPhone Continuity Camera.</p></div>
-    <div class="fix"><h3 data-i18n="mac.c3">VLA inference</h3><p data-i18n="mac.c3d">A compiled PyTorch MPS path, plus an optional MLX backend for π0.5, π0 and SmolVLA.</p></div>
-    <div class="fix"><h3 data-i18n="mac.c4">Safety</h3><p data-i18n="mac.c4d">Every console starts paused or idle, limits joint speed and range, clamps the gripper force, pauses when a camera stalls and returns to zero slowly before disabling the motors.</p></div>
+    <div class="fix"><h3 data-i18n="mac.c1">Drivers under sudo</h3><p data-i18n="mac.c1d">sudo drops the library path. macbot loads the PCBUSB CAN driver itself and gives files recorded as root back to you.</p></div>
+    <div class="fix"><h3 data-i18n="mac.c2">The right camera</h3><p data-i18n="mac.c2d">macOS likes to offer a nearby iPhone as a camera. macbot picks cameras by unique ID, never by name or index.</p></div>
+    <div class="fix"><h3 data-i18n="mac.c3">Fast inference</h3><p data-i18n="mac.c3d">MLX backends for π0.5, π0, SmolVLA, X-VLA and ACT, each checked against PyTorch before auto picks it.</p></div>
+    <div class="fix"><h3 data-i18n="mac.c4">Safety</h3><p data-i18n="mac.c4d">Consoles start paused, limit joint speed and gripper force, pause when a camera stalls, and lower the arm slowly before the motors turn off.</p></div>
   </div>
 </section>
 
