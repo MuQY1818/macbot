@@ -9,6 +9,8 @@ macbot 的主要变更记录在这里。本项目遵循
 
 ## [Unreleased]
 
+## [0.3.6] - 2026-11-24
+
 ### 新增
 
 - 增加 X-VLA 和 ACT 的可选 MLX 分块推理。自动选择只对已经用训练权重验证的兼容配置启用 MLX。
@@ -177,7 +179,8 @@ macbot 的主要变更记录在这里。本项目遵循
   以及试验回放、MP4 导出和推理测速。
 - 设备诊断、安装和使用指南，以及英文与简体中文控制台。
 
-[Unreleased]: https://github.com/MuQY1818/macbot/compare/v0.3.5...HEAD
+[Unreleased]: https://github.com/MuQY1818/macbot/compare/v0.3.6...HEAD
+[0.3.6]: https://github.com/MuQY1818/macbot/compare/v0.3.5...v0.3.6
 [0.3.5]: https://github.com/MuQY1818/macbot/compare/v0.3.4...v0.3.5
 [0.3.4]: https://github.com/MuQY1818/macbot/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/MuQY1818/macbot/compare/v0.3.2...v0.3.3
