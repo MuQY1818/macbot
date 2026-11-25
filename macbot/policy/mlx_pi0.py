@@ -7,7 +7,7 @@ import numpy as np
 
 from .mlx_chunk import MLXChunkIO, stage_call
 from .mlx_pi05 import _EXPERT, GuidedMLXFlow, PaliGemmaNetwork
-from .pali_tokenizer import resolve_pali_tokenizer
+from .pali_tokenizer import local_pali_tokenizer
 
 
 class PI0Network(PaliGemmaNetwork):
@@ -48,7 +48,8 @@ class PI0MLX(GuidedMLXFlow, MLXChunkIO):
         from lerobot.policies.common.vla_utils import create_sinusoidal_pos_embedding
 
         import_module("lerobot.policies.pi0.processor_pi0")
-        super().__init__(path, task, tokenizer=tokenizer or resolve_pali_tokenizer(path), **io)
+        # Only a local tokenizer replaces the one named by the saved processor.
+        super().__init__(path, task, tokenizer=tokenizer or local_pali_tokenizer(path), **io)
         config = self.config
         if config.paligemma_variant != "gemma_2b" or tuple(config.image_resolution) != (224, 224):
             raise ValueError("MLX pi0 requires the stock 224px Gemma 2B prefix")

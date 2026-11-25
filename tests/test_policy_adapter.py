@@ -106,6 +106,18 @@ def test_adapter_feature_errors_and_explicit_camera_map(tmp_path):
         _features(tmp_path, config, {}, {}, 7)
 
 
+@pytest.mark.parametrize("kind", ["pi0", "pi0_fast", "diffusion"])
+def test_state_width_must_match_the_joint_actions(tmp_path, kind):
+    # A LIBERO-style checkpoint (8-D end-effector state, 7-D action) must not run on a joint-position arm.
+    config = {
+        "type": kind,
+        "input_features": {"observation.state": {"type": "STATE", "shape": [8]}},
+        "output_features": {"action": {"type": "ACTION", "shape": [7]}},
+    }
+    with pytest.raises(ValueError, match="Expected joint state shape"):
+        _features(tmp_path, config, {}, {}, 7)
+
+
 def test_stock_wrappers_remain_default_and_policy_catalog_works(capsys):
     assert not use_generic("act", "auto", "torch")
     assert not use_generic("pi05", "auto", "torch")

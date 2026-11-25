@@ -1,6 +1,7 @@
 """MLX inference for trained LeRobot PI0-FAST checkpoints."""
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import mlx.core as mx
@@ -9,7 +10,7 @@ from scipy.fft import idct
 
 from .mlx_chunk import MLXChunkIO, stage_call
 from .mlx_pi05 import _PREFIX, _VISION, _VLM, PaliGemmaNetwork
-from .pali_tokenizer import PaliGemmaTokenizer, resolve_pali_tokenizer
+from .pali_tokenizer import resolve_pali_tokenizer
 
 
 class FastPaliGemmaNetwork(PaliGemmaNetwork):
@@ -157,7 +158,9 @@ class PI0FastMLX(MLXChunkIO):
     def __init__(self, path, task, *, dtype=mx.bfloat16, tokenizer_path=None, action_tokenizer_path=None, **io):
         import_module = __import__("importlib").import_module
         import_module("lerobot.policies.pi0_fast.processor_pi0_fast")
-        self.text_tokenizer: PaliGemmaTokenizer = resolve_pali_tokenizer(tokenizer_path or Path(path))
+        config_path = Path(path) / "config.json"
+        official = json.loads(config_path.read_text()).get("text_tokenizer_name") or "google/paligemma-3b-pt-224"
+        self.text_tokenizer = resolve_pali_tokenizer(tokenizer_path or Path(path), official)
         from unittest.mock import patch
 
         from lerobot.processor.tokenizer_processor import ActionTokenizerProcessorStep

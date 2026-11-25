@@ -98,24 +98,40 @@ class PaliGemmaTokenizer:
         return np.asarray(self.encode(text), dtype=np.int32)
 
 
-def resolve_pali_tokenizer(path: Path | None = None) -> PaliGemmaTokenizer:
-    """Load a local tokenizer or the public ungated PaliGemma tokenizer mirror."""
+TOKENIZER_ENV = "MACBOT_PALIGEMMA_TOKENIZER"
+
+
+def local_pali_tokenizer(path: Path | None = None) -> PaliGemmaTokenizer | None:
+    """Return a PaliGemma SentencePiece tokenizer from the checkpoint folder or ``MACBOT_PALIGEMMA_TOKENIZER``."""
     candidates = []
     if path is not None:
+        path = Path(path)
         if path.is_file():
             candidates.append(path)
         else:
             candidates.extend((path / "tokenizer.model", path / "tokenizer" / "tokenizer.model"))
-    if env_path := os.environ.get("MACBOT_PALIGEMMA_TOKENIZER"):
+    if env_path := os.environ.get(TOKENIZER_ENV):
         candidates.append(Path(env_path).expanduser())
     for candidate in candidates:
         if candidate.is_file():
             return PaliGemmaTokenizer(candidate)
+    return None
 
-    from huggingface_hub import hf_hub_download
 
-    downloaded = hf_hub_download(
-        repo_id="leo009/paligemma_tokenizer.model",
-        filename="paligemma_tokenizer.model",
-    )
-    return PaliGemmaTokenizer(downloaded)
+def resolve_pali_tokenizer(path: Path | None = None, official: str = "google/paligemma-3b-pt-224"):
+    """Load a local PaliGemma tokenizer, or the official one named by the checkpoint config.
+
+    macbot never downloads a substitute tokenizer from a third-party repository. When the official repository is
+    gated for this Hugging Face account, point ``MACBOT_PALIGEMMA_TOKENIZER`` at a PaliGemma ``tokenizer.model``.
+    """
+    if (tokenizer := local_pali_tokenizer(path)) is not None:
+        return tokenizer
+    try:
+        from transformers import AutoTokenizer
+
+        return AutoTokenizer.from_pretrained(official)
+    except Exception as exc:  # gated repository, no network, or missing transformers
+        raise RuntimeError(
+            f"Could not load the PaliGemma tokenizer {official!r} ({type(exc).__name__}). Request access to that "
+            f"repository on Hugging Face, or set {TOKENIZER_ENV}=/path/to/tokenizer.model"
+        ) from exc

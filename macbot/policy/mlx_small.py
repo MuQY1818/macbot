@@ -577,7 +577,7 @@ class VQBeTNetwork(DenseWeights):
             features = mx.concatenate((features[:, historical], features[:, -extra:]), axis=1)
         else:
             features = features[:, historical]
-        return self.action_head(features)
+        return self.action_head(features, argmax=argmax)
 
 
 class VQBeTMLX(MLXSmallIO):
