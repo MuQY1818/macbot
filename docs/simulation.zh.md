@@ -2,58 +2,77 @@
 
 [English](simulation.md)
 
-使用 Apple 芯片 Mac 和 Python 3.12 或更新版本。从
-[SO-101 示例配置](../configs/so101_sim.yaml) 开始。首次运行会下载并执行固定版本的
-EnvHub Python 代码并加载 MuJoCo 资源；启用 `trust_remote_code` 前请先审阅。
-场景包含一条 SO-101 仿真机械臂、四个方块和一个盒子。
-macOS 会打印选用的离屏渲染器。默认使用硬件 CGL；如果创建失败，会告警并尝试软件渲染。
-软件渲染时，遥操作可能显著慢于场景的 30 Hz 时钟。
-固定版本的场景缓存完成后可离线加载。如果首次下载必须经过 SOCKS 代理，
-请在同一环境运行 `pip install 'httpx[socks]'`。`macbot doctor` 会检查这一项。
+仿真场景在 MuJoCo 里放了一只 SO-101、四个方块和一个盒子。你可以用键盘操作机械臂、生成脚本示范、在 CUDA 机器上训练策略，再回到 Mac 上评测，用的命令和真机完全一样。
+
+!!! note "目前验证到哪一步"
+
+    整个流程已经端到端跑通，但还没有训练出能完成四方块任务的策略。仿真结果也不代表真机表现。仿真数据和真机数据请分开存放。
+
+## 1. 安装
+
+需要 Apple 芯片的 Mac 和 Python 3.12 或更高版本。
 
 ```bash
-pip install 'macbot[sim]'               # 或在源码目录运行 pip install -e '.[sim]'
+pip install 'macbot[sim]'      # 源码目录中用 pip install -e '.[sim]'
 cp configs/so101_sim.yaml ./tabletop.yaml
 macbot --config tabletop.yaml doctor
 ```
 
-仿真直接由 YAML 配置；USB 设置向导用于实体机械臂。
-示例保留原有的正弦输入，用于快速检查流程。在配置副本中设置 `teleop.type: keyboard`，
-保留 `teleop.hz: 30`。运行 `macbot --config tabletop.yaml collect`，点击视频，
-按 **Enter** 开始录制。视频下方常驻的图例会高亮当前按键。
+示例配置是 [configs/so101_sim.yaml](../configs/so101_sim.yaml)。仿真场景完全由这个文件配置，`macbot init` 向导只用于实体机械臂。
+
+!!! warning "场景会运行下载的代码"
+
+    首次运行会下载固定版本的 EnvHub 场景，包括 Python 代码和 MuJoCo 资源，并以 `trust_remote_code` 方式运行。开启之前请先审阅这些代码。缓存之后，场景加载不再需要连接 Hub。
+
+??? note "代理和渲染"
+
+    如果场景还需要通过 SOCKS 代理下载，请在同一环境中运行 `pip install 'httpx[socks]'`。`macbot doctor` 会检查这一项。
+
+    在 macOS 上，仿真器会打印它使用的离屏渲染器。默认使用硬件 CGL；创建失败时会给出警告并改用软件渲染，这时遥操作可能明显慢于场景的 30 Hz 时钟。
+
+## 2. 用键盘操作机械臂
+
+示例配置用正弦波驱动机械臂，适合快速检查流程。要用键盘控制，在你的配置副本中设置 `teleop.type: keyboard`，保留 `teleop.hz: 30`，然后运行：
+
+```bash
+macbot --config tabletop.yaml collect
+```
+
+点击视频画面，按 ++enter++ 开始。视频下方的图例会高亮你按住的键。
 
 | 按键 | 动作 |
-| --- | --- |
-| W / S | 按首个画面的方向沿桌面前移 / 后移 |
-| A / D | 在首个画面向左 / 向右 |
-| E / Q | 抬高 / 降低夹爪 |
-| Z / X | 从上方看，顺时针 / 逆时针转腕 |
-| 空格 | 切换夹爪开合，移动时无需一直按住 |
-| Shift | 按住时微调平移和转腕 |
-| Enter | 开始新回合，或保存当前回合 |
-| Backspace | 丢弃当前回合 |
-| Esc | 停止当前回合，之后可保存或丢弃 |
+|---|---|
+| ++w++ / ++s++ | 按第一个画面的方向沿桌面前进、后退 |
+| ++a++ / ++d++ | 在第一个画面中向左、向右 |
+| ++e++ / ++q++ | 抬高、降低夹爪 |
+| ++z++ / ++x++ | 从上方看顺时针、逆时针转腕 |
+| ++space++ | 张开或闭合夹爪；闭合后移动时保持闭合 |
+| ++shift++ | 按住时平移和转腕变慢，便于微调 |
+| ++enter++ | 开始新的一条，或保存当前这条 |
+| ++backspace++ | 丢弃这条 |
+| ++escape++ | 停止这条，之后再选择保存或丢弃 |
 
-夹爪默认朝下。按仿真时间计，平移速度为 **6 cm/s**，转腕为 **45°/s**，
-启动加速约 0.10 秒。按住 Shift 后，两者降为四分之一。松键或视频失去焦点后，
-移动目标不再推进。预览显示夹爪离桌高度、在桌面上的投影，遇到限位时也会提示。
-使用键盘控制时，请把固定相机放在 `cameras` 的第一项。
+夹爪默认朝下。按仿真时间计，平移速度为 6 cm/s，转腕为 45°/s，有 0.10 s 的加速过程；按住 ++shift++ 时两者都降到四分之一。松开按键或者点到视频以外，运动就会停止。预览画面会显示夹爪尖的高度及其在桌面上的投影，运动被限位挡住时会有提示。用键盘控制时，`cameras` 里的第一台相机请用固定视角的相机。
 
-横移前先抬起夹爪。将夹爪对准方块，下降、夹紧、抬升，再到盒子上方松开。
-若达到俯抓可达范围边界，可以降低夹爪或向臂座方向退回。任务成功或到达时间上限时
-自动保存。合成按键已通过采集 HTTP 接口完成一次四方块任务。在一次简短的真人试用中，操作者把一个方块放进了盒子。
+!!! tip "怎么抓起一个方块"
 
-仿真数据默认写入 `~/macbot-data/sim`，回合在其 `raw/<任务名>` 下。
-采集启动时会打印实际回合目录。显式设置的 `data_root` 或 `collect --out` 仍优先。
+    先抬高再横跨桌面。把夹爪对准方块，下降套住它，闭合，抬起，移到盒子上方再张开。如果俯视工作空间够不到，可以降低夹爪，或者往机械臂方向退一点。
 
-也可以用已标定的实体 SO-101 领臂操作仿真从臂。设置
-`teleop: {type: so101_leader, port: /dev/tty.usbmodemYOUR_LEADER, id: leader, hz: 30}`。
-需要标定时，以相同串口和 ID 运行 `lerobot-calibrate --teleop.type=so101_leader
---teleop.port=... --teleop.id=leader`。macbot 读绝对关节角并复用 LeRobot 标定。
-领臂路径目前仅做了 mock 测试。
-脚本与 SO-101 领臂输入继续使用原有的回合快捷键。
+任务成功或超时时，控制台会自动保存。用脚本发送的按键序列通过采集接口完成过四方块任务；在一次简短的真人试用中，有人手动把一个方块放进了盒子。
 
-可按种子生成脚本示教，并导出为 LeRobot v3.0：
+仿真数据默认保存在 `~/macbot-data/sim/raw/<task>`，控制台启动时会打印实际目录。显式设置的 `data_root` 或 `collect --out` 优先。
+
+??? note "用真实的 SO-101 主臂操作仿真从臂"
+
+    标定过的 SO-101 主臂可以驱动仿真中的从臂：
+
+    ```yaml
+    teleop: {type: so101_leader, port: /dev/tty.usbmodemYOUR_LEADER, id: leader, hz: 30}
+    ```
+
+    需要标定时，用相同的端口和 ID 运行 `lerobot-calibrate --teleop.type=so101_leader --teleop.port=... --teleop.id=leader`。macbot 通过保存的 LeRobot 标定读取绝对关节角度。这条路径目前只用模拟的主臂测试过。用主臂和用脚本输入时，录制按键的用法相同。
+
+## 3. 生成脚本示范
 
 ```bash
 macbot --config tabletop.yaml sim demos --episodes 50 --seed 0 --out ./demos
@@ -61,11 +80,11 @@ macbot --config tabletop.yaml health --data ./demos
 macbot --config tabletop.yaml export --data ./demos --out ./dataset
 ```
 
-`--episodes` 指尝试次数。脚本读取场景位姿并用逆运动学抓放，困难的初始位置可能失败。
-`demos_*.json` 会记录每次尝试；默认只保存成功的示教，指定 `--keep-failures` 可保留失败回合。
+脚本从场景中读取方块位置，用逆运动学规划动作。`--episodes` 统计的是尝试次数，方块位置刁钻时可能失败。每次尝试都记录在 `demos_*.json` 中；默认只保存成功的示范，加 `--keep-failures` 会把失败的也保存下来。
 
-把完整的 `dataset` 目录传到 CUDA 机器，在那里用 LeRobot 训练 ACT。
-如需保留录制画面的解码像素，导出时加 `--images`，避免再次进行有损编码。
+## 4. 在 CUDA 机器上训练
+
+把导出的整个 `dataset` 目录拷到 CUDA 机器上，用 LeRobot 训练 ACT。如果想保留解码后的原始像素、避免再做一次有损视频编码，导出时加 `--images`。
 
 ```bash
 pip install 'lerobot[training]==0.7.0'
@@ -76,8 +95,11 @@ lerobot-train --dataset.repo_id=local/so101-tabletop --dataset.root=./dataset --
   --output_dir=./act-tabletop
 ```
 
-将 `act-tabletop/checkpoints/last/pretrained_model` 带回 Mac，放在 `./pretrained_model`，
-使用未出现在示教中的种子评估。
+把 `act-tabletop/checkpoints/last/pretrained_model` 拷回 Mac，放在 `./pretrained_model`。
+
+## 5. 在 Mac 上评测
+
+请用示范没有用过的种子评测：
 
 ```bash
 macbot --config tabletop.yaml eval \
@@ -87,14 +109,11 @@ macbot --config tabletop.yaml health --data ./trials
 macbot --config tabletop.yaml replay --dir ./trials
 ```
 
-`eval` 支持本地 checkpoint 或 `owner/model@revision`。加 `--videos` 可另存双路并排 MP4。
-批量评估 SO-101 桌面场景时，可用 `--trace-only` 只在策略查询时渲染，只保存关节轨迹；
-`health` 和 `replay` 的轨迹视图仍可使用。两种方式都会执行完整的仿真步。
-策略按仿真步推进并直接下发关节目标，不经过实体机械臂的速度斜坡。异步和 RTC 模式可用
-`--delay-steps` 模拟推理延迟，默认零延迟。对比结果时应记录场景配置、种子范围、
-策略版本及执行选项。
+`eval_*.json` 列出每个种子的结果、平均回合长度，以及成功率的 95% Wilson 区间。四个方块的中心都通过场景的盒子检测才算成功，默认 3,600 步超时。
 
-`eval_*.json` 保存每个种子的结果、平均回合长度和成功率的 95% Wilson 区间。
-当四个方块的中心都通过盒内判定时，场景记为成功；默认上限为 3,600 步。
-仿真成功不代表真机成功，仿真与真机数据应分开存放。
-流程已跑通；这并不代表训练后的策略已经能完成四方块任务。
+- `--policy` 接受本地权重或 `owner/model@revision`。
+- `--videos` 输出并排的 MP4。`--trace-only` 只在策略推理时渲染，保存关节轨迹但不保存相机回放，大批量评测时快得多；`health` 和 `replay` 的轨迹视图照样可用。
+- 两种方式都会运行每一个仿真步。策略给出的目标直接发给仿真器，不经过实体机械臂的速度斜坡。
+- 使用 `async` 和 `rtc` 时，`--delay-steps` 可以模拟推理延迟，默认为零。
+
+比较不同的运行时，请记下场景配置、种子范围、策略版本和执行参数。
