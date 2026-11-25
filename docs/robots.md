@@ -1,6 +1,6 @@
 # Robot support
 
-[简体中文](robots_zh.md)
+[简体中文](robots.zh.md)
 
 | `robot.type` | Robot | Validation in macbot |
 |---|---|---|

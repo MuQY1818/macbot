@@ -2,7 +2,7 @@
 
 [English](setup.md)
 
-向导流程见[快速开始](quickstart_zh.md)。以下手动流程适合自定义配置和排查问题。
+向导流程见[快速开始](quickstart.zh.md)。以下手动流程适合自定义配置和排查问题。
 
 ## 1. Python 环境
 
@@ -12,7 +12,7 @@ pip install macbot                 # 需要 π0.5 时改装 macbot[pi]
 xcode-select --install             # 提供 swiftc，首次使用 UVC 相机时编译助手程序
 ```
 
-使用 Orbbec 腕部相机前，请参照[快速开始](quickstart_zh.md)安装 SDK。
+使用 Orbbec 腕部相机前，请参照[快速开始](quickstart.zh.md)安装 SDK。
 
 ## 2. CAN 驱动（PCAN-USB）
 
@@ -93,4 +93,4 @@ macbot --config configs/so101_sim.yaml collect
 
 示例使用 Python 3.12、MuJoCo 3.3.7、离屏渲染和脚本主臂，已在 Apple 芯片 Mac 上验证。首次运行会下载固定版本的 SO-101 EnvHub 代码、场景和模型资源。示例显式开启 `trust_remote_code`，请只运行你已审阅并信任的环境代码。缓存完整后可离线运行，无需相机、串口、CAN 适配器或 `sudo`。
 
-`robot.env` 使用本地 LeRobot 环境配置，要求绝对关节位置指令以及同名的 `.pos` 状态。`teleop.hz` 和 `run.hz` 应与环境控制频率一致（示例为 30 Hz）。`type: robot` 相机的 `key` 指向渲染图像，默认取相机名；`save_size` 设置输出大小，`crop: [x0, y0, x1, y1]` 可在缩放前裁剪。策略和回放命令见[使用指南](guide_zh.md#物理仿真)。
+`robot.env` 使用本地 LeRobot 环境配置，要求绝对关节位置指令以及同名的 `.pos` 状态。`teleop.hz` 和 `run.hz` 应与环境控制频率一致（示例为 30 Hz）。`type: robot` 相机的 `key` 指向渲染图像，默认取相机名；`save_size` 设置输出大小，`crop: [x0, y0, x1, y1]` 可在缩放前裁剪。策略和回放命令见[工作流程](guide.zh.md#没有硬件时)。

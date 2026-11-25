@@ -1,6 +1,6 @@
 # Moving a LeRobot setup from Linux to a Mac
 
-[简体中文](migrate_zh.md)
+[简体中文](migrate.zh.md)
 
 Keep your LeRobot calibration files, v3.0 datasets and complete policy checkpoints. Use the Mac
 for collection, checks, inference and replay, and keep training on your GPU machine.

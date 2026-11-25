@@ -27,8 +27,8 @@
 
 ## 从这里开始
 
-已经在 Linux 上用 LeRobot？按[迁移指南](docs/migrate_zh.md)复用校准并导入原命令。
-从空白环境开始，见[快速开始](docs/quickstart_zh.md)。
+已经在 Linux 上用 LeRobot？按[迁移指南](docs/migrate.zh.md)复用校准并导入原命令。
+从空白环境开始，见[快速开始](docs/quickstart.zh.md)。
 使用 Apple 芯片 Mac 和 Python 3.12 或更高版本。数据集和 checkpoint 保持 LeRobot 格式，可在两台机器间直接使用。
 
 ```bash
@@ -44,10 +44,10 @@ macbot run --policy ./pretrained_model       # 也可用 owner/model@revision
 macbot replay
 ```
 
-reBot B601-RS 已做真机验证。[SO-101 桌面流程](docs/simulation_zh.md)已在仿真跑通
+reBot B601-RS 已做真机验证。[SO-101 桌面流程](docs/simulation.zh.md)已在仿真跑通
 （示教、导出、LeRobot 训练、按种子评估），尚未证明训练出的策略能完成任务。
-各配置的验证范围见[机械臂支持](docs/robots_zh.md)。运行 π0.5 建议使用至少 32 GB 内存的 Apple 芯片 Mac。
-已测 checkpoint 见[策略支持](docs/policies_zh.md)。
+各配置的验证范围见[机械臂支持](docs/robots.zh.md)。运行 π0.5 建议使用至少 32 GB 内存的 Apple 芯片 Mac。
+已测 checkpoint 见[策略支持](docs/policies.zh.md)。
 
 以下数据在 MacBook Pro（M5 Pro，48 GB）上实测，为每个动作块的大致耗时：
 
@@ -64,7 +64,7 @@ reBot B601-RS 已做真机验证。[SO-101 桌面流程](docs/simulation_zh.md)�
 | ACT | PyTorch MPS | 分块 100 | 16 ms |
 | ACT | MLX | 分块 100 | **8 ms** |
 
-π0.5 使用我们在 SO-101 同类机械臂上训练的微调权重和录制观测，去噪 10 步（编译后的 PyTorch BF16 或 MLX FP16）。RTC 指 Real-Time Chunking 引导。SmolVLA 使用公开的 `lerobot/smolvla_base`，去噪 10 步（MPS BF16 底座或编译后的 MLX FP16）。X-VLA 使用公开的 SO-101 微调权重，去噪 10 步（MPS BF16 或编译后的 MLX FP16）；ACT 使用公开的 ALOHA 方块转移权重（MPS FP32 或关闭 TF32 的编译 MLX FP32）。两者均用录制观测对比。测法和更多结果见[推理基准](https://github.com/MuQY1818/macbot/blob/main/docs/acceleration_zh.md)和[策略支持](https://github.com/MuQY1818/macbot/blob/main/docs/policies_zh.md)。
+π0.5 使用我们在 SO-101 同类机械臂上训练的微调权重和录制观测，去噪 10 步（编译后的 PyTorch BF16 或 MLX FP16）。RTC 指 Real-Time Chunking 引导。SmolVLA 使用公开的 `lerobot/smolvla_base`，去噪 10 步（MPS BF16 底座或编译后的 MLX FP16）。X-VLA 使用公开的 SO-101 微调权重，去噪 10 步（MPS BF16 或编译后的 MLX FP16）；ACT 使用公开的 ALOHA 方块转移权重（MPS FP32 或关闭 TF32 的编译 MLX FP32）。两者均用录制观测对比。测法和更多结果见[推理基准](https://github.com/MuQY1818/macbot/blob/main/docs/acceleration.zh.md)和[策略支持](https://github.com/MuQY1818/macbot/blob/main/docs/policies.zh.md)。
 
 | 数据采集 | 实测 |
 |---|---:|
@@ -82,7 +82,7 @@ reBot B601-RS 已做真机验证。[SO-101 桌面流程](docs/simulation_zh.md)�
 - `collect` 提供相机预览和逐条检查；没有机械臂可以试 `collect --fake`。
 - `health --dataset` 和 `replay --dataset` 只读查看本地或 Hub 上的 LeRobot v3.0 数据集。
 - `run` 加载 LeRobot checkpoint，并记录每次试验的画面和时序。
-- `replay` 同步回放试验画面、关节曲线和动作块，详见[工作流程](docs/guide_zh.md)。
+- `replay` 同步回放试验画面、关节曲线和动作块，详见[工作流程](docs/guide.zh.md)。
 
 ## 在 macOS 上跑起来要解决的问题
 
@@ -92,7 +92,7 @@ reBot B601-RS 已做真机验证。[SO-101 桌面流程](docs/simulation_zh.md)�
 
 ## 参与贡献
 
-开发与真机报告见[贡献指南](CONTRIBUTING_zh.md)，代码布局见[架构](docs/architecture_zh.md)，
+开发与真机报告见[贡献指南](CONTRIBUTING_zh.md)，代码布局见[架构](docs/architecture.zh.md)，
 后续工作见[路线图](ROADMAP_zh.md)。
 
 ## 安全

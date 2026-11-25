@@ -150,7 +150,7 @@ All notable changes to macbot will be documented here. This project follows
 - `tools/accel/`: an offline fidelity harness that builds a fixed observation set from recorded
   episodes, compares any configuration with matched noise, and reports latency and action error
   against the seed-to-seed spread.
-- Inference benchmark docs (`docs/acceleration.md`, `docs/acceleration_zh.md`).
+- Inference benchmark docs (`docs/acceleration.md`, `docs/acceleration.zh.md`).
 
 ### Fixed
 

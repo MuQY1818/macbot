@@ -14,7 +14,7 @@
 
 ## reBot B601-RS
 
-从 [`configs/example.yaml`](../configs/example.yaml) 和[安装指南](setup_zh.md)开始。
+从 [`configs/example.yaml`](../configs/example.yaml) 和[安装指南](setup.zh.md)开始。
 参考配置通过 PCBUSB 使用 PCAN-USB，并自动检测 Arm 102 的串口。重力前馈另需 URDF。
 
 ```yaml
@@ -46,7 +46,7 @@ Koch 使用 `koch_follower` 和 `koch_leader`，OMX 使用 `omx_follower` 和 `o
 
 ## 本地仿真
 
-安装、键盘遥操作、脚本示教和策略评估见[仿真指南](simulation_zh.md)。
+安装、键盘遥操作、脚本示教和策略评估见[仿真指南](simulation.zh.md)。
 完整的 [`configs/so101_sim.yaml`](../configs/so101_sim.yaml) 保留正弦输入，用于快速检查流程。
 采集不加 `--fake`，各频率须与场景匹配。首次运行会下载并执行固定版本的 EnvHub Python 代码。
 
@@ -66,7 +66,7 @@ cameras:
 
 `macbot init` 检查标定文件并提供对应命令。请单独运行 `lerobot-calibrate`，使用相同的设备类型、串口、ID
 及可选的 `calibration_dir`。从臂使用 `--robot.*`，主臂使用 `--teleop.*`，命令见
-[安装指南](setup_zh.md)。macbot 以 `calibrate=False` 连接。无实体领臂的仿真和 fake 模式不需要标定。
+[安装指南](setup.zh.md)。macbot 以 `calibrate=False` 连接。无实体领臂的仿真和 fake 模式不需要标定。
 
 运行 `macbot --config my.yaml doctor` 检查所选配置。对于通用机械臂，
 它检查驱动导入、配置中的串口路径和标定文件是否存在，不打开设备。

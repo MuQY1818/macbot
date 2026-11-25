@@ -1,6 +1,6 @@
 # SO-101 simulation
 
-[简体中文](simulation_zh.md)
+[简体中文](simulation.zh.md)
 
 Install on an Apple silicon Mac with Python 3.12 or later. Start from the
 [SO-101 example config](../configs/so101_sim.yaml). First use downloads and

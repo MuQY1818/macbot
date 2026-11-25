@@ -1,6 +1,6 @@
 # π0.5 inference on Apple silicon
 
-[简体中文](acceleration_zh.md)
+[简体中文](acceleration.zh.md)
 
 The standard macbot backend is PyTorch. The optional MLX backend reads stock LeRobot 0.7.0 `pi05` safetensors in place and uses the checkpoint's original LeRobot tokenizer, state normalizer and action postprocessor. It supports single observations with one or more configured RGB views. Memory variants, checkpoint-configured RTC and adapters are outside this backend's scope.
 

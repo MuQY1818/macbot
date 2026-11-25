@@ -40,21 +40,21 @@ macbot --config configs/so101.yaml health --data ~/macbot-data/raw/pick_cube_fak
 在采集页面按 **S** 开始，按 **回车** 保存。要验证模拟器，先运行
 `python -m pip install -e ".[dev,sim]"`，再运行 `macbot --config configs/so101_sim.yaml collect`，
 不加 `--fake`。固定版本的场景会在首次使用时下载并执行 Python 代码；参见
-[仿真安装](docs/setup_zh.md#本地-mujoco-仿真)和[工作流程](docs/guide_zh.md#物理仿真)。
+[仿真安装](docs/setup.zh.md#本地-mujoco-仿真)和[工作流程](docs/guide.zh.md#没有硬件时)。
 跑策略时使用与关节布局和相机匹配的检查点；`run --fake` 仍会运行真实策略。
 
 ## 扩展 macbot
 
-- **机械臂：** 从[机械臂支持](docs/robots_zh.md)开始。优先使用兼容的 LeRobot 配置；只有设备需要不同
+- **机械臂：** 从[机械臂支持](docs/robots.zh.md)开始。优先使用兼容的 LeRobot 配置；只有设备需要不同
   行为时才新增 `Robot` 实现。无硬件测试应覆盖关节顺序、动作单位、标定保护和退出行为。
 - **执行方式：** 在 [`macbot/policy/executors.py`](macbot/policy/executors.py) 实现 `Executor` 接口。
   要改变异步动作块的替换方式，可以覆写 `AsyncChunk.accept()`。在 `macbot/cli.py` 和运行器中
-  接入新模式，并用 `FakePolicy` 测试时序、暂停和重置行为。参见[架构](docs/architecture_zh.md)。
+  接入新模式，并用 `FakePolicy` 测试时序、暂停和重置行为。参见[架构](docs/architecture.zh.md)。
 
 ## 提交和拉取请求
 
 每次提交集中处理一件事，使用简洁的英文标题。每次提交前运行上述检查。提交 PR 时说明行为变化、
-验证方法和结果。英文和简体中文文档应同步更新；用户可见的改动应记在 **Unreleased（未发布）** 下。版本号规则和发版流程见 [docs/releasing_zh.md](docs/releasing_zh.md)。
+验证方法和结果。英文和简体中文文档应同步更新；用户可见的改动应记在 **Unreleased（未发布）** 下。版本号规则和发版流程见 [docs/releasing.zh.md](docs/releasing.zh.md)。
 
 欢迎提交真机测试报告。请注明机械臂与相机配置、macOS 版本和芯片、成功与失败的操作，条件允许时提供
 `macbot bench` 数字。请使用真机报告表单，并事先移除日志和截图中的个人信息。

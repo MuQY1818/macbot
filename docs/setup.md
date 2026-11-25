@@ -1,6 +1,6 @@
 # Setting up macbot on a Mac
 
-[中文](setup_zh.md)
+[中文](setup.zh.md)
 
 For guided setup, start with the [quickstart](quickstart.md). The manual workflows below are
 useful for custom profiles and troubleshooting.
@@ -116,4 +116,4 @@ snapshot can run offline. No camera, serial device, CAN adapter or `sudo` is nee
 `.pos` state names. Set `teleop.hz` and `run.hz` to the environment's control rate (30 for the example).
 For `type: robot` cameras, `key` selects a rendered observation and defaults to the camera name.
 Use `save_size` for the output dimensions and optional `crop: [x0, y0, x1, y1]` before resizing.
-See the [guide](guide.md#simulation) for policy and replay commands.
+See the [guide](guide.md#without-hardware) for policy and replay commands.

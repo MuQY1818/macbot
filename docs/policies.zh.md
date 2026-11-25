@@ -6,13 +6,13 @@
 其他类型走 PyTorch 通用适配器；也可以用 `--policy-impl generic` 显式让 ACT 或 π0.5 使用通用适配器。
 
 `run` 和 `bench` 可使用 `--backend auto`，也可在 YAML 中设置 `policy: {backend: auto}`。
-`policies` 列出已实现的后端，附加依赖的安装状态和[保真验证](acceleration_zh.md#自动选择后端)另计。
+`policies` 列出已实现的后端，附加依赖的安装状态和[保真验证](acceleration.zh.md#自动选择后端)另计。
 
 ## 使用自己的 checkpoint
 
 π0 `--backend mlx` 路径接受使用绝对动作的标准 224 像素 PaliGemma 2B checkpoint，使用
 `policy.camera_map` 和随权重保存的处理器。提供 `--mode chunk` 和 RTC 引导，默认分块。
-根据[录制观测对比](acceleration_zh.md#π0-录制观测实测)，`--backend auto` 在两个模式中为兼容的
+根据[录制观测对比](acceleration.zh.md#π0-录制观测实测)，`--backend auto` 在两个模式中为兼容的
 π0 和 π0.5 checkpoint 选择编译后的 MLX。
 
 SmolVLA MLX 后端支持标准 SmolVLM2-500M 结构和分块推理。
@@ -106,7 +106,7 @@ CPU 使用 fp32、4 线程。误差测试让两端共用 CPU 正态随机数和�
 
 随机权重仅验证运行链路和数值差异，不用于评价任务表现。VQ-BeT 和 TDMPC 各只接受一台相机；
 TDMPC 的特征键须为 `observation.image`。VQ-BeT 需要经过训练的 Residual VQ 才能产生有意义的动作。
-原有 π0.5 的性能数据见[推理测速](acceleration_zh.md)。
+原有 π0.5 的性能数据见[推理测速](acceleration.zh.md)。
 SmolVLA 的视觉语言骨干使用 bf16，X-VLA 的 MPS 端沿用 checkpoint 保存的 bf16 设置。和 CPU fp32 的
 配对差异以各 checkpoint 的输出单位计。真机使用前，请按任务能接受的误差评估。
 
